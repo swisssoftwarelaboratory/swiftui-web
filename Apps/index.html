@@ -25,7 +25,18 @@ html,body{margin:0;height:100%;background:#fff;overflow:hidden;overscroll-behavi
   // `?platform=ios` for the phone look. Published: scripts/build-landing.sh writes a copy per app
   // under the landing's /apps/<app>/ with the bundle path, the app's name and its wasm's size
   // filled in, so the loading bar can measure the download.
-  import { init } from "./.build/wasm/plugins/PackageToJS/outputs/Package/index.js";
+  import { instantiate, MODULE_PATH } from "./.build/wasm/plugins/PackageToJS/outputs/Package/instantiate.js";
+  import { defaultBrowserSetup } from "./.build/wasm/plugins/PackageToJS/outputs/Package/platforms/browser.js";
+  // Launch arguments, as `simctl launch <app> -screen settings` gives them: `?args=-screen%20settings`,
+  // split on spaces, then each `&arg=` whole (for a value with spaces). They reach `ProcessInfo.arguments`
+  // and the standard defaults' argument domain. (PackageToJS's own `init` drops them, so the module is
+  // instantiated here.)
+  const query = new URLSearchParams(location.search);
+  const launchArgs = [...(query.get("args") || "").split(" ").filter(Boolean), ...query.getAll("arg")];
+  const init = async (options = {}) => instantiate(await defaultBrowserSetup({
+    module: options.module || fetch(new URL("./.build/wasm/plugins/PackageToJS/outputs/Package/" + MODULE_PATH, import.meta.url)),
+    args: launchArgs,
+  }));
   const data = document.documentElement.dataset;
   const screen = document.getElementById("loading");
   const fill = screen.querySelector(".fill"), status = screen.querySelector(".status");

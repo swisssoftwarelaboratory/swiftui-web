@@ -21,6 +21,15 @@ extension Runtime: HostedScene {
         return animating
     }
 
+    /// The device's safe area as the host reports it (top, leading, bottom, trailing).
+    public var hostSafeAreaInsets: [CGFloat] {
+        get { [safeAreaInsets.top, safeAreaInsets.leading, safeAreaInsets.bottom, safeAreaInsets.trailing] }
+        set {
+            guard newValue.count == 4 else { return }
+            safeAreaInsets = EdgeInsets(top: newValue[0], leading: newValue[1], bottom: newValue[2], trailing: newValue[3])
+        }
+    }
+
     /// The last `navigationTitle` applied in the tree.
     public var windowTitle: String? { navigationTitle }
 

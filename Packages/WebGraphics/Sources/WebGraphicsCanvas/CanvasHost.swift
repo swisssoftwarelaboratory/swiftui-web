@@ -158,6 +158,24 @@ public final class CanvasSceneHost {
         // The full SF Symbol layout table (`assets/symbol-metrics.txt`, sw-symbols) is fetched
         // on the first symbol outside the built-in set and the scene lays out again.
         let assetBase = window.__swiftuiwebAssets.object?.base.string ?? "assets/"
+        // A bundled file read with `Data(contentsOf:)` (a resource URL, `assets/<name>`): fetched
+        // synchronously from the bundle's assets, as iOS reads a bundle's files at once (an
+        // app's JSON script decoded in an initializer).
+        if let made = JSObject.global.Function.function?.new("url", """
+            try {
+              const x = new XMLHttpRequest(); x.open('GET', url, false);
+              x.overrideMimeType('text/plain; charset=x-user-defined'); x.send();
+              if (x.status !== 200 && x.status !== 0) return null;
+              const t = x.responseText, a = new Uint8Array(t.length);
+              for (let i = 0; i < t.length; i++) a[i] = t.charCodeAt(i) & 0xff;
+              return a;
+            } catch (e) { return null; }
+            """), let reader = JSValue.object(made).function {
+            _MemoryFiles._hostResource = { key in
+                guard let array = reader(assetBase + key.dropFirst(Bundle._resourceBase.count)).object else { return nil }
+                return Data(JSTypedArray<UInt8>(unsafelyWrapping: array).withUnsafeBytes { Array($0) })
+            }
+        }
         scene.onNeedsSymbolMetrics = { [weak self] in
             guard let self else { return }
             let loaded = JSClosure { [weak self] arguments in
@@ -728,8 +746,28 @@ public final class CanvasSceneHost {
         canvas.height = .number((height * dpr).rounded())
         canvas.style.object!.width = .string("\(width)px")
         canvas.style.object!.height = .string("\(height)px")
+        applySafeArea()
         needsLayout = true
         scheduleFrame()
+    }
+
+    /// The device's safe area for the app (`HostedScene.hostSafeAreaInsets`): the container's
+    /// `data-safe-area` or the page's `?safeArea=` ("top,leading,bottom,trailing" in points, as
+    /// a drawn phone around the app will set it). Not yet the browser's own
+    /// `env(safe-area-inset-*)`: the root is laid out inside the insets, and a view that extends
+    /// into them (`ignoresSafeArea`, a background) does not yet, so a phone's browser would show
+    /// bands at the top and bottom.
+    private func applySafeArea() {
+        var text = container.dataset.object?.safeArea.string
+        if text == nil, let search = window.location.object?.search.string {
+            for pair in search.dropFirst().split(separator: "&") {
+                let parts = pair.split(separator: "=", maxSplits: 1)
+                if parts.count == 2, parts[0] == "safeArea" { text = String(parts[1]).replacingOccurrences(of: "%2C", with: ",") }
+            }
+        }
+        guard let text else { return }
+        let insets = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)).map { CGFloat($0) } }
+        if insets.count == 4, insets != scene.hostSafeAreaInsets { scene.hostSafeAreaInsets = insets }
     }
 
     /// Requests one animation frame; several invalidations coalesce into it.
@@ -1879,6 +1917,19 @@ enum IntlBridge {
                 return names.of?(code.replacingOccurrences(of: "_", with: "-")).string
             }
         }
+        Locale._hostDatePattern = { locale, request in
+            let key = locale + "|" + request
+            if let known = datePatterns[key] { return known }
+            let made = datePattern(locale, request)
+            datePatterns[key] = made
+            return made
+        }
+        Locale._hostDateSymbols = { locale in
+            if let known = dateSymbols[locale] { return known }
+            let made = symbols(locale)
+            dateSymbols[locale] = made
+            return made
+        }
         let navigator = JSObject.global.navigator
         if let language = navigator.language.string, !language.isEmpty { Locale._hostIdentifier = language }
         if let languages = navigator.languages.object {
@@ -1907,6 +1958,175 @@ enum IntlBridge {
         let count = Int(parts.length.number ?? 0)
         for index in 0..<count where parts[index].type.string == "timeZoneName" { return parts[index].value.string }
         return nil
+    }
+
+    // MARK: Dates in a locale's own order and words
+
+    nonisolated(unsafe) private static var datePatterns: [String: String?] = [:]
+    nonisolated(unsafe) private static var dateSymbols: [String: _DatePattern.Symbols?] = [:]
+
+    /// A formatter in UTC (the patterns and words don't depend on the zone), nil when `Intl` rejects it.
+    private static func dateFormatter(_ locale: String, _ options: [String: String]) -> JSObject? {
+        guard let constructor = JSObject.global.Intl.DateTimeFormat.function else { return nil }
+        let object = JSObject.global.Object.function!.new()
+        object.timeZone = .string("UTC")
+        for (key, value) in options { object[key] = .string(value) }
+        return try? JSThrowingFunction(constructor).new(locale, object)
+    }
+
+    /// `(type, value)` for each part of a UTC instant (seconds since 1970) formatted.
+    private static func parts(_ formatter: JSObject, _ time: Double) -> [(String, String)] {
+        guard let list = formatter.formatToParts?(time * 1000).object else { return [] }
+        return (0..<Int(list.length.number ?? 0)).compactMap { index in
+            guard let type = list[index].type.string, let value = list[index].value.string else { return nil }
+            return (type, value)
+        }
+    }
+
+    /// The LDML pattern `Intl` formats a request with: a canonical skeleton ("EEEEdMMMM"), a
+    /// `Date.FormatStyle` style ("style:<date>:<time>") or a `DateFormatter` one
+    /// ("formatter:<date>:<time>"). Read off the parts of a reference instant whose day, month and
+    /// hour have one digit, so a two-digit field shows as two letters. Nil for a field `Intl` has
+    /// no option for (quarters, weeks, day of year), which then formats as `en`.
+    private static func datePattern(_ locale: String, _ request: String) -> String? {
+        var options: [String: String] = [:]
+        var dropPeriod = false
+        let pieces = request.split(separator: ":")
+        if pieces.count == 3, pieces[0] == "style" || pieces[0] == "formatter", let date = Int(pieces[1]), let time = Int(pieces[2]) {
+            let formatter = pieces[0] == "formatter"
+            switch date {
+            case 1: options = formatter ? ["dateStyle": "short"] : ["year": "numeric", "month": "numeric", "day": "numeric"]
+            case 2: options = formatter ? ["dateStyle": "medium"] : ["year": "numeric", "month": "short", "day": "numeric"]
+            case 3: options = formatter ? ["dateStyle": "long"] : ["year": "numeric", "month": "long", "day": "numeric"]
+            case 4: options = formatter ? ["dateStyle": "full"] : ["year": "numeric", "month": "long", "day": "numeric", "weekday": "long"]
+            default: break
+            }
+            if formatter {
+                switch time {
+                case 1: options["timeStyle"] = "short"
+                case 2: options["timeStyle"] = "medium"
+                case 3: options["timeStyle"] = "long"
+                case 4: options["timeStyle"] = "full"
+                default: break
+                }
+            } else if time > 0 {
+                options["hour"] = "numeric"; options["minute"] = "2-digit"
+                if time >= 2 { options["second"] = "2-digit" }
+                if time >= 3 { options["timeZoneName"] = "short" }
+            }
+        } else {
+            var index = request.startIndex
+            while index < request.endIndex {
+                let letter = request[index]
+                var end = request.index(after: index)
+                while end < request.endIndex, request[end] == letter { end = request.index(after: end) }
+                let count = request.distance(from: index, to: end)
+                index = end
+                let text = count == 2 ? "2-digit" : "numeric"
+                let name = count == 4 ? "long" : count == 5 ? "narrow" : "short"
+                switch letter {
+                case "G": options["era"] = name
+                case "y": options["year"] = text
+                case "M", "L": options["month"] = count <= 2 ? text : name
+                case "E": options["weekday"] = count == 6 ? "short" : name
+                case "d": options["day"] = text
+                case "h": options["hour"] = text   // the locale's own clock, as Apple's `j`
+                case "J": options["hour"] = text; dropPeriod = true
+                case "H": options["hour"] = text; options["hourCycle"] = "h23"
+                case "m": options["minute"] = "2-digit"
+                case "s": options["second"] = "2-digit"
+                case "a": break
+                case "z": options["timeZoneName"] = count >= 4 ? "long" : "short"
+                case "v": options["timeZoneName"] = count >= 4 ? "longGeneric" : "shortGeneric"
+                case "O": options["timeZoneName"] = count >= 4 ? "longOffset" : "shortOffset"
+                default: return nil
+                }
+            }
+        }
+        guard !options.isEmpty, let formatter = dateFormatter(locale, options) else { return nil }
+        let cycle = formatter.resolvedOptions?().hourCycle.string ?? "h23"
+        // Friday 5 January 2001, 09:03:07 UTC.
+        var list = parts(formatter, 978_685_387)
+        guard !list.isEmpty else { return nil }
+        if dropPeriod, let period = list.firstIndex(where: { $0.0 == "dayPeriod" }) {
+            list.remove(at: period)
+            if period < list.count, list[period].0 == "literal", list[period].1.allSatisfy(\.isWhitespace) { list.remove(at: period) }
+            else if period > 0, list[period - 1].0 == "literal", list[period - 1].1.allSatisfy(\.isWhitespace) { list.remove(at: period - 1) }
+        }
+        let hasDay = list.contains { $0.0 == "day" }
+        var pattern = ""
+        for (type, value) in list {
+            let width = value.count
+            switch type {
+            case "literal":
+                var quoted = ""
+                var open = false
+                for character in value {
+                    if character == "'" { quoted += "''"; continue }
+                    let letter = character.isASCII && character.isLetter
+                    if letter != open { quoted += "'"; open = letter }
+                    quoted.append(character)
+                }
+                if open { quoted += "'" }
+                pattern += quoted
+            case "era": pattern += options["era"] == "long" ? "GGGG" : options["era"] == "narrow" ? "GGGGG" : "G"
+            case "year": pattern += width == 2 ? "yy" : "y"
+            case "month":
+                let letter = hasDay ? "M" : "L"
+                if value.allSatisfy(\.isNumber) { pattern += String(repeating: letter, count: width >= 2 ? 2 : 1) }
+                else {
+                    let style = options["month"] ?? (options["dateStyle"] == "medium" ? "short" : "long")
+                    pattern += String(repeating: letter, count: style == "long" ? 4 : style == "narrow" ? 5 : 3)
+                }
+            case "weekday":
+                let style = options["weekday"] ?? "long"
+                pattern += style == "long" ? "EEEE" : style == "narrow" ? "EEEEE" : "E"
+            case "day": pattern += width >= 2 ? "dd" : "d"
+            case "dayPeriod": pattern += "a"
+            case "hour":
+                let letter = cycle == "h11" ? "K" : cycle == "h12" ? "h" : cycle == "h24" ? "k" : "H"
+                pattern += String(repeating: letter, count: width >= 2 ? 2 : 1)
+            case "minute": pattern += "mm"
+            case "second": pattern += "ss"
+            case "fractionalSecond": pattern += String(repeating: "S", count: width)
+            case "timeZoneName":
+                switch options["timeZoneName"] {
+                case "long": pattern += "zzzz"
+                case "shortGeneric": pattern += "v"
+                case "longGeneric": pattern += "vvvv"
+                case "shortOffset": pattern += "O"
+                case "longOffset": pattern += "OOOO"
+                default: pattern += options["timeStyle"] == "full" ? "zzzz" : "z"
+                }
+            default: return nil
+            }
+        }
+        return pattern
+    }
+
+    /// A locale's month and weekday names and day periods, from formatting each month and day.
+    private static func symbols(_ locale: String) -> _DatePattern.Symbols? {
+        func names(_ options: [String: String], _ type: String, _ times: [Double]) -> [String]? {
+            guard let formatter = dateFormatter(locale, options) else { return nil }
+            let list = times.compactMap { time in parts(formatter, time).first { $0.0 == type }?.1 }
+            return list.count == times.count ? list : nil
+        }
+        // The 15th of each month of 2001, and Sunday 7 to Saturday 13 January 2001, at noon UTC.
+        let months = (0..<12).map { 979_560_000 + Double([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][$0]) * 86_400 }
+        let days = (0..<7).map { 978_868_800 + Double($0) * 86_400 }
+        guard let full = names(["day": "numeric", "month": "long"], "month", months),
+              let short = names(["day": "numeric", "month": "short"], "month", months),
+              let standalone = names(["month": "long"], "month", months),
+              let shortStandalone = names(["month": "short"], "month", months),
+              let weekdays = names(["weekday": "long"], "weekday", days),
+              let shortWeekdays = names(["weekday": "short"], "weekday", days),
+              let narrowWeekdays = names(["weekday": "narrow"], "weekday", days),
+              let periods = names(["hour": "numeric", "hourCycle": "h12"], "dayPeriod", [978_685_200, 978_728_400])
+        else { return nil }
+        return _DatePattern.Symbols(months: full, shortMonths: short, standaloneMonths: standalone, shortStandaloneMonths: shortStandalone,
+                                    weekdays: weekdays, shortWeekdays: shortWeekdays,
+                                    shortestWeekdays: shortWeekdays.map { String($0.prefix(2)) }, narrowWeekdays: narrowWeekdays,
+                                    am: periods[0], pm: periods[1])
     }
 
     /// Seconds east of GMT from "GMT", "GMT+2", "GMT-04:00" or "GMT+05:45".

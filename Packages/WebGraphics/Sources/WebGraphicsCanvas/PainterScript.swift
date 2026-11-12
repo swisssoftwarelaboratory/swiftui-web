@@ -507,7 +507,10 @@ enum PainterScript {
                 parent.shadowOffsetY = g.shadow.dy * dpr;
                 reach = parent.shadowBlur * 2 + Math.abs(parent.shadowOffsetX) + Math.abs(parent.shadowOffsetY);
               }
-              const r = clampedBox(region, source.width, source.height, 0);
+              // A shadow's group is drawn over its box widened by the shadow's reach (the extra
+              // pixels are clear): WebKit cuts a drawImage shadow off at the source rectangle, so
+              // a round button's shadow came out cut into a square.
+              const r = clampedBox(region, source.width, source.height, g.shadow ? Math.ceil(reach) : 0);
               if (r) {
                 parent.drawImage(source, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
                 if (outer) unionDeviceBox(parent, outer, r.x, r.y, r.x + r.w, r.y + r.h, reach);
@@ -557,7 +560,12 @@ enum PainterScript {
                 const cctx = copy.getContext('2d');
                 cctx.setTransform(1, 0, 0, 1, 0, 0);
                 cctx.clearRect(0, 0, b.w, b.h);
-                cctx.drawImage(target, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
+                // Inside a group (a shadow, an opacity, a filter) the target is the group's own
+                // offscreen, empty under the material: the backdrop is the page beneath, so the
+                // canvas and each enclosing group's offscreen as painted so far are stacked in order
+                // (a glass capsule with shadows blurred nothing and showed the page through it).
+                const layers = groups.length ? [groups[0].ctx.canvas].concat(groups.filter(g => !g.maskPending).map(g => g.off)) : [target];
+                for (const layer of layers) cctx.drawImage(layer, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
                 const src = blurred(copy, box, sigma, true);
                 if (saturation !== 1) {
                   // The saturation matrix (SVG's feColorMatrix convention) over the blurred box.

@@ -80,7 +80,13 @@ package final class _FocusStateBox<Value: Hashable> {
         node?.invalidate()
         guard let runtime = node?.runtime else { return }
         if let target = targets.first(where: { $0.value == newValue })?.node.node as? any _FocusTargetProviding {
-            runtime.focus(semanticsIdentifier: target.focusTargetIdentifier)
+            // A text field takes the text-field path straight away: `focus(semanticsIdentifier:)`
+            // knows it only once it is interactive, and a screen that focuses its field as it
+            // appears (still sliding in) would focus it as a plain control, with a ring and no
+            // keyboard input.
+            if let field = target.focusTargetTextField { runtime.focusTextField(field) } else {
+                runtime.focus(semanticsIdentifier: target.focusTargetIdentifier)
+            }
         } else if isUnfocusedValue(newValue) {
             runtime.focus(semanticsIdentifier: nil)
         }
@@ -121,6 +127,8 @@ package final class _FocusStateBox<Value: Hashable> {
 @MainActor
 package protocol _FocusTargetProviding: AnyObject {
     var focusTargetIdentifier: Int? { get }
+    /// The subtree's text field, if the target is one.
+    var focusTargetTextField: Int? { get }
 }
 
 /// `focused(_:)`/`focused(_:equals:)`: registers the modified view with the focus state.

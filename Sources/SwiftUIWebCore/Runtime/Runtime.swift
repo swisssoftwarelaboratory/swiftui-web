@@ -289,6 +289,7 @@ public final class Runtime {
         set {
             assetStore.catalog = newValue
             Self.hostAssetCatalog = newValue
+            AssetCatalog.app = newValue
             CustomFontRegistry.register(newValue)
             textLayouts.removeAll()
             root.child?.invalidate()

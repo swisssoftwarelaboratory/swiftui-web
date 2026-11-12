@@ -820,7 +820,8 @@ package final class TextNode: LeafNode<Text>, _HoverTracking, _PointerStyled, _I
         let transition = environment.contentTransition
         guard transition.fades, styledRuns.runs != previousRuns,
               let animation = runtime.effectiveUpdateAnimation(for: self) else { return }
-        outgoing = OutgoingText(view: previousView, environment: previousEnvironment, transition: transition)
+        outgoing = OutgoingText(view: previousView, environment: previousEnvironment,
+                                transition: transition.resolved(from: previousEnvironment.contentTransition))
         let presentation = self.presentation ?? NodePresentation()
         presentation.opacity = Tween(from: [0], to: [1], animation: animation, start: runtime.animationClock)
         self.presentation = presentation

@@ -181,7 +181,13 @@ public final class UIKitScene: HostedScene {
     public var assetCatalog: AssetCatalog = .empty { didSet { UIKitScene._catalog = assetCatalog; setNeedsFrame() } }
     /// The catalog as the image and colour initializers read it: Apple's `UIImage(named:)` and
     /// `UIColor(named:)` are callable from any context, and a wasm page has one thread.
-    nonisolated(unsafe) static var _catalog: AssetCatalog = .empty
+    nonisolated(unsafe) private static var ownCatalog: AssetCatalog = .empty
+    /// The scene's catalog, else the app's (`AssetCatalog.app`, a SwiftUI host's): a SwiftUI
+    /// app's `UIImage(named:)` finds its images before any UIKit view has been shown.
+    nonisolated static var _catalog: AssetCatalog {
+        get { ownCatalog == .empty ? AssetCatalog.app : ownCatalog }
+        set { ownCatalog = newValue }
+    }
     public var imageLoader: (any _ImageLoading)?
     /// Rasterises a recorded drawing for `UIImage.pngData()` (installed by hosts that can).
     public var imageRasterizer: ImageRasterizer?

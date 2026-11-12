@@ -587,6 +587,21 @@ import Foundation
     /// scaled when resizable, its silhouette in the foreground colour as a template; a tint set
     /// with `withTintColor` alone keeps the drawing's colours; `pngData()` goes through the
     /// host's rasteriser.
+    /// An image made from bytes (`UIImage(data:)`, as a photo an app keeps) is the bytes' image
+    /// at its pixel size, not a catalog name: a 2 × 3 PNG is 2 × 3 points and draws from its data URL.
+    @Test func imagesFromBytesDrawFromTheirData() {
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==")!
+        let image = UIImage(data: png)!
+        let r = iOSRuntime()
+        r.mount(VStack(spacing: 0) {
+            Image(uiImage: image)._probe("photo")
+            Image(uiImage: image).resizable().frame(width: 40, height: 60)._probe("resized")
+        })
+        r.layout(in: CGSize(width: 320, height: 300))
+        #expect(r.probeFrames["photo"]?.size == CGSize(width: 2, height: 3))
+        #expect(r.probeFrames["resized"]?.size == CGSize(width: 40, height: 60))
+    }
+
     @Test func renderedImagesDrawAndRasterize() {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 40)).image { context in
             UIColor(red: 0, green: 0, blue: 1, alpha: 1).setFill()

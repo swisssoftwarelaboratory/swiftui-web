@@ -74,14 +74,16 @@ extension Date {
         /// The LDML pattern the style formats with: the symbols' skeleton when any were named,
         /// else the styles (numeric date and shortened time when neither is set).
         package var pattern: String {
-            if !skeleton.isEmpty { return _DatePattern.pattern(forSkeleton: skeleton) }
+            if !skeleton.isEmpty {
+                return _DatePattern.hostPattern(locale, _DatePattern.canonical(skeleton)) ?? _DatePattern.pattern(forSkeleton: skeleton)
+            }
             let date = dateStyle?.rawValue ?? (timeStyle == nil ? 1 : 0)
             let time = timeStyle?.rawValue ?? (dateStyle == nil ? 1 : 0)
-            return _DatePattern.stylePattern(date: date, time: time)
+            return _DatePattern.hostPattern(locale, "style:\(date):\(time)") ?? _DatePattern.stylePattern(date: date, time: time)
         }
 
         public func format(_ value: Date) -> String {
-            _DatePattern.format(pattern, Date.input(value, calendar: calendar, timeZone: timeZone))
+            _DatePattern.format(pattern, Date.input(value, calendar: calendar, timeZone: timeZone), symbols: _DatePattern.symbols(locale))
         }
 
         public func locale(_ locale: Locale) -> Self { var copy = self; copy.locale = locale; return copy }
@@ -521,13 +523,16 @@ open class DateFormatter: Formatter {
     /// The `en` patterns of the styles: short "10/9/26, 3:04 PM", medium "Oct 9, 2026",
     /// long "October 9, 2026 at 3:04:05 PM GMT", full "Friday, October 9, 2026 at 3:04:05 PM
     /// Greenwich Mean Time".
-    private var stylePattern: String { _DatePattern.formatterPattern(dateStyle: Int(dateStyle.rawValue), timeStyle: Int(timeStyle.rawValue)) }
+    private var stylePattern: String {
+        _DatePattern.hostPattern(locale, "formatter:\(dateStyle.rawValue):\(timeStyle.rawValue)")
+            ?? _DatePattern.formatterPattern(dateStyle: Int(dateStyle.rawValue), timeStyle: Int(timeStyle.rawValue))
+    }
 
     /// Sets the pattern from a skeleton ("yMMMd" becomes "MMM d, y").
-    open func setLocalizedDateFormatFromTemplate(_ template: String) { explicitFormat = _DatePattern.pattern(forSkeleton: template) }
+    open func setLocalizedDateFormatFromTemplate(_ template: String) { explicitFormat = Self.dateFormat(fromTemplate: template, options: 0, locale: locale) }
 
     public class func dateFormat(fromTemplate template: String, options: Int, locale: Locale?) -> String? {
-        _DatePattern.pattern(forSkeleton: template)
+        _DatePattern.hostPattern(locale, _DatePattern.canonical(template)) ?? _DatePattern.pattern(forSkeleton: template)
     }
 
     public class func localizedString(from date: Date, dateStyle: Style, timeStyle: Style) -> String {
@@ -538,7 +543,14 @@ open class DateFormatter: Formatter {
     }
 
     open func string(from date: Date) -> String {
-        _DatePattern.format(dateFormat ?? "", Date.input(date, calendar: calendar, timeZone: timeZone))
+        var symbols = _DatePattern.symbols(locale)
+        if _DatePattern.isEnglishUS(locale) {
+            // The formatter's own words, which an app may have set.
+            symbols = _DatePattern.Symbols(months: monthSymbols, shortMonths: shortMonthSymbols, standaloneMonths: standaloneMonthSymbols,
+                                           shortStandaloneMonths: shortStandaloneMonthSymbols, weekdays: weekdaySymbols, shortWeekdays: shortWeekdaySymbols,
+                                           shortestWeekdays: _DatePattern.shortestWeekdayNames, narrowWeekdays: veryShortWeekdaySymbols, am: amSymbol, pm: pmSymbol)
+        }
+        return _DatePattern.format(dateFormat ?? "", Date.input(date, calendar: calendar, timeZone: timeZone), symbols: symbols)
     }
 
     /// The date in `string`, read by the pattern; nil when it does not fit.

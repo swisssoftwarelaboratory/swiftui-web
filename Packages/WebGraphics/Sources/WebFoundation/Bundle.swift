@@ -74,10 +74,46 @@ open class Bundle: @unchecked Sendable {
     }
     public func urls(forResourcesWithExtension ext: String?, subdirectory: String?) -> [URL]? { [] }
 
-    /// Localized strings: the key itself (or `value`), as a bundle without tables answers.
+    /// A localized string from the bundle's string tables (`scripts/assets.py` writes each
+    /// language's `<lang>.lproj/<Table>.strings.json` from the string catalogs and `.strings`
+    /// files): a `<lang>.lproj` bundle (`Bundle(path:)` of `path(forResource: "de", ofType:
+    /// "lproj")`, how an app shows a language of its own choosing) reads its language's
+    /// tables, any other bundle the language it prefers. Without an entry, `value`, else the key.
     public func localizedString(forKey key: String, value: String?, table: String?) -> String {
+        let name = table.flatMap { $0.isEmpty ? nil : $0 } ?? "Localizable"
+        if let found = Bundle._stringTable(name, in: stringFolder)?[key] { return found }
         if let value, !value.isEmpty { return value }
         return key
+    }
+
+    /// Where this bundle's tables are: its own folder for a `.lproj` bundle, else the
+    /// preferred language's under the resources.
+    private var stringFolder: String {
+        if bundlePath.hasSuffix(".lproj") {
+            let name = bundlePath.split(separator: "/").last.map(String.init) ?? bundlePath
+            return Bundle._resourceBase + name
+        }
+        return Bundle._resourceBase + (preferredLocalizations.first ?? "en") + ".lproj"
+    }
+
+    /// The tables read so far, by path; a table the bundle lacks is remembered as nil.
+    nonisolated(unsafe) private static var stringTables: [String: [String: String]?] = [:]
+
+    private static func _stringTable(_ name: String, in folder: String) -> [String: String]? {
+        let path = folder + "/" + name + ".strings.json"
+        if let known = stringTables[path] { return known }
+        // Only a language the build recorded has tables (no request, and no 404, for the rest).
+        let language = String(folder.dropFirst(_resourceBase.count).dropLast(".lproj".count))
+        guard _hostLocalizations?.languages.contains(language) ?? false else {
+            stringTables[path] = .some(nil)
+            return nil
+        }
+        var table: [String: String]?
+        if let url = URL(string: path), let data = try? Data(contentsOf: url) {
+            table = try? JSONDecoder().decode([String: String].self, from: data)
+        }
+        stringTables[path] = table
+        return table
     }
 }
 #endif

@@ -36,6 +36,10 @@ public protocol HostedScene: AnyObject {
     var hostDynamicTypeSize: String? { get set }
     /// The host's pixels per point, for values rounded to the display (`@ScaledMetric`).
     var hostDisplayScale: CGFloat { get set }
+    /// The device's safe area in points (top, leading, bottom, trailing): a phone's status bar
+    /// and home indicator, which the root view is laid out inside unless it extends into it.
+    /// Set by hosts that know it (a page in a phone's browser, a drawn phone around the app).
+    var hostSafeAreaInsets: [CGFloat] { get set }
     /// Whether the page is visible, and whether its window has focus (the scene phase).
     var hostIsVisible: Bool { get set }
     var hostIsFocused: Bool { get set }
@@ -350,6 +354,11 @@ extension HostedScene {
     }
     public var hostDisplayScale: CGFloat {
         get { 2 }
+        set {}
+    }
+    /// Scenes without a device safe area ignore it.
+    public var hostSafeAreaInsets: [CGFloat] {
+        get { [0, 0, 0, 0] }
         set {}
     }
 }

@@ -23,6 +23,11 @@ extension Image {
         if let drawing = uiImage.drawing {
             let tint = uiImage.tint.map { Color(uiColor: $0) }
             image = Image(source: .drawing(_ImageDrawing(commands: drawing.commands, size: drawing.size, scale: drawing.scale, tint: tint)), label: nil)
+        } else if !uiImage.isSystemSymbol, uiImage.name.hasPrefix("data:") {
+            // An image made from bytes (`UIImage(data:)`, a photo): its data URL, loaded as
+            // `AsyncImage` loads one, at its pixel size (not a catalog name, which found nothing).
+            let pixels = CGSize(width: uiImage.size.width * uiImage.scale, height: uiImage.size.height * uiImage.scale)
+            image = Image(source: .url(uiImage.name, pixelSize: pixels, scale: uiImage.scale), label: nil)
         } else {
             image = uiImage.isSystemSymbol ? Image(systemName: uiImage.name) : Image(uiImage.name)
         }

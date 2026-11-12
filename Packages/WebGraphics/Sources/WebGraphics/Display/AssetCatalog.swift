@@ -151,6 +151,10 @@ public struct AssetCatalog: Sendable, Equatable {
     }
 
     public static let empty = AssetCatalog()
+    /// The app's catalog as its host installed it (a SwiftUI runtime's), for the frameworks
+    /// that look images up by name without a scene of their own: UIKit's `UIImage(named:)` in a
+    /// SwiftUI app that has shown no UIKit view yet.
+    nonisolated(unsafe) public static var app: AssetCatalog = .empty
 
     public func image(named name: String) -> CatalogImage? { images[name] }
 

@@ -77,7 +77,7 @@ public final class UserDefaults: @unchecked Sendable {
     public func dictionary(forKey key: String) -> [String: Any]? { if case .dictionary(let d)? = _stored(forKey: key) { return d.mapValues(\.any) } else { return nil } }
     public func dictionaryRepresentation() -> [String: Any] {
         load()
-        return registered.merging(values) { $1 }.mapValues(\.any)
+        return registered.merging(values) { $1 }.merging(arguments) { $1 }.mapValues(\.any)
     }
 
     // MARK: Writing
@@ -105,8 +105,29 @@ public final class UserDefaults: @unchecked Sendable {
 
     private func _stored(forKey key: String) -> _Value? {
         load()
-        return values[key] ?? registered[key]
+        return arguments[key] ?? values[key] ?? registered[key]
     }
+
+    /// The argument domain: `-key value` pairs among the launch arguments answer first in the
+    /// standard defaults, above anything stored, and are never saved, as on Apple's platforms
+    /// (`simctl launch <app> -screen settings`). The browser host takes the arguments from the
+    /// page (`?args=`). Values stay strings, which the typed readers convert.
+    private lazy var arguments: [String: _Value] = {
+        guard _suiteName == "standard" else { return [:] }
+        var domain: [String: _Value] = [:]
+        let launch = Array(CommandLine.arguments.dropFirst())
+        var i = 0
+        while i + 1 < launch.count {
+            let flag = launch[i]
+            if flag.count > 1, flag.hasPrefix("-"), !flag.hasPrefix("--") {
+                domain[String(flag.dropFirst())] = .string(launch[i + 1])
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        return domain
+    }()
 
     private func load() {
         guard !loaded else { return }

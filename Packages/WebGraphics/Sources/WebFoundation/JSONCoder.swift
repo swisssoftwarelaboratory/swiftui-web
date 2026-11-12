@@ -448,9 +448,10 @@ enum _JSONWriter {
 /// A date as `JSONEncoder.DateEncodingStrategy.iso8601` writes it: UTC to the whole second,
 /// `2023-11-14T22:13:20Z`.
 func _formatISO8601(_ date: Date) -> String {
-    let seconds = Int(date.timeIntervalSince1970.rounded(.down))
-    let days = seconds >= 0 ? seconds / 86400 : (seconds - 86399) / 86400
-    let time = seconds - days * 86400
+    // Days and the second of the day in Double first: a 32-bit Int (wasm32) holds seconds only from 1901 to 2038.
+    let seconds = date.timeIntervalSince1970.rounded(.down)
+    let days = _Gregorian.day(ofSeconds: seconds)
+    let time = Int(seconds - Double(days) * 86400)
     // A civil date from days since 1970-01-01 (Howard Hinnant's, proleptic Gregorian).
     let z = days + 719468
     let era = (z >= 0 ? z : z - 146096) / 146097

@@ -45,9 +45,9 @@ package enum _ZoneRule: Hashable, Sendable {
         switch self {
         case .fixed(let offset): return offset
         case .named:
-            let year = _Gregorian.civil(days: _Gregorian.floorDiv(Int(utc.rounded(.down)), 86400)).year
-            let january = Double(_Gregorian.days(year: year, month: 1, day: 1) * 86400)
-            let july = Double(_Gregorian.days(year: year, month: 7, day: 1) * 86400)
+            let year = _Gregorian.civil(days: _Gregorian.day(ofSeconds: utc)).year
+            let january = Double(_Gregorian.days(year: year, month: 1, day: 1)) * 86400
+            let july = Double(_Gregorian.days(year: year, month: 7, day: 1)) * 86400
             return min(offset(at: january), offset(at: july))
         }
     }
@@ -56,7 +56,7 @@ package enum _ZoneRule: Hashable, Sendable {
     package func nextTransition(after utc: Double) -> Double? {
         guard case .named(let identifier) = self else { return nil }
         let cache = _ZoneCache.shared
-        let startYear = _Gregorian.civil(days: _Gregorian.floorDiv(Int(utc.rounded(.down)), 86400)).year
+        let startYear = _Gregorian.civil(days: _Gregorian.day(ofSeconds: utc)).year
         for year in startYear...(startYear + 2) {
             if let next = cache.transitions(identifier, year: year).first(where: { $0.time > utc }) { return next.time }
         }
@@ -93,8 +93,7 @@ package final class _ZoneCache: @unchecked Sendable {
     package func forget() { years = [:] }
 
     package func offset(_ identifier: String, at utc: Double) -> Int {
-        let whole = Int(utc.rounded(.down))
-        let year = _Gregorian.civil(days: _Gregorian.floorDiv(whole, 86400)).year
+        let year = _Gregorian.civil(days: _Gregorian.day(ofSeconds: utc)).year
         let entry = learn(identifier, year: year)
         var offset = entry.base
         for transition in entry.transitions where transition.time <= utc { offset = transition.offset }
@@ -106,8 +105,8 @@ package final class _ZoneCache: @unchecked Sendable {
     private func learn(_ identifier: String, year: Int) -> (base: Int, transitions: [Transition]) {
         if let known = years[identifier]?[year] { return known }
         let ask: (Double) -> Int = { time in Self.hostOffset?(identifier, time) ?? 0 }
-        let start = Double(_Gregorian.days(year: year, month: 1, day: 1) * 86400)
-        let end = Double(_Gregorian.days(year: year + 1, month: 1, day: 1) * 86400)
+        let start = Double(_Gregorian.days(year: year, month: 1, day: 1)) * 86400
+        let end = Double(_Gregorian.days(year: year + 1, month: 1, day: 1)) * 86400
         let base = ask(start)
         var transitions: [Transition] = []
         var previousTime = start, previousOffset = base

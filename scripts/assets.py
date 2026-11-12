@@ -23,6 +23,19 @@ SKIPPED_DIRS = {".build", "node_modules", ".git", ".swiftpm"}
 IDIOMS = {"universal", "mac", "iphone", "ipad", "tv", "watch", "car", "vision"}
 
 
+
+def _rglob(root, pattern):
+    """`Path.rglob` that also follows linked folders (an app's checkout linked in as `upstream/<app>`),
+    which `rglob` skips before Python 3.13. A `.build` folder is never searched."""
+    import fnmatch, os
+    found = []
+    for directory, folders, files in os.walk(root, followlinks=True):
+        folders[:] = [f for f in folders if f != ".build"]
+        for name in folders + files:
+            if fnmatch.fnmatch(name, pattern):
+                found.append(Path(directory) / name)
+    return found
+
 def warn(message):
     print(f"assets: {message}", file=sys.stderr)
 
@@ -321,7 +334,7 @@ def find_localizations(source):
     `localizations`) holds plus every `<lang>.lproj` folder; the development language is the
     first catalog's `sourceLanguage` (else the first `Base`/`en`). Empty when there is nothing."""
     languages, sources = set(), []
-    for path in sorted(source.rglob("*.xcstrings")):
+    for path in sorted(_rglob(source, "*.xcstrings")):
         if any(part in SKIPPED_DIRS for part in path.relative_to(source).parts): continue
         try:
             doc = json.loads(path.read_text())
@@ -331,7 +344,7 @@ def find_localizations(source):
             languages.add(doc["sourceLanguage"]); sources.append(doc["sourceLanguage"])
         for entry in doc.get("strings", {}).values():
             languages.update(entry.get("localizations", {}).keys())
-    for path in sorted(source.rglob("*.lproj")):
+    for path in sorted(_rglob(source, "*.lproj")):
         if any(part in SKIPPED_DIRS for part in path.relative_to(source).parts): continue
         languages.add(path.stem)
     if "Base" in languages and len(languages) > 1: languages.discard("Base")
@@ -339,10 +352,52 @@ def find_localizations(source):
         "en" if "en" in languages else (sorted(languages)[0] if languages else None))}
 
 
+def string_tables(source):
+    """The string tables `Bundle.localizedString(forKey:value:table:)` reads, per language: every
+    string catalog's (`<Table>.xcstrings`) translations and every `<lang>.lproj/<Table>.strings`,
+    as {language: {table: {key: value}}}. A string with plural or device variations keeps its
+    `other` (else its first) form."""
+    tables = {}
+    def unit_value(localization):
+        unit = localization.get("stringUnit")
+        if unit and "value" in unit: return unit["value"]
+        for kinds in (localization.get("variations") or {}).values():
+            if not isinstance(kinds, dict) or not kinds: continue
+            chosen = kinds.get("other") or next(iter(kinds.values()))
+            if isinstance(chosen, dict):
+                found = unit_value(chosen)
+                if found is not None: return found
+        return None
+    for path in sorted(_rglob(source, "*.xcstrings")):
+        if any(part in SKIPPED_DIRS for part in path.relative_to(source).parts): continue
+        try:
+            doc = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        for key, entry in doc.get("strings", {}).items():
+            for language, localization in entry.get("localizations", {}).items():
+                value = unit_value(localization)
+                if value is not None:
+                    tables.setdefault(language, {}).setdefault(path.stem, {})[key] = value
+    def unescape(text):   # a .strings literal's escapes (\n, \", \\, \U…) read as JSON's
+        return json.loads('"' + text.replace("\n", "\\n") + '"') if "\\" in text else text
+    pair = re.compile(r'"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"\s*;')
+    for folder in sorted(_rglob(source, "*.lproj")):
+        if any(part in SKIPPED_DIRS for part in folder.relative_to(source).parts) or not folder.is_dir(): continue
+        for path in sorted(folder.glob("*.strings")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                text = path.read_text(encoding="utf-16")
+            for key, value in pair.findall(text):
+                tables.setdefault(folder.stem, {}).setdefault(path.stem, {})[unescape(key)] = unescape(value)
+    return tables
+
+
 def find_fonts(source):
     found = []
     for suffix in sorted(FONT_SUFFIXES):
-        for path in sorted(source.rglob("*" + suffix)):
+        for path in sorted(_rglob(source, "*" + suffix)):
             if any(part in SKIPPED_DIRS for part in path.relative_to(source).parts): continue
             found.append(path)
     return found
@@ -351,7 +406,7 @@ def find_fonts(source):
 def find_catalogs(source):
     if source.suffix == ".xcassets": return [source]
     found = []
-    for path in sorted(source.rglob("*.xcassets")):
+    for path in sorted(_rglob(source, "*.xcassets")):
         if any(part in SKIPPED_DIRS for part in path.relative_to(source).parts): continue
         found.append(path)
     return found
@@ -386,6 +441,14 @@ def main():
         metrics["file"] = ("Fonts/" + path.name) if out else relative.as_posix()
         fonts[metrics["postScriptName"]] = metrics
     localizations = find_localizations(source)
+    # The string tables beside the images: `<lang>.lproj/<Table>.strings.json`, which the
+    # bundle reads when a string is looked up (WebFoundation's Bundle.swift).
+    if out:
+        for language, by_table in string_tables(source).items():
+            for table, strings in by_table.items():
+                target = out / f"{language}.lproj" / f"{table}.strings.json"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(strings, ensure_ascii=False, sort_keys=True))
     manifest = {"version": 1, "catalogs": [p.name for p in catalogs],
                 "images": dict(sorted(catalog.images.items())), "colors": dict(sorted(catalog.colors.items())),
                 "fonts": dict(sorted(fonts.items())),

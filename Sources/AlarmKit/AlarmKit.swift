@@ -193,3 +193,19 @@ public final class AlarmManager: @unchecked Sendable {
     public func pause(id: Alarm.ID) throws {}
     public func resume(id: Alarm.ID) throws {}
 }
+
+// Apple's `LocalizedStringResource` is Equatable but not Hashable on macOS, where the fork's
+// tests build this module too: the presentations hash a resource by its key (equality stays
+// the synthesized one).
+extension AlarmButton {
+    public func hash(into hasher: inout Hasher) { hasher.combine(text.key); hasher.combine(systemImageName) }
+}
+extension AlarmPresentation.Alert {
+    public func hash(into hasher: inout Hasher) { hasher.combine(title.key); hasher.combine(stopButton); hasher.combine(secondaryButton); hasher.combine(secondaryButtonBehavior) }
+}
+extension AlarmPresentation.Countdown {
+    public func hash(into hasher: inout Hasher) { hasher.combine(title.key); hasher.combine(pauseButton) }
+}
+extension AlarmPresentation.Paused {
+    public func hash(into hasher: inout Hasher) { hasher.combine(title.key); hasher.combine(resumeButton) }
+}

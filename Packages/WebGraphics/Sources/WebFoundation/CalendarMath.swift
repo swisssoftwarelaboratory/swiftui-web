@@ -22,6 +22,10 @@ package enum _CalendarUnit: Hashable, Sendable {
 package enum _Gregorian {
     package static func isLeap(_ year: Int) -> Bool { year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) }
 
+    /// The day number (since 1970-01-01) holding a count of seconds since 1970, worked out in
+    /// Double: a 32-bit `Int` (wasm32) holds seconds only between 1901 and 2038.
+    package static func day(ofSeconds seconds: Double) -> Int { Int((seconds / 86400).rounded(.down)) }
+
     package static func daysInMonth(year: Int, month: Int) -> Int {
         switch month {
         case 1, 3, 5, 7, 8, 10, 12: return 31
@@ -86,9 +90,10 @@ package struct _CalendarMath: Hashable, Sendable {
     package func split(_ time: Double) -> (days: Int, secondOfDay: Int, nanosecond: Int) {
         let whole = time.rounded(.down)
         let nanosecond = Int(((time - whole) * 1e9).rounded())
-        let local = Int(whole) + zone.offset(at: time)
-        let days = _Gregorian.floorDiv(local, 86400)
-        return (days, local - days * 86400, nanosecond)
+        // In Double: a 32-bit Int (wasm32) holds seconds only from 1901 to 2038.
+        let local = whole + Double(zone.offset(at: time))
+        let days = _Gregorian.day(ofSeconds: local)
+        return (days, Int(local - Double(days) * 86400), nanosecond)
     }
 
     package func fields(_ time: Double) -> _DateFields {
@@ -107,18 +112,18 @@ package struct _CalendarMath: Hashable, Sendable {
     /// The instant of civil fields; months, days and times past their range carry over.
     package func time(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0, second: Int = 0, nanosecond: Int = 0, era: Int? = nil) -> Double {
         let days = system.days(year: year, month: month, day: day, era: era)
-        let local = days * 86400 + hour * 3600 + minute * 60 + second
-        return zone.utc(forLocal: Double(local)) + Double(nanosecond) / 1e9
+        let local = Double(days) * 86400 + Double(hour) * 3600 + Double(minute) * 60 + Double(second)
+        return zone.utc(forLocal: local) + Double(nanosecond) / 1e9
     }
 
     /// The instant at the start of the day holding `time`.
-    package func startOfDay(_ time: Double) -> Double { zone.utc(forLocal: Double(split(time).days * 86400)) }
+    package func startOfDay(_ time: Double) -> Double { zone.utc(forLocal: Double(split(time).days) * 86400) }
 
     /// The instant with the same wall clock as `time` on local day `days`.
     private func sameClock(_ time: Double, onDay days: Int) -> Double {
         let (_, secondOfDay, _) = split(time)
         let fraction = time - time.rounded(.down)
-        return zone.utc(forLocal: Double(days * 86400 + secondOfDay)) + fraction
+        return zone.utc(forLocal: Double(days) * 86400 + Double(secondOfDay)) + fraction
     }
 
     /// `time` plus `value` units; months and years clamp the day to the target month's
@@ -134,7 +139,7 @@ package struct _CalendarMath: Hashable, Sendable {
                 // Civil years, so a step across an era boundary counts on.
                 let civil = _CalendarSystem.gregorian.monthsAfter(year: system.civilYear(year: f.year, era: f.era) + (unit == .year ? value : 0), month: f.month, count: months)
                 let day = min(f.day, _Gregorian.daysInMonth(year: civil.year, month: civil.month))
-                let local = Double((_Gregorian.days(year: civil.year, month: civil.month, day: day)) * 86400 + f.hour * 3600 + f.minute * 60 + f.second)
+                let local = Double(_Gregorian.days(year: civil.year, month: civil.month, day: day)) * 86400 + Double(f.hour * 3600 + f.minute * 60 + f.second)
                 return zone.utc(forLocal: local) + fraction
             }
             let (year, month) = unit == .year ? (f.year + value, f.month) : system.monthsAfter(year: f.year, month: f.month, count: months)
@@ -142,8 +147,8 @@ package struct _CalendarMath: Hashable, Sendable {
             return self.time(year: year, month: month, day: day, hour: f.hour, minute: f.minute, second: f.second, era: f.era) + fraction
         case .day, .weekday, .dayOfYear: return sameClock(time, onDay: split(time).days + value)
         case .weekOfYear, .weekOfMonth, .weekdayOrdinal, .yearForWeekOfYear: return sameClock(time, onDay: split(time).days + value * 7)
-        case .hour: return time + Double(value * 3600)
-        case .minute: return time + Double(value * 60)
+        case .hour: return time + Double(value) * 3600
+        case .minute: return time + Double(value) * 60
         case .second: return time + Double(value)
         case .nanosecond: return time + Double(value) / 1e9
         }
@@ -157,7 +162,7 @@ package struct _CalendarMath: Hashable, Sendable {
         let (days, secondOfDay, _) = split(time)
         let fraction = time - time.rounded(.down)
         func clock(hour: Int, minute: Int, second: Int) -> Double {
-            zone.utc(forLocal: Double(days * 86400 + hour * 3600 + minute * 60 + second)) + fraction
+            zone.utc(forLocal: Double(days) * 86400 + Double(hour * 3600 + minute * 60 + second)) + fraction
         }
         switch unit {
         case .era, .year, .yearForWeekOfYear: return adding(unit, value, to: time)
