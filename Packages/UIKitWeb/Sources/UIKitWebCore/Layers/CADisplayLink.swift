@@ -105,7 +105,7 @@ struct WeakDisplayLink {
     weak var link: CADisplayLink?
 }
 
-#if !canImport(QuartzCore)
+#if os(WASI) || !canImport(QuartzCore)
 // Apple's platforms have Core Animation's own.
 
 /// The clock `CACurrentMediaTime()` counts on, started the first time it is read.

@@ -4,6 +4,9 @@
 // times and durations are what the host reports back — nothing yet.
 #if os(WASI)
 @_exported import WebFoundation   // as Apple's AVFoundation re-exports Foundation
+#if os(WASI)
+@_exported import WASILibc   // libm, which Apple's Foundation re-exports through Darwin
+#endif
 #else
 import Foundation
 #endif
@@ -36,6 +39,9 @@ public final class AVPlayerItem: @unchecked Sendable {
 public class AVAsset: @unchecked Sendable {
     public let url: URL
     public init(url: URL) { self.url = url }
+    /// The asset's duration (deprecated on iOS for `load(.duration)`): unknown until a host
+    /// element has read the file, which nothing does yet.
+    public var duration: CMTime { .invalid }
 }
 
 public final class AVURLAsset: AVAsset, @unchecked Sendable {
@@ -77,6 +83,19 @@ public class AVPlayer {
     public func seek(to time: CMTime) { seekTarget = time.seconds }
     public func seek(to time: CMTime, completionHandler: @escaping @Sendable (Bool) -> Void) { seekTarget = time.seconds; completionHandler(true) }
     public func seek(to date: Date) {}
+    /// Seeks within the tolerances (exactly, here) and reports that the seek finished.
+    @discardableResult
+    public func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime) async -> Bool { seekTarget = time.seconds; return true }
+    public func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime, completionHandler: @escaping @Sendable (Bool) -> Void) {
+        seekTarget = time.seconds
+        completionHandler(true)
+    }
+    /// Loads media ahead of playing at `rate`: the host element buffers on its own, so this
+    /// reports ready at once.
+    @discardableResult
+    public func preroll(atRate rate: Float) async -> Bool { currentItem != nil }
+    public func preroll(atRate rate: Float, completionHandler: (@Sendable (Bool) -> Void)?) { completionHandler?(currentItem != nil) }
+    public func cancelPendingPrerolls() {}
     public func addPeriodicTimeObserver(forInterval interval: CMTime, queue: Any? = nil, using block: @escaping @Sendable (CMTime) -> Void) -> Any { _TimeObserver() }
     public func removeTimeObserver(_ observer: Any) {}
 }

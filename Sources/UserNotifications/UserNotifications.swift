@@ -7,6 +7,9 @@
 // `UserPermissionsInteractor` and `PushNotificationsHandler`.
 // Apple's frameworks re-export Foundation: a file importing only this module names NSObject and Data.
 @_exported import WebFoundation
+#if os(WASI)
+@_exported import WASILibc   // libm, which Apple's Foundation re-exports through Darwin
+#endif
 
 // MARK: - The host
 
@@ -127,7 +130,21 @@ public final class UNMutableNotificationContent: UNNotificationContent, @uncheck
 public final class UNNotificationSound: @unchecked Sendable {
     public static let `default` = UNNotificationSound()
     public static let defaultCritical = UNNotificationSound()
-    public static func named(_ name: String) -> UNNotificationSound { UNNotificationSound() }
+    public static func named(_ name: String) -> UNNotificationSound { UNNotificationSound(named: UNNotificationSoundName(name)) }
+    /// The sound's file in the app bundle (the page's notifications play the browser's sound).
+    public let name: UNNotificationSoundName?
+    init() { name = nil }
+    /// A sound from a file in the app bundle.
+    public init(named name: UNNotificationSoundName) { self.name = name }
+    public static func criticalSoundNamed(_ name: UNNotificationSoundName) -> UNNotificationSound { UNNotificationSound(named: name) }
+    public static func ringtoneSoundNamed(_ name: UNNotificationSoundName) -> UNNotificationSound { UNNotificationSound(named: name) }
+}
+
+/// The name of a sound file in the app bundle.
+public struct UNNotificationSoundName: Hashable, RawRepresentable, Sendable {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(_ rawValue: String) { self.rawValue = rawValue }
 }
 
 /// When a notification fires.

@@ -253,6 +253,11 @@ extension View {
         modifier(_ToolbarVisibilityModifier(visibility: bars.isEmpty || bars.contains(where: { $0 == .automatic || $0 == .windowToolbar || $0 == .navigationBar }) ? visibility : .automatic))
     }
 
+    /// Shows or hides the bars (iOS 18's name for `toolbar(_:for:)`).
+    nonisolated public func toolbarVisibility(_ visibility: Visibility, for bars: ToolbarPlacement...) -> some View {
+        modifier(_ToolbarVisibilityModifier(visibility: bars.isEmpty || bars.contains(where: { $0 == .automatic || $0 == .windowToolbar || $0 == .navigationBar }) ? visibility : .automatic))
+    }
+
     /// Fills the bars with the style: the window toolbar's painted chrome, the iOS navigation
     /// bar (a bar behind the title and items instead of iOS 26's bare top), the iOS tab bar's
     /// capsule (the style instead of the glass).

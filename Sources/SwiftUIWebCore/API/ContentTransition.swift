@@ -19,6 +19,11 @@ public struct ContentTransition: Hashable, Sendable {
     public static func numericText(countsDown: Bool = false) -> ContentTransition {
         ContentTransition(kind: .numericText(countsDown: countsDown))
     }
+    /// A numeric roll for a text showing `value`. Apple's picks the direction from how the
+    /// value changes; here it rolls up, as `numericText()` does.
+    public static func numericText(value: Double) -> ContentTransition {
+        ContentTransition(kind: .numericText(countsDown: false))
+    }
     /// A symbol effect (a crossfade here).
     public static let symbolEffect = ContentTransition(kind: .symbolEffect)
 

@@ -71,6 +71,15 @@ public final class UIImage: Hashable, @unchecked Sendable {
         self.init(name: file, isSystemSymbol: false, scale: scale, size: CGSize(width: pixels.width / scale, height: pixels.height / scale), data: data, pixelSize: pixels)
     }
 
+    /// An image from the file at `path` (a bundle resource on the web), at the scale its name
+    /// carries (`@2x`, `@3x`); nil when the file is missing or not an image.
+    public convenience init?(contentsOfFile path: String) {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        let name = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        let scale: CGFloat = name.hasSuffix("@3x") ? 3 : name.hasSuffix("@2x") ? 2 : 1
+        self.init(data: data, scale: scale)
+    }
+
     /// An image that cycles through `images` over `duration` seconds in an image view.
     public static func animatedImage(with images: [UIImage], duration: TimeInterval) -> UIImage? {
         guard let first = images.first else { return nil }

@@ -14,13 +14,36 @@ open class NSParagraphStyle: @unchecked Sendable {
     public internal(set) var alignment: NSTextAlignment = .natural
     public internal(set) var lineBreakMode: NSLineBreakMode = .byWordWrapping
     public internal(set) var lineSpacing: CGFloat = 0
+    /// Line height bounds (0: none), kept for the app; the labels lay lines out at their
+    /// font's height.
+    public internal(set) var minimumLineHeight: CGFloat = 0
+    public internal(set) var maximumLineHeight: CGFloat = 0
+    public internal(set) var lineHeightMultiple: CGFloat = 0
+    public internal(set) var paragraphSpacing: CGFloat = 0
+    /// How lines break around words (`.standard` by default, as on iOS); kept, the labels break
+    /// at the last word that fits.
+    public internal(set) var lineBreakStrategy: LineBreakStrategy = .standard
     public init() {}
+
+    /// The strategies for breaking lines while laying out paragraphs.
+    public struct LineBreakStrategy: OptionSet, Sendable {
+        public let rawValue: UInt
+        public init(rawValue: UInt) { self.rawValue = rawValue }
+        public static let pushOut = LineBreakStrategy(rawValue: 1 << 0)
+        public static let hangulWordPriority = LineBreakStrategy(rawValue: 1 << 16)
+        public static let standard = LineBreakStrategy(rawValue: 0xFFFF)
+    }
     public static var `default`: NSParagraphStyle { NSParagraphStyle() }
     public func mutableCopy() -> Any {
         let copy = NSMutableParagraphStyle()
         copy.alignment = alignment
         copy.lineBreakMode = lineBreakMode
         copy.lineSpacing = lineSpacing
+        copy.minimumLineHeight = minimumLineHeight
+        copy.maximumLineHeight = maximumLineHeight
+        copy.lineHeightMultiple = lineHeightMultiple
+        copy.paragraphSpacing = paragraphSpacing
+        copy.lineBreakStrategy = lineBreakStrategy
         return copy
     }
 }
@@ -29,6 +52,11 @@ open class NSMutableParagraphStyle: NSParagraphStyle, @unchecked Sendable {
     open override var alignment: NSTextAlignment { get { super.alignment } set { super.alignment = newValue } }
     open override var lineBreakMode: NSLineBreakMode { get { super.lineBreakMode } set { super.lineBreakMode = newValue } }
     open override var lineSpacing: CGFloat { get { super.lineSpacing } set { super.lineSpacing = newValue } }
+    open override var minimumLineHeight: CGFloat { get { super.minimumLineHeight } set { super.minimumLineHeight = newValue } }
+    open override var maximumLineHeight: CGFloat { get { super.maximumLineHeight } set { super.maximumLineHeight = newValue } }
+    open override var lineHeightMultiple: CGFloat { get { super.lineHeightMultiple } set { super.lineHeightMultiple = newValue } }
+    open override var paragraphSpacing: CGFloat { get { super.paragraphSpacing } set { super.paragraphSpacing = newValue } }
+    open override var lineBreakStrategy: LineBreakStrategy { get { super.lineBreakStrategy } set { super.lineBreakStrategy = newValue } }
 }
 
 extension NSAttributedString {
@@ -46,6 +74,7 @@ extension NSAttributedString.Key {
     public static let underlineColor = NSAttributedString.Key("NSUnderlineColor")
     public static let strikethroughColor = NSAttributedString.Key("NSStrikethroughColor")
     public static let kern = NSAttributedString.Key("NSKern")
+    public static let baselineOffset = NSAttributedString.Key("NSBaselineOffset")
     public static let link = NSAttributedString.Key("NSLink")
     public static let attachment = NSAttributedString.Key("NSAttachment")
 }

@@ -151,6 +151,11 @@ extension StringProtocol {
         }
         return result
     }
+    /// The string in uppercase, lowercase or capitalized for a locale: the root locale's case
+    /// mapping, as the properties above (no per-language rules).
+    public func uppercased(with locale: Locale?) -> String { String(self).uppercased() }
+    public func lowercased(with locale: Locale?) -> String { String(self).lowercased() }
+    public func capitalized(with locale: Locale?) -> String { localizedCapitalized }
     public var localizedLowercase: String { String(self).lowercased() }
     public var localizedUppercase: String { String(self).uppercased() }
 

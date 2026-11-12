@@ -73,8 +73,11 @@ package final class _GraphicsRecorder {
     }
 }
 
-/// An immediate-mode drawing destination, and its current state.
-public struct GraphicsContext {
+/// An immediate-mode drawing destination, and its current state. Its drawing methods are
+/// nonisolated, as Apple's are (an app draws from free functions and nonisolated helpers); a page
+/// has one thread, so they run the main-actor recorder in place, and the context is
+/// `@unchecked Sendable` for that hand-over.
+public struct GraphicsContext: @unchecked Sendable {
     package let recorder: _GraphicsRecorder
     /// The current transform from the context's space to the canvas's.
     public var transform: CGAffineTransform = .identity
@@ -87,7 +90,7 @@ public struct GraphicsContext {
     /// Filters applied to each operation that follows (`addFilter`), in order.
     package var filters: [Filter] = []
     /// The environment of the canvas view.
-    @MainActor public var environment: EnvironmentValues { recorder.environment }
+    public var environment: EnvironmentValues { _readOnMainActor { recorder.environment } }
 
     package init(recorder: _GraphicsRecorder) { self.recorder = recorder }
 
@@ -223,101 +226,117 @@ public struct GraphicsContext {
     }
 
     /// Fills a path with the given shading.
-    @MainActor public func fill(_ path: Path, with shading: Shading, style: FillStyle = FillStyle()) {
-        guard opacity > 0 else { return }
-        let transformed = path.applying(transform)
-        if case .tiled(let image, let origin, let scale) = shading.kind {
-            // The image repeated over the path: a clip to the path, then the image tiled across
-            // the clip's bounds from the origin.
-            guard let draw = resolvedImage(image, in: CGRect(origin: origin, size: .zero), scale: scale, tiling: transformed.boundingRect) else { return }
-            withState(bounds: transformed.boundingRect) { list in
-                list.append(.save)
-                list.append(.clipPath(transformed, eoFill: style.isEOFilled))
-                list.append(.drawImage(draw))
-                list.append(.restore)
+    public func fill(_ path: Path, with shading: Shading, style: FillStyle = FillStyle()) {
+        _readOnMainActor {
+            guard opacity > 0 else { return }
+            let transformed = path.applying(transform)
+            if case .tiled(let image, let origin, let scale) = shading.kind {
+                // The image repeated over the path: a clip to the path, then the image tiled across
+                // the clip's bounds from the origin.
+                guard let draw = resolvedImage(image, in: CGRect(origin: origin, size: .zero), scale: scale, tiling: transformed.boundingRect) else { return }
+                withState(bounds: transformed.boundingRect) { list in
+                    list.append(.save)
+                    list.append(.clipPath(transformed, eoFill: style.isEOFilled))
+                    list.append(.drawImage(draw))
+                    list.append(.restore)
+                }
+                return
             }
-            return
+            if let gradient = shading.gradient(bounds: transformed.boundingRect, transform: transform, environment: environment) {
+                withState(bounds: transformed.boundingRect) { $0.append(.fillGradient(transformed, gradient, eoFill: style.isEOFilled)) }
+                return
+            }
+            let color = shading.resolve(in: environment)
+            withState(bounds: transformed.boundingRect) { $0.append(.fillPath(transformed, color, eoFill: style.isEOFilled)) }
         }
-        if let gradient = shading.gradient(bounds: transformed.boundingRect, transform: transform, environment: environment) {
-            withState(bounds: transformed.boundingRect) { $0.append(.fillGradient(transformed, gradient, eoFill: style.isEOFilled)) }
-            return
-        }
-        let color = shading.resolve(in: environment)
-        withState(bounds: transformed.boundingRect) { $0.append(.fillPath(transformed, color, eoFill: style.isEOFilled)) }
     }
 
     /// Strokes a path with the given shading and line width.
-    @MainActor public func stroke(_ path: Path, with shading: Shading, lineWidth: CGFloat = 1) {
-        stroke(path, with: shading, style: StrokeStyle(lineWidth: lineWidth))
+    public func stroke(_ path: Path, with shading: Shading, lineWidth: CGFloat = 1) {
+        _readOnMainActor {
+            stroke(path, with: shading, style: StrokeStyle(lineWidth: lineWidth))
+        }
     }
 
     /// Strokes a path with the given shading and stroke style.
-    @MainActor public func stroke(_ path: Path, with shading: Shading, style: StrokeStyle) {
-        guard opacity > 0 else { return }
-        let color = shading.resolve(in: environment)
-        let scale = (transform.a * transform.a + transform.b * transform.b).squareRoot()
-        var scaled = style
-        scaled.lineWidth = style.lineWidth * (scale > 0 ? scale : 1)
-        let transformed = path.applying(transform)
-        let bounds = transformed.boundingRect.insetBy(dx: -scaled.lineWidth, dy: -scaled.lineWidth)
-        if let gradient = shading.gradient(bounds: transformed.boundingRect, transform: transform, environment: environment) {
-            withState(bounds: bounds) { $0.append(.strokeGradient(transformed, style: scaled, gradient)) }
-            return
+    public func stroke(_ path: Path, with shading: Shading, style: StrokeStyle) {
+        _readOnMainActor {
+            guard opacity > 0 else { return }
+            let color = shading.resolve(in: environment)
+            let scale = (transform.a * transform.a + transform.b * transform.b).squareRoot()
+            var scaled = style
+            scaled.lineWidth = style.lineWidth * (scale > 0 ? scale : 1)
+            let transformed = path.applying(transform)
+            let bounds = transformed.boundingRect.insetBy(dx: -scaled.lineWidth, dy: -scaled.lineWidth)
+            if let gradient = shading.gradient(bounds: transformed.boundingRect, transform: transform, environment: environment) {
+                withState(bounds: bounds) { $0.append(.strokeGradient(transformed, style: scaled, gradient)) }
+                return
+            }
+            withState(bounds: bounds) { $0.append(.strokePath(transformed, style: scaled, color)) }
         }
-        withState(bounds: bounds) { $0.append(.strokePath(transformed, style: scaled, color)) }
     }
 
     /// Draws a text view, positioned by an anchor point.
-    @MainActor public func draw(_ text: Text, at point: CGPoint, anchor: UnitPoint = .center) {
-        let resolved = resolve(text)
-        let size = resolved.measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity))
-        draw(resolved, in: CGRect(x: point.x - size.width * anchor.x, y: point.y - size.height * anchor.y, width: size.width, height: size.height))
+    public func draw(_ text: Text, at point: CGPoint, anchor: UnitPoint = .center) {
+        _readOnMainActor {
+            let resolved = resolve(text)
+            let size = resolved.measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity))
+            draw(resolved, in: CGRect(x: point.x - size.width * anchor.x, y: point.y - size.height * anchor.y, width: size.width, height: size.height))
+        }
     }
 
     /// Draws a text view, wrapped and positioned at the top leading corner of a rectangle.
-    @MainActor public func draw(_ text: Text, in rect: CGRect) {
-        draw(resolve(text), in: rect)
+    public func draw(_ text: Text, in rect: CGRect) {
+        _readOnMainActor {
+            draw(resolve(text), in: rect)
+        }
     }
 
-    @MainActor public func draw(_ text: ResolvedText, at point: CGPoint, anchor: UnitPoint = .center) {
-        let size = text.measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity))
-        draw(text, in: CGRect(x: point.x - size.width * anchor.x, y: point.y - size.height * anchor.y, width: size.width, height: size.height))
+    public func draw(_ text: ResolvedText, at point: CGPoint, anchor: UnitPoint = .center) {
+        _readOnMainActor {
+            let size = text.measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity))
+            draw(text, in: CGRect(x: point.x - size.width * anchor.x, y: point.y - size.height * anchor.y, width: size.width, height: size.height))
+        }
     }
 
     /// Draws resolved text into a rectangle (wrapped at its width, from its top leading corner).
-    @MainActor public func draw(_ text: ResolvedText, in rect: CGRect) {
-        guard opacity > 0 else { return }
-        let layout = text.layout(width: rect.width.isFinite ? rect.width : nil)
-        let isTranslation = transform.a == 1 && transform.b == 0 && transform.c == 0 && transform.d == 1
-        withState(bounds: rect.applying(transform)) { list in
-            if !isTranslation { list.append(.save); list.append(.concat(transform)) }
-            let origin = isTranslation ? CGPoint(x: rect.minX + transform.tx, y: rect.minY + transform.ty) : rect.origin
-            for line in layout.lines {
-                for fragment in line.fragments where !fragment.text.isEmpty {
-                    let run = min(max(fragment.run, 0), max(text.runs.count - 1, 0))
-                    list.append(.drawText(fragment.text, DisplayFont(text.runs[run].font),
-                                          origin: CGPoint(x: origin.x + fragment.x, y: origin.y + line.baseline), text.colors[run]))
+    public func draw(_ text: ResolvedText, in rect: CGRect) {
+        _readOnMainActor {
+            guard opacity > 0 else { return }
+            let layout = text.layout(width: rect.width.isFinite ? rect.width : nil)
+            let isTranslation = transform.a == 1 && transform.b == 0 && transform.c == 0 && transform.d == 1
+            withState(bounds: rect.applying(transform)) { list in
+                if !isTranslation { list.append(.save); list.append(.concat(transform)) }
+                let origin = isTranslation ? CGPoint(x: rect.minX + transform.tx, y: rect.minY + transform.ty) : rect.origin
+                for line in layout.lines {
+                    for fragment in line.fragments where !fragment.text.isEmpty {
+                        let run = min(max(fragment.run, 0), max(text.runs.count - 1, 0))
+                        list.append(.drawText(fragment.text, DisplayFont(text.runs[run].font),
+                                              origin: CGPoint(x: origin.x + fragment.x, y: origin.y + line.baseline), text.colors[run]))
+                    }
                 }
+                if !isTranslation { list.append(.restore) }
             }
-            if !isTranslation { list.append(.restore) }
         }
     }
 
     /// Resolves a text view for measuring and repeated drawing.
-    @MainActor public func resolve(_ text: Text) -> ResolvedText {
-        let environment = recorder.environment
-        let parts = text.parts()
-        let runs = parts.map { part -> StyledRun in
-            let font = part.modifiers.font ?? environment.font ?? environment.platformProfile.defaultFont
-            var resolved = font.resolve(in: environment)
-            if let weight = part.modifiers.weight { resolved.weight = weight; resolved.weightOverridden = true }
-            else if part.modifiers.bold { resolved.weight = environment.platformProfile.boldTraitWeight(for: resolved.textStyle); resolved.weightOverridden = true }
-            if part.modifiers.italic { resolved.italic = true }
-            return StyledRun(part.string, font: resolved)
+    public func resolve(_ text: Text) -> ResolvedText {
+        return _readOnMainActor {
+            let environment = recorder.environment
+            let parts = text.parts()
+            let runs = parts.map { part -> StyledRun in
+                let font = part.modifiers.font ?? environment.font ?? environment.platformProfile.defaultFont
+                var resolved = font.resolve(in: environment)
+                if let weight = part.modifiers.weight { resolved.weight = weight; resolved.weightOverridden = true }
+                else if part.modifiers.bold { resolved.weight = environment.platformProfile.boldTraitWeight(for: resolved.textStyle); resolved.weightOverridden = true }
+                if part.modifiers.italic { resolved.italic = true }
+                return StyledRun(part.string, font: resolved)
+            }
+            let inherited = environment.foregroundColor ?? .primary
+            let colors = parts.map { ($0.modifiers.foregroundColor ?? inherited).resolve(in: environment) }
+            return ResolvedText(runs: runs, colors: colors, engine: recorder.textEngine, options: environment.textLayoutOptions)
         }
-        let inherited = environment.foregroundColor ?? .primary
-        let colors = parts.map { ($0.modifiers.foregroundColor ?? inherited).resolve(in: environment) }
-        return ResolvedText(runs: runs, colors: colors, engine: recorder.textEngine, options: environment.textLayoutOptions)
     }
 
     /// Draws a nested layer with a copy of the context (the layer's drawing goes through this
@@ -330,7 +349,7 @@ public struct GraphicsContext {
     // MARK: Images
 
     /// An image resolved for measuring and repeated drawing.
-    public struct ResolvedImage {
+    public struct ResolvedImage: @unchecked Sendable {
         package let image: Image
         /// The image's size in points (zero when the name did not resolve).
         public let size: CGSize
@@ -341,42 +360,52 @@ public struct GraphicsContext {
     }
 
     /// Resolves an image to its size at the canvas's environment.
-    @MainActor public func resolve(_ image: Image) -> ResolvedImage {
-        guard let node = makeNode(for: image) else { return ResolvedImage(image: image, size: .zero, baseline: 0, shading: nil) }
-        let size = node.sizeThatFits(.unspecified)
-        let baseline = node.dimensions(in: .unspecified)[VerticalAlignment.firstTextBaseline]
-        node.unmount()
-        return ResolvedImage(image: image, size: size, baseline: baseline.isFinite ? baseline : size.height, shading: nil)
+    public func resolve(_ image: Image) -> ResolvedImage {
+        return _readOnMainActor {
+            guard let node = makeNode(for: image) else { return ResolvedImage(image: image, size: .zero, baseline: 0, shading: nil) }
+            let size = node.sizeThatFits(.unspecified)
+            let baseline = node.dimensions(in: .unspecified)[VerticalAlignment.firstTextBaseline]
+            node.unmount()
+            return ResolvedImage(image: image, size: size, baseline: baseline.isFinite ? baseline : size.height, shading: nil)
+        }
     }
 
     /// Draws an image, resized into a rectangle.
-    @MainActor public func draw(_ image: Image, in rect: CGRect, style: FillStyle = FillStyle()) {
-        draw(resolve(image), in: rect)
+    public func draw(_ image: Image, in rect: CGRect, style: FillStyle = FillStyle()) {
+        _readOnMainActor {
+            draw(resolve(image), in: rect)
+        }
     }
 
     /// Draws an image at its own size, positioned by an anchor point.
-    @MainActor public func draw(_ image: Image, at point: CGPoint, anchor: UnitPoint = .center) {
-        draw(resolve(image), at: point, anchor: anchor)
+    public func draw(_ image: Image, at point: CGPoint, anchor: UnitPoint = .center) {
+        _readOnMainActor {
+            draw(resolve(image), at: point, anchor: anchor)
+        }
     }
 
-    @MainActor public func draw(_ image: ResolvedImage, at point: CGPoint, anchor: UnitPoint = .center) {
-        draw(image, in: CGRect(x: point.x - image.size.width * anchor.x, y: point.y - image.size.height * anchor.y,
-                               width: image.size.width, height: image.size.height))
+    public func draw(_ image: ResolvedImage, at point: CGPoint, anchor: UnitPoint = .center) {
+        _readOnMainActor {
+            draw(image, in: CGRect(x: point.x - image.size.width * anchor.x, y: point.y - image.size.height * anchor.y,
+                                   width: image.size.width, height: image.size.height))
+        }
     }
 
     /// Draws a resolved image into a rectangle: the image's node, resizable, painted through
     /// the context's transform (a translation moves the rect; anything else wraps the paint).
-    @MainActor public func draw(_ image: ResolvedImage, in rect: CGRect) {
-        guard opacity > 0, rect.width > 0, rect.height > 0 else { return }
-        var resized = image.image.resizable()
-        var tint: Color?
-        if let shading = image.shading, case .color(let color) = shading.kind {
-            resized = resized.renderingMode(.template)
-            tint = color
+    public func draw(_ image: ResolvedImage, in rect: CGRect) {
+        _readOnMainActor {
+            guard opacity > 0, rect.width > 0, rect.height > 0 else { return }
+            var resized = image.image.resizable()
+            var tint: Color?
+            if let shading = image.shading, case .color(let color) = shading.kind {
+                resized = resized.renderingMode(.template)
+                tint = color
+            }
+            guard let node = makeNode(for: resized, tint: tint) else { return }
+            paint(node, in: rect)
+            node.unmount()
         }
-        guard let node = makeNode(for: resized, tint: tint) else { return }
-        paint(node, in: rect)
-        node.unmount()
     }
 
     /// Paints a node into a rectangle of the context's space.
@@ -428,28 +457,35 @@ public struct GraphicsContext {
     // MARK: Symbols
 
     /// A symbol view resolved for drawing.
-    public struct ResolvedSymbol {
+    public struct ResolvedSymbol: @unchecked Sendable {
         package let node: ViewNode
         /// The symbol's ideal size.
         public let size: CGSize
     }
 
     /// Finds the `symbols` child tagged `id` and resolves it to its ideal size.
-    @MainActor public func resolveSymbol<ID: Hashable>(id: ID) -> ResolvedSymbol? {
-        guard let entry = recorder.symbols.first(where: { $0.id == AnyHashable(id) }) else { return nil }
-        return ResolvedSymbol(node: entry.node, size: entry.node.sizeThatFits(.unspecified))
+    public func resolveSymbol<ID: Hashable>(id: ID) -> ResolvedSymbol? {
+        nonisolated(unsafe) let id = id
+        return _readOnMainActor {
+            guard let entry = recorder.symbols.first(where: { $0.id == AnyHashable(id) }) else { return nil }
+            return ResolvedSymbol(node: entry.node, size: entry.node.sizeThatFits(.unspecified))
+        }
     }
 
     /// Draws a symbol at its ideal size, positioned by an anchor point.
-    @MainActor public func draw(_ symbol: ResolvedSymbol, at point: CGPoint, anchor: UnitPoint = .center) {
-        draw(symbol, in: CGRect(x: point.x - symbol.size.width * anchor.x, y: point.y - symbol.size.height * anchor.y,
-                                width: symbol.size.width, height: symbol.size.height))
+    public func draw(_ symbol: ResolvedSymbol, at point: CGPoint, anchor: UnitPoint = .center) {
+        _readOnMainActor {
+            draw(symbol, in: CGRect(x: point.x - symbol.size.width * anchor.x, y: point.y - symbol.size.height * anchor.y,
+                                    width: symbol.size.width, height: symbol.size.height))
+        }
     }
 
     /// Draws a symbol resized into a rectangle.
-    @MainActor public func draw(_ symbol: ResolvedSymbol, in rect: CGRect) {
-        guard opacity > 0, rect.width > 0, rect.height > 0 else { return }
-        paint(symbol.node, in: rect)
+    public func draw(_ symbol: ResolvedSymbol, in rect: CGRect) {
+        _readOnMainActor {
+            guard opacity > 0, rect.width > 0, rect.height > 0 else { return }
+            paint(symbol.node, in: rect)
+        }
     }
 
     // MARK: Filters
@@ -573,7 +609,7 @@ package protocol _ImageDrawProviding: AnyObject {
 }
 
 /// A text view resolved for drawing in a graphics context.
-public struct ResolvedText {
+public struct ResolvedText: @unchecked Sendable {
     package let runs: [StyledRun]
     package let colors: [RGBA]
     package let engine: any TextEngine
@@ -584,13 +620,17 @@ public struct ResolvedText {
     }
 
     /// The size of the text when drawn in the given amount of space.
-    @MainActor public func measure(in size: CGSize) -> CGSize {
-        layout(width: size.width.isFinite ? size.width : nil).size
+    public func measure(in size: CGSize) -> CGSize {
+        return _readOnMainActor {
+            layout(width: size.width.isFinite ? size.width : nil).size
+        }
     }
 
     /// The first baseline of the text when drawn in the given amount of space.
-    @MainActor public func firstBaseline(in size: CGSize) -> CGFloat {
-        layout(width: size.width.isFinite ? size.width : nil).firstBaseline
+    public func firstBaseline(in size: CGSize) -> CGFloat {
+        return _readOnMainActor {
+            layout(width: size.width.isFinite ? size.width : nil).firstBaseline
+        }
     }
 }
 

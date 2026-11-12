@@ -524,4 +524,15 @@ extension View {
     nonisolated public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> some View {
         modifier(_TapGestureModifier(count: count, action: _ActionBox(plain: action)))
     }
+
+    /// Adds an action to perform with the tap's location when this view recognizes a tap
+    /// (a `SpatialTapGesture` in the coordinate space).
+    nonisolated public func onTapGesture(count: Int = 1, coordinateSpace: some CoordinateSpaceProtocol = .local, perform action: @escaping (CGPoint) -> Void) -> some View {
+        nonisolated(unsafe) let action = action
+        let space = coordinateSpace.coordinateSpace
+        let gesture = MainActor.assumeIsolated {
+            SpatialTapGesture(count: count, coordinateSpace: space).onEnded { action($0.location) }
+        }
+        return modifier(_GestureModifier(gesture: gesture, priority: .normal, mask: .all))
+    }
 }

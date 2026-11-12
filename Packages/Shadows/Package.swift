@@ -55,6 +55,12 @@ let package = Package(
         .library(name: "Dispatch", targets: ["Dispatch"]),
         .library(name: "CoreFoundation", targets: ["CoreFoundation"]),
         .library(name: "CommonCrypto", targets: ["CommonCrypto"]),
+        .library(name: "simd", targets: ["simd"]),
+        .library(name: "Metal", targets: ["Metal"]),
+        .library(name: "QuartzCore", targets: ["QuartzCore"]),
+        .library(name: "CoreAudio", targets: ["CoreAudio"]),
+        .library(name: "HealthKit", targets: ["HealthKit"]),
+        .library(name: "PhotosUI", targets: ["PhotosUI"]),
     ],
     // `CoreData` (decision 0024): `import Foundation` re-exports WebCoreData too, as Apple's
     // declares `NSPredicate`, `NSSortDescriptor` and `NSExpression`. Enable it with SwiftUIWeb's.
@@ -67,6 +73,7 @@ let package = Package(
     dependencies: [
         .package(path: "../WebGraphics"),
         .package(name: "SwiftUIWeb", path: "../.."),
+        .package(path: "../UIKitWeb"),
     ],
     targets: [
         .target(
@@ -182,5 +189,20 @@ let package = Package(
             dependencies: [.product(name: "WebCoreData", package: "SwiftUIWeb")],
             swiftSettings: [.treatAllWarnings(as: .error)]
         ),
+        // Graphics and device frameworks a page has no hardware for (no GPU device, no Health
+        // store, no photo library): `simd`'s functions over the standard library's vectors,
+        // `Metal` with no device, `QuartzCore` (UIKitWeb's layers, and a Metal layer with no
+        // drawable), `CoreAudio` (AudioToolbox's CoreAudioTypes), `HealthKit` with no store,
+        // `PhotosUI` with an inert picker. Apps take the paths they have for missing hardware.
+        .target(name: "simd", swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "Metal", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(
+            name: "QuartzCore",
+            dependencies: ["Metal", .product(name: "UIKitWebCore", package: "UIKitWeb")],
+            swiftSettings: [.treatAllWarnings(as: .error)]
+        ),
+        .target(name: "CoreAudio", dependencies: [.product(name: "AudioToolbox", package: "SwiftUIWeb")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "HealthKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "PhotosUI", dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb")], swiftSettings: [.treatAllWarnings(as: .error)]),
     ]
 )

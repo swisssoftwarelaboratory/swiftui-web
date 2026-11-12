@@ -94,12 +94,31 @@ public struct DataRepresentation<Item>: TransferRepresentation {
         self.importing = nil
     }
 
+    /// Apple's exporter is `async`; a drag's payload must be ready when the host asks for it,
+    /// so an async exporter (one that renders, say) has no data to give and exports nothing.
+    @_disfavoredOverload
+    public init(exportedContentType: UTType, exporting: @escaping @Sendable (Item) async throws -> Data) {
+        self.contentType = exportedContentType
+        self.exporting = { _ in throw _AsyncTransferExport() }
+        self.importing = nil
+    }
+
     public var _exporters: [_TransferExporter<Item>] {
         let exporting = exporting, importing = importing
         return [_TransferExporter(contentType: contentType, exportedType: Data.self,
                                   export: { try? exporting($0) },
                                   importer: importing.map { imp in { ($0 as? Data).flatMap { try? imp($0) } } })]
     }
+}
+
+/// An async export asked for synchronously (`DataRepresentation(exportedContentType:exporting:)`).
+struct _AsyncTransferExport: Error {}
+
+extension TransferRepresentation {
+    /// The file name to suggest for the exported item (no file is named on the web).
+    public func suggestedFileName(_ fileName: String) -> Self { self }
+    /// The file name to suggest for an exported item (no file is named on the web).
+    public func suggestedFileName(_ fileName: @escaping (Item) -> String?) -> Self { self }
 }
 
 /// A file sent by a `FileRepresentation` export.

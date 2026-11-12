@@ -201,6 +201,11 @@ package final class NavigationStackNode: LayoutNode<_NavigationStackHost>, _Fram
         let title = (top.descendants(where: { $0 is any _NavigationTitleProviding }).first as? any _NavigationTitleProviding)?._navigationTitle
         let mode = (top.descendants(where: { $0 is any _NavigationTitleDisplayModeProviding }).first as? any _NavigationTitleDisplayModeProviding)?._titleDisplayMode ?? .automatic
         let hidesBack = (top.descendants(where: { $0 is any _NavigationBackButtonHiddenProviding }).first as? any _NavigationBackButtonHiddenProviding)?._hidesBackButton ?? false
+        // `toolbar(.hidden, for: .navigationBar)` / `toolbarVisibility` in the screen: no bar,
+        // so no title, items or back button (the screen draws its own chrome, as on iOS).
+        let barVisibility = (top.descendants(where: { ($0 as? any _NavigationBarVisibilityProviding)?._navigationBarVisibility != nil }).first
+            as? any _NavigationBarVisibilityProviding)?._navigationBarVisibility
+        if barVisibility == .hidden { return nil }
         let back = (index > 0 || effectiveRootBack != nil) && !hidesBack
         let items = toolbarItems(over: nodes).filter(\.placement.isInIOSNavigationBar)
         guard title != nil || back || !items.isEmpty else { return nil }
@@ -982,6 +987,12 @@ package final class NavigationBackButtonNode: LeafNode<_NavigationBackButton>, _
         let tint = (environment.isEnabled ? Color.accentColor.resolve(in: environment) : environment._ink(PlatformMetrics.disabledLabelOpacity)).multiplyingAlpha(by: opacity)
         list.append(.strokePath(chevron, style: StrokeStyle(lineWidth: PlatformMetrics.navigationBackChevronStroke, lineCap: .round, lineJoin: .round), tint))
     }
+}
+
+/// A node that sets the navigation bar's visibility (`toolbar(_:for:)`, `toolbarVisibility`).
+@MainActor
+package protocol _NavigationBarVisibilityProviding: AnyObject {
+    var _navigationBarVisibility: Visibility? { get }
 }
 
 /// Records a `navigationBarBackButtonHidden`; transparent for layout.

@@ -77,6 +77,8 @@ open class UILabel: UIView {
     open var textColor: UIColor = .label { didSet { setNeedsDisplay() } }
     open var textAlignment: NSTextAlignment = .natural { didSet { setNeedsDisplay() } }
     open var lineBreakMode: NSLineBreakMode = .byTruncatingTail { didSet { textDidChange() } }
+    /// How lines break around words; kept (lines break at the last word that fits).
+    open var lineBreakStrategy: NSParagraphStyle.LineBreakStrategy = .standard
     /// 0 lays out as many lines as the text needs.
     open var numberOfLines = 1 { didSet { textDidChange() } }
     open var adjustsFontSizeToFitWidth = false

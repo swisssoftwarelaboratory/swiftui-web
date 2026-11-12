@@ -551,4 +551,11 @@ public struct Calendar: Hashable, Sendable, Codable, CustomStringConvertible {
 
     public var description: String { identifier.rawValue }
 }
+
+extension Locale {
+    /// A day of the week (Foundation's, as AlarmKit's weekly recurrence and `Locale.firstDayOfWeek` name it).
+    public enum Weekday: String, Codable, Hashable, Sendable, CaseIterable {
+        case sunday, monday, tuesday, wednesday, thursday, friday, saturday
+    }
+}
 #endif

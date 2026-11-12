@@ -39,6 +39,8 @@ let package = Package(
         .library(name: "CoreHaptics", targets: ["CoreHaptics"]),
         .library(name: "WebCoreImage", targets: ["WebCoreImage"]),
         .library(name: "WidgetKit", targets: ["WidgetKit"]),
+        .library(name: "ActivityKit", targets: ["ActivityKit"]),
+        .library(name: "AlarmKit", targets: ["AlarmKit"]),
         .library(name: "EventKit", targets: ["EventKit"]),
         .library(name: "AudioToolbox", targets: ["AudioToolbox"]),
         .library(name: "StoreKit", targets: ["StoreKit"]),
@@ -94,7 +96,9 @@ let package = Package(
         .target(name: "CoreLocationHost", swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "CoreLocation", dependencies: ["CoreLocationHost", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "MapKit", dependencies: ["SwiftUI", "CoreLocation"], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "AVFoundation", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        // The player and capture layers subclass UIKitWeb's CALayer; AudioToolbox carries the
+        // CoreAudioTypes a render block names, which Apple's AVFoundation re-exports.
+        .target(name: "AVFoundation", dependencies: ["AudioToolbox", .product(name: "UIKitWebCore", package: "UIKitWeb"), .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "SwiftData", dependencies: ["SwiftUIWebCore", "SwiftDataMacros", .product(name: "WebFoundation", package: "WebGraphics"), .product(name: "WebCombine", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
         // The `@Model`, `#Predicate` and `@ModelActor` macros (host-compiled, as `#Preview`'s plugin).
@@ -137,7 +141,12 @@ let package = Package(
                            .product(name: "WebImageIO", package: "WebGraphics", condition: .when(platforms: [.wasi]))],
             swiftSettings: [.treatAllWarnings(as: .error)]
         ),
-        .target(name: "WidgetKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        // Live Activities and alarms: neither is enabled on the web (no Lock Screen); the types
+        // are values, so an app's code for them compiles and its "off" path runs. iOS-only
+        // frameworks, so these root modules shadow nothing in a macOS build.
+        .target(name: "ActivityKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "AlarmKit", dependencies: ["ActivityKit", "AppIntents", "SwiftUI"], swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "EventKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "AudioToolbox", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
         .target(name: "Speech", dependencies: ["AVFoundation", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
