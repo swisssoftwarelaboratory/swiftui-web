@@ -71,6 +71,15 @@ public final class UIImage: Hashable, @unchecked Sendable {
         self.init(name: file, isSystemSymbol: false, scale: scale, size: CGSize(width: pixels.width / scale, height: pixels.height / scale), data: data, pixelSize: pixels)
     }
 
+    /// An image from the file at `path` (a bundle resource on the web), at the scale its name
+    /// carries (`@2x`, `@3x`); nil when the file is missing or not an image.
+    public convenience init?(contentsOfFile path: String) {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        let name = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        let scale: CGFloat = name.hasSuffix("@3x") ? 3 : name.hasSuffix("@2x") ? 2 : 1
+        self.init(data: data, scale: scale)
+    }
+
     /// An image that cycles through `images` over `duration` seconds in an image view.
     public static func animatedImage(with images: [UIImage], duration: TimeInterval) -> UIImage? {
         guard let first = images.first else { return nil }
@@ -147,20 +156,38 @@ public final class UIImage: Hashable, @unchecked Sendable {
     /// The image as PNG data: the bytes an image made from PNG data holds, else a recorded
     /// drawing rasterised by the host (nil without a host rasteriser, and for catalog images
     /// and symbols, whose files the host already has).
+    /// A catalog image's file (its largest variant) and whether it is a JPEG, read from the
+    /// app's bundle as iOS reads it (on the web, the host fetches the asset); nil for another
+    /// image or a file that cannot be read.
+    private var catalogFile: (data: Data, isJPEG: Bool)? {
+        #if os(WASI)
+        guard !isSystemSymbol, data == nil, drawing == nil, !name.isEmpty, !name.hasPrefix("data:"),
+              let variant = UIKitScene._catalog.image(named: name)?.variants.max(by: { $0.scale < $1.scale }),
+              let url = URL(string: Bundle._resourceBase + variant.file),
+              let bytes = try? Data(contentsOf: url) else { return nil }
+        let lower = variant.file.lowercased()
+        return (bytes, lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg"))
+        #else
+        return nil
+        #endif
+    }
+
     @preconcurrency @MainActor
     public func pngData() -> Data? {
         if let data, name.hasPrefix("data:image/png") { return data }
+        if let file = catalogFile, !file.isJPEG { return file.data }
         guard let drawing, let rasterizer = UIKitScene.shared.imageRasterizer else { return nil }
         var list = DisplayList()
         for command in drawing.commands { list.append(command) }
         return rasterizer(list, drawing.size, drawing.scale)
     }
 
-    /// JPEG is not made in this substrate: an image made from JPEG data returns its bytes,
-    /// another its PNG data, the quality ignored.
+    /// JPEG is not made in this substrate: an image made from JPEG data, or a catalog image
+    /// whose file is a JPEG, returns its bytes, another its PNG data, the quality ignored.
     @preconcurrency @MainActor
     public func jpegData(compressionQuality: CGFloat) -> Data? {
         if let data, name.hasPrefix("data:image/jpeg") { return data }
+        if let file = catalogFile, file.isJPEG { return file.data }
         return pngData()
     }
 

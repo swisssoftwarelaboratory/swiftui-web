@@ -64,6 +64,9 @@ package final class PresentationNode: ViewNode {
         package var interactiveDismissDisabled = false
         /// `fullScreenCover`: the content fills the window, undimmed, with no card.
         package var fullScreen = false
+        /// `presentationBackground`: the card's (a cover's window's) fill instead of the system
+        /// background; a clear style paints nothing.
+        package var background: AnyShapeStyle?
     }
     package var options = Options()
 
@@ -432,6 +435,13 @@ package final class PresentationNode: ViewNode {
         if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
     }
 
+    /// A `presentationBackground` style over `path`: nothing for a clear colour, else the style's
+    /// fill (a colour, gradient or material).
+    private func fillBackground(_ style: AnyShapeStyle, _ path: Path, in bounds: CGRect, context: PaintContext, into list: inout DisplayList) {
+        if style.base is Color, style.resolveColor(in: environment).alpha == 0 { return }
+        style._fill(path, in: bounds, eoFill: false, environment: environment, scale: context.scale, into: &list)
+    }
+
     package func paintPresentation(into list: inout DisplayList, context: PaintContext) {
         if isHostedWindow { return }
         // The dim is always black; the panel, its shadow and border follow the appearance (unverified in dark).
@@ -443,8 +453,17 @@ package final class PresentationNode: ViewNode {
         }
         let rect = context.absoluteRect(panel)
         if kind == .sheet && options.fullScreen {
-            // The cover's ground is the system background; its content paints over it.
-            list.append(.fillRect(rect, environment._controlBackground))
+            // The cover's ground is the system background (or the content's
+            // `presentationBackground`); its content paints over it.
+            if let background = options.background {
+                fillBackground(background, Path(rect), in: rect, context: context, into: &list)
+            } else {
+                list.append(.fillRect(rect, environment._controlBackground))
+            }
+            // No card: a cover is not a floating panel (no shadow ring, rounded fill or border,
+            // which hid a clear background).
+            if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+            return
         } else if kind == .sheet && m.sheetsFillWindow {
             // iOS: the large card's top corners only (it runs off the window), the medium card
             // in the glass fill with the grabber when asked for.
@@ -456,7 +475,11 @@ package final class PresentationNode: ViewNode {
                 }
             } else {
                 let extended = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height + m.sheetCornerRadius)
-                list.append(.fillRRect(extended, cornerRadius: m.sheetCornerRadius, environment._windowBackground))
+                if let background = options.background {
+                    fillBackground(background, Path(roundedRect: extended, cornerRadius: m.sheetCornerRadius), in: extended, context: context, into: &list)
+                } else {
+                    list.append(.fillRRect(extended, cornerRadius: m.sheetCornerRadius, environment._windowBackground))
+                }
             }
             // The content is clipped to the card: a navigation stack's ground (ios/sheet/nav)
             // would square the corners.
@@ -768,6 +791,7 @@ package final class PresentationOptionsNode<Content: View>: UnaryLayoutModifierN
                 if let detents = modifier.detents { presentation.options.detents = detents }
                 if let indicator = modifier.dragIndicator { presentation.options.dragIndicator = indicator }
                 if let disabled = modifier.interactiveDismissDisabled { presentation.options.interactiveDismissDisabled = disabled }
+                if let background = modifier.background { presentation.options.background = background }
                 return
             }
             current = node.parent

@@ -25,7 +25,8 @@ open class UILabel: UIView {
     open var font: UIFont = .systemFont(ofSize: 17) { didSet { if font != oldValue { textDidChange() } } }
 
     /// Attributed text: its runs' fonts and colours draw as they are (`.font`,
-    /// `.foregroundColor`; a paragraph style's alignment and line break mode apply); `text` and
+    /// `.foregroundColor`, `.kern`, `.baselineOffset`; a paragraph style's alignment, line break
+    /// mode, line heights and line spacing apply); `text` and
     /// `font` follow the string and its first run.
     open var attributedText: NSAttributedString? {
         get { storedAttributedText }
@@ -53,6 +54,8 @@ open class UILabel: UIView {
         var text: String
         var font: UIFont
         var color: UIColor?
+        /// `.baselineOffset`: points the run sits above the baseline.
+        var baselineOffset: CGFloat = 0
     }
 
     /// The text's runs: the attributed string's, else one in the label's font.
@@ -64,9 +67,50 @@ open class UILabel: UIView {
         let utf16 = Array(attributed.string.utf16)
         attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length), options: []) { attributes, range, _ in
             let piece = String(decoding: utf16[range.location..<min(utf16.count, range.location + range.length)], as: UTF16.self)
-            result.append(Run(text: piece, font: attributes[.font] as? UIFont ?? font, color: attributes[.foregroundColor] as? UIColor))
+            result.append(Run(text: piece, font: attributes[.font] as? UIFont ?? font, color: attributes[.foregroundColor] as? UIColor,
+                              baselineOffset: Self.points(attributes[.baselineOffset])))
         }
         return result
+    }
+
+    private static func points(_ value: Any?) -> CGFloat {
+        switch value {
+        case let v as CGFloat: return v
+        case let v as Double: return CGFloat(v)
+        case let v as Float: return CGFloat(v)
+        case let v as Int: return CGFloat(v)
+        default: return 0
+        }
+    }
+
+    /// The attributed text's paragraph style and letter spacing (`.kern`, over the whole text).
+    private var paragraph: NSParagraphStyle? { storedAttributedText?.uniformAttributes[.paragraphStyle] as? NSParagraphStyle }
+    private var kern: CGFloat { Self.points(storedAttributedText?.uniformAttributes[.kern]) }
+
+    /// The height of one line and the space between lines, for `font`: the font's line height
+    /// (times a paragraph's `lineHeightMultiple`) held between its minimum and maximum line
+    /// heights, and the paragraph's `lineSpacing` (else the font's leading), as TextKit lays
+    /// out a label's lines. Nil without a paragraph style that changes them.
+    private func paragraphLines(_ font: UIFont) -> (height: CGFloat, spacing: CGFloat)? {
+        guard let paragraph, paragraph.minimumLineHeight > 0 || paragraph.maximumLineHeight > 0
+                || paragraph.lineHeightMultiple > 0 || paragraph.lineSpacing > 0 else { return nil }
+        var height = font.lineHeight * (paragraph.lineHeightMultiple > 0 ? paragraph.lineHeightMultiple : 1)
+        if paragraph.minimumLineHeight > 0 { height = max(height, paragraph.minimumLineHeight) }
+        if paragraph.maximumLineHeight > 0 { height = min(height, paragraph.maximumLineHeight) }
+        return (height, paragraph.lineSpacing > 0 ? paragraph.lineSpacing : font.leading)
+    }
+
+    /// The height of `lines` lines of the text, rounded up to the pixel.
+    private func blockHeight(_ font: UIFont, lines: Int, scale: CGFloat) -> CGFloat {
+        guard let custom = paragraphLines(font) else { return font.labelHeight(lines: lines, scale: scale) }
+        return (custom.height * CGFloat(lines) + custom.spacing * CGFloat(lines - 1)).roundedUp(to: scale)
+    }
+
+    /// The distance from one baseline to the next, and from a line's top to its baseline: a
+    /// line taller than the font puts the extra space above the text, as TextKit does.
+    private func linePitch(_ font: UIFont) -> (pitch: CGFloat, baseline: CGFloat) {
+        guard let custom = paragraphLines(font) else { return (font.lineHeight + font.leading, font.ascender) }
+        return (custom.height + custom.spacing, custom.height + font.descender)
     }
 
     /// The font whose line box is tallest among the runs (the label's height follows it).
@@ -77,6 +121,9 @@ open class UILabel: UIView {
     open var textColor: UIColor = .label { didSet { setNeedsDisplay() } }
     open var textAlignment: NSTextAlignment = .natural { didSet { setNeedsDisplay() } }
     open var lineBreakMode: NSLineBreakMode = .byTruncatingTail { didSet { textDidChange() } }
+    /// How lines break around words: with `.pushOut` (in `.standard`, the default) a paragraph
+    /// of two lines moves a word down rather than leave it alone on the last line.
+    open var lineBreakStrategy: NSParagraphStyle.LineBreakStrategy = .standard
     /// 0 lays out as many lines as the text needs.
     open var numberOfLines = 1 { didSet { textDidChange() } }
     open var adjustsFontSizeToFitWidth = false
@@ -161,7 +208,11 @@ open class UILabel: UIView {
                 }
             }
         }
-        let options = TextLayoutOptions(lineLimit: limit, truncationMode: truncation, allowsTightening: tightens)
+        var options = TextLayoutOptions(lineLimit: limit, truncationMode: truncation, allowsTightening: tightens)
+        options.kerning = kern * scale
+        // A two-line paragraph moves a word down rather than leave one alone only under the
+        // push-out strategy (the label's default, `.standard`); `[]` keeps the lone word.
+        options.balancesTwoLines = (paragraph?.lineBreakStrategy ?? lineBreakStrategy).contains(.pushOut)
         if fitting { fittedScale = scale }
         let styled = runs.map { StyledRun($0.text, font: (scale == 1 ? $0.font : $0.font.withSize($0.font.pointSize * scale)).resolved) }
         // Scaled to fit exactly, the line needs no width (nothing to truncate; a width a hair
@@ -177,10 +228,10 @@ open class UILabel: UIView {
     func textSize(fitting width: CGFloat?) -> CGSize {
         let scale = UIScreen.main.scale
         let font = tallestFont
-        guard let layout = layout(width: width) else { return CGSize(width: 0, height: font.labelHeight(lines: 1, scale: scale)) }
+        guard let layout = layout(width: width) else { return CGSize(width: 0, height: blockHeight(font, lines: 1, scale: scale)) }
         let pitch = font.lineHeight + font.leading
         let lines = layout.lines.count > 1 ? layout.lines.count : max(1, Int((layout.size.height / pitch).rounded()))
-        return CGSize(width: layout.size.width.roundedUp(to: scale), height: font.labelHeight(lines: lines, scale: scale))
+        return CGSize(width: layout.size.width.roundedUp(to: scale), height: blockHeight(font, lines: lines, scale: scale))
     }
 
     /// Whether the label has text to size: an empty label fits and measures 0 × 0
@@ -237,11 +288,11 @@ open class UILabel: UIView {
     override func textBaselines(in size: CGSize) -> (first: CGFloat, last: CGFloat) {
         guard let layout = layout(width: numberOfLines == 1 ? nil : size.width), !layout.lines.isEmpty else { return (0, size.height) }
         let font = tallestFont
-        let pitch = font.lineHeight + font.leading
+        let (pitch, ascent) = linePitch(font)
         let lines = CGFloat(layout.lines.count)
         let top = textRect(forBounds: CGRect(origin: .zero, size: size), limitedToNumberOfLines: numberOfLines).minY
         let scale = UIScreen.main.scale
-        let first = top + (font.ascender * scale).rounded() / scale
+        let first = top + (ascent * scale).rounded() / scale
         return (first, first + pitch * (lines - 1))
     }
 
@@ -256,14 +307,17 @@ open class UILabel: UIView {
         // The lines share the tallest run's pitch; mixed runs sit on one baseline (the tallest
         // font's ascender), as UIKit draws attributed text (uikit/label/fitting).
         let font = scale == 1 ? tallestFont : tallestFont.withSize(tallestFont.pointSize * scale)
-        let pitch = font.lineHeight + font.leading
-        let textHeight = font.lineHeight * CGFloat(lines.count) + font.leading * CGFloat(lines.count - 1)
-        // The block is centred vertically; each line's baseline sits at the ascender.
+        let (pitch, ascent) = linePitch(font)
+        let textHeight = paragraphLines(font).map { $0.height * CGFloat(lines.count) + $0.spacing * CGFloat(lines.count - 1) }
+            ?? font.lineHeight * CGFloat(lines.count) + font.leading * CGFloat(lines.count - 1)
+        // The block is centred vertically; each line's baseline sits at the ascender (in a
+        // taller paragraph line, at its bottom less the descender).
         let top = (bounds.height - textHeight) / 2
+        let spacing = kern * scale
         let labelColor = (isEnabled ? textColor : .tertiaryLabel).rgba(for: style)
         let alignment = textAlignment
         for (index, line) in lines.enumerated() {
-            let baseline = context.origin.y + top + pitch * CGFloat(index) + font.ascender
+            let baseline = context.origin.y + top + pitch * CGFloat(index) + ascent
             let inset: CGFloat
             switch alignment {
             case .center: inset = (bounds.width - line.inkWidth) / 2
@@ -274,7 +328,8 @@ open class UILabel: UIView {
                 let run = runs.indices.contains(fragment.run) ? runs[fragment.run] : Run(text: "", font: self.font, color: nil)
                 let runFont = scale == 1 ? run.font : run.font.withSize(run.font.pointSize * scale)
                 let color = isEnabled ? (run.color?.rgba(for: style) ?? labelColor) : labelColor
-                list.append(.drawText(fragment.text, DisplayFont(runFont.resolved), origin: CGPoint(x: context.origin.x + inset + fragment.x, y: baseline), color))
+                list.append(.drawText(fragment.text, DisplayFont(runFont.resolved, letterSpacing: spacing),
+                                      origin: CGPoint(x: context.origin.x + inset + fragment.x, y: baseline - run.baselineOffset * scale), color))
             }
         }
     }

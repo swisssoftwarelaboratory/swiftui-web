@@ -6,6 +6,8 @@
 public struct ContentTransition: Hashable, Sendable {
     package enum Kind: Hashable, Sendable {
         case identity, opacity, interpolate, numericText(countsDown: Bool), symbolEffect
+        /// `numericText(value:)`: rolls up or down by how `value` changed (`direction(from:)`).
+        case numericValue(Double)
     }
     package let kind: Kind
 
@@ -19,6 +21,20 @@ public struct ContentTransition: Hashable, Sendable {
     public static func numericText(countsDown: Bool = false) -> ContentTransition {
         ContentTransition(kind: .numericText(countsDown: countsDown))
     }
+    /// A numeric roll for a text showing `value`: up when the value grows, down when it shrinks,
+    /// as Apple's picks it.
+    public static func numericText(value: Double) -> ContentTransition {
+        ContentTransition(kind: .numericValue(value))
+    }
+
+    /// The transition a text runs when it changes under `self`, the transition it last showed
+    /// with being `previous`: a value-driven roll takes its direction from the two values (up
+    /// when nothing earlier is known or the value is the same).
+    package func resolved(from previous: ContentTransition) -> ContentTransition {
+        guard case .numericValue(let value) = kind else { return self }
+        if case .numericValue(let old) = previous.kind { return .numericText(countsDown: value < old) }
+        return .numericText()
+    }
     /// A symbol effect (a crossfade here).
     public static let symbolEffect = ContentTransition(kind: .symbolEffect)
 
@@ -28,6 +44,7 @@ public struct ContentTransition: Hashable, Sendable {
     /// incoming starts at `+roll`.
     package var roll: CGFloat {
         if case .numericText(let countsDown) = kind { return countsDown ? -0.5 : 0.5 }
+        if case .numericValue = kind { return 0.5 }
         return 0
     }
 }

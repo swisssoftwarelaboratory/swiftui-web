@@ -10,7 +10,13 @@ package final class FocusedNode<Content: View, Value: Hashable>: UnaryLayoutModi
         register()
         runtime.registerFocusBox(modifier.box)
         // Focus already on this value (set before the view existed) takes effect now.
-        if let box = modifier.box, box.value == modifier.value, let id = focusTargetIdentifier { runtime.focus(semanticsIdentifier: id) }
+        if let box = modifier.box, box.value == modifier.value {
+            // A text field mounts before it is interactive, which `focus(semanticsIdentifier:)`
+            // needs to know it as one: it takes the text-field path directly (else a state set
+            // before the field appeared focused it as a plain control, a ring and no typing).
+            if let field = focusTargetTextField { runtime.focusTextField(field) }
+            else if let id = focusTargetIdentifier { runtime.focus(semanticsIdentifier: id) }
+        }
     }
 
     override package func update(view: ModifiedContent<Content, _FocusedModifier<Value>>, environment: EnvironmentValues, force: Bool) {
@@ -28,8 +34,11 @@ package final class FocusedNode<Content: View, Value: Hashable>: UnaryLayoutModi
 
     /// The first text field in the subtree, else its first interactive or focusable view, else
     /// its first static element (`accessibilityFocused` on text or an image).
+    /// The subtree's first text field, if it has one.
+    package var focusTargetTextField: Int? { (descendants(where: { $0 is TextFieldNode }).first as? TextFieldNode)?.identifier }
+
     package var focusTargetIdentifier: Int? {
-        if let field = descendants(where: { $0 is TextFieldNode }).first as? TextFieldNode { return field.identifier }
+        if let field = focusTargetTextField { return field }
         if let interactive = descendants(where: { $0.isInteractiveNode }).first as? any _Interactive { return interactive.semantics.identifier }
         return descendants(where: { ($0 as? any _SemanticsProviding)?.staticSemantics != nil }).first?.semanticsIdentifier
     }

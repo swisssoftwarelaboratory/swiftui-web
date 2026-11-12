@@ -4,6 +4,9 @@
 // types are values, so code shared between an app and its widget extension compiles and runs.
 // Apple's frameworks re-export Foundation: a file importing only this module names Date.
 @_exported import WebFoundation
+#if os(WASI)
+@_exported import WASILibc   // libm, which Apple's Foundation re-exports through Darwin
+#endif
 
 /// The sizes a widget can take.
 public enum WidgetFamily: Int, CaseIterable, Hashable, Sendable, CustomStringConvertible {

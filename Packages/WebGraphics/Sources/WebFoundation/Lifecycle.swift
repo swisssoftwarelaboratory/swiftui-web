@@ -18,18 +18,42 @@ public final class Timer: @unchecked Sendable {
         self.repeats = repeats
     }
 
+    /// The block of a timer made unscheduled (`init(timeInterval:repeats:block:)`), run once a
+    /// run loop adds it.
+    private var block: (@Sendable (Timer) -> Void)?
+
+    /// A timer that runs `block` once added to a run loop (`RunLoop.main.add(_:forMode:)`).
+    public convenience init(timeInterval interval: TimeInterval, repeats: Bool, block: @escaping @Sendable (Timer) -> Void) {
+        self.init(timeInterval: interval, repeats: repeats)
+        self.block = block
+    }
+
     @discardableResult
     public static func scheduledTimer(withTimeInterval interval: TimeInterval, repeats: Bool, block: @escaping @Sendable (Timer) -> Void) -> Timer {
         let timer = Timer(timeInterval: interval, repeats: repeats)
-        timer.task = Task { @MainActor in
+        timer.schedule(block)
+        return timer
+    }
+
+    /// Starts the timer's task: `block` on the main actor after each interval.
+    package func schedule(_ block: @escaping @Sendable (Timer) -> Void) {
+        guard task == nil, isValid else { return }
+        let interval = timeInterval, repeats = repeats
+        task = Task { @MainActor in
             repeat {
                 try? await Task.sleep(nanoseconds: UInt64(max(interval, 0.001) * 1_000_000_000))
-                guard !Task.isCancelled, timer.isValid else { return }
-                block(timer)
-            } while repeats && timer.isValid
-            timer.isValid = false
+                guard !Task.isCancelled, self.isValid else { return }
+                block(self)
+            } while repeats && self.isValid
+            self.isValid = false
         }
-        return timer
+    }
+
+    /// Schedules an unscheduled timer (once; the browser's loop is every run loop's).
+    package func scheduleAdded() {
+        guard let block else { return }
+        self.block = nil
+        schedule(block)
     }
 
     public func invalidate() {
@@ -49,6 +73,10 @@ public final class RunLoop: @unchecked Sendable {
     }
     public static let main = RunLoop()
     public static var current: RunLoop { main }
+
+    /// Adds a timer made with `Timer(timeInterval:repeats:block:)`: it starts firing (every mode
+    /// is the browser's loop, so a `.common` timer fires during a drag as on iOS).
+    public func add(_ timer: Timer, forMode mode: Mode) { timer.scheduleAdded() }
 }
 
 /// A notification: its name, an optional sender and user info.

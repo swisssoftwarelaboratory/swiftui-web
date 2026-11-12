@@ -175,6 +175,8 @@ open class CALayer {
     /// transparent layer's shadow path casts nothing (open).
     open var shadowPath: Path? { didSet { setNeedsDisplay() } }
     open var contentsScale: CGFloat = 2
+    /// Whether the layer promises to be fully opaque (a drawing hint; the painters do not read it).
+    open var isOpaque = false
     /// The layer's image (a `CGImage`), drawn in its bounds by `contentsGravity` after its
     /// background and in place of its view's own content (LayerPainting.swift).
     open var contents: Any? { didSet { setNeedsDisplay() } }

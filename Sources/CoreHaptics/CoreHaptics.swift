@@ -6,6 +6,9 @@
 // An app that plays anyway gets no error and no feedback.
 // Apple's frameworks re-export Foundation: a file importing only this module names TimeInterval.
 @_exported import WebFoundation
+#if os(WASI)
+@_exported import WASILibc   // libm, which Apple's Foundation re-exports through Darwin
+#endif
 
 /// A value that indicates the playback should start immediately.
 public let CHHapticTimeImmediate: TimeInterval = 0
@@ -78,6 +81,13 @@ public protocol CHHapticPatternPlayer: AnyObject {
     func send(_ parameters: [CHHapticDynamicParameter], atTime time: TimeInterval) throws
     func schedule(_ parameterCurve: CHHapticParameterCurve, atTime time: TimeInterval) throws
     var isMuted: Bool { get set }
+}
+
+extension CHHapticPatternPlayer {
+    /// Sends dynamic parameters to the player (Apple's Swift name for `send`).
+    public func sendParameters(_ parameters: [CHHapticDynamicParameter], atTime time: TimeInterval) throws { try send(parameters, atTime: time) }
+    /// Schedules a parameter curve on the player (Apple's Swift name for `schedule`).
+    public func scheduleParameterCurve(_ parameterCurve: CHHapticParameterCurve, atTime time: TimeInterval) throws { try schedule(parameterCurve, atTime: time) }
 }
 
 /// A player with pause, seek, looping and rate control.

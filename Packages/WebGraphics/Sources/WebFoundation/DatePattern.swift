@@ -2,7 +2,8 @@
 // relative styles on wasm (pf-web-foundation-gaps), platform-neutral so the tests can hold it
 // to Foundation's en_US output. Patterns are Unicode LDML patterns (`yMMMd` skeletons become
 // patterns through CLDR's `en` availableFormats, as ICU's pattern generator picks them); the
-// symbols are English. Other locales format as English (`Locale` is an identifier here).
+// symbols are English. Other locales take their patterns and words from the host (the browser's
+// `Intl`, `Locale._hostDatePattern` and `_hostDateSymbols`) and format as English without one.
 
 /// What a pattern needs to know about an instant.
 package struct _DateFormatInput {
@@ -32,6 +33,51 @@ package enum _DatePattern {
     package static let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
     package static let shortWeekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     package static let shortestWeekdayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+
+    /// A locale's date words. English (en_US) unless the host knows the locale.
+    package struct Symbols: Sendable {
+        package var months: [String], shortMonths: [String], standaloneMonths: [String], shortStandaloneMonths: [String]
+        package var weekdays: [String], shortWeekdays: [String], shortestWeekdays: [String], narrowWeekdays: [String]
+        package var am: String, pm: String
+        package init(months: [String], shortMonths: [String], standaloneMonths: [String], shortStandaloneMonths: [String],
+                     weekdays: [String], shortWeekdays: [String], shortestWeekdays: [String], narrowWeekdays: [String], am: String, pm: String) {
+            self.months = months; self.shortMonths = shortMonths; self.standaloneMonths = standaloneMonths
+            self.shortStandaloneMonths = shortStandaloneMonths; self.weekdays = weekdays; self.shortWeekdays = shortWeekdays
+            self.shortestWeekdays = shortestWeekdays; self.narrowWeekdays = narrowWeekdays; self.am = am; self.pm = pm
+        }
+        package static let english = Symbols(months: monthNames, shortMonths: shortMonthNames, standaloneMonths: monthNames,
+                                             shortStandaloneMonths: shortMonthNames, weekdays: weekdayNames, shortWeekdays: shortWeekdayNames,
+                                             shortestWeekdays: shortestWeekdayNames, narrowWeekdays: weekdayNames.map { String($0.prefix(1)) },
+                                             am: "AM", pm: "PM")
+    }
+
+    /// Whether a locale formats with the built-in en_US patterns and words (no host asked).
+    package static func isEnglishUS(_ locale: Locale?) -> Bool {
+        guard let identifier = locale?.identifier, !identifier.isEmpty else { return true }
+        return identifier == "en" || identifier.hasPrefix("en_US") || identifier.hasPrefix("en-US")
+    }
+
+    /// The host's pattern for a canonical skeleton or a `"style:<date>:<time>"` request in a
+    /// locale other than en_US (the browser's `Intl.DateTimeFormat`, as ICU picks it on Apple's
+    /// platforms); nil to use the `en` one.
+    package static func hostPattern(_ locale: Locale?, _ request: String) -> String? {
+        #if os(WASI)
+        guard !isEnglishUS(locale), let locale, let host = Locale._hostDatePattern else { return nil }
+        return host(locale.identifier(.bcp47), request)
+        #else
+        return nil   // Apple's Foundation formats on its own; this core is held to en_US in tests
+        #endif
+    }
+
+    /// A locale's date words from the host; English for en_US or a locale the host lacks.
+    package static func symbols(_ locale: Locale?) -> Symbols {
+        #if os(WASI)
+        guard !isEnglishUS(locale), let locale, let host = Locale._hostDateSymbols else { return .english }
+        return host(locale.identifier(.bcp47)) ?? .english
+        #else
+        return .english
+        #endif
+    }
 
     /// A pattern split into literal text and field runs.
     package enum Token: Equatable {
@@ -103,11 +149,11 @@ package enum _DatePattern {
     }
 
     /// The text of `pattern` for an instant.
-    package static func format(_ pattern: String, _ input: _DateFormatInput) -> String {
-        format(tokens(pattern), input)
+    package static func format(_ pattern: String, _ input: _DateFormatInput, symbols: Symbols = .english) -> String {
+        format(tokens(pattern), input, symbols: symbols)
     }
 
-    package static func format(_ tokens: [Token], _ input: _DateFormatInput) -> String {
+    package static func format(_ tokens: [Token], _ input: _DateFormatInput, symbols: Symbols = .english) -> String {
         let f = input.fields
         var result = ""
         for token in tokens {
@@ -119,11 +165,12 @@ package enum _DatePattern {
                 case "y", "u": result += count == 2 ? pad(_Gregorian.floorMod(f.year, 100), 2) : pad(f.year, count)
                 case "Y": result += count == 2 ? pad(_Gregorian.floorMod(input.yearForWeekOfYear, 100), 2) : pad(input.yearForWeekOfYear, count)
                 case "M", "L":
+                    let standalone = letter == "L"
                     switch count {
                     case 1, 2: result += pad(f.month, count)
-                    case 3: result += shortMonthNames[(f.month - 1) % 12]
-                    case 4: result += monthNames[(f.month - 1) % 12]
-                    default: result += String(monthNames[(f.month - 1) % 12].prefix(1))
+                    case 3: result += (standalone ? symbols.shortStandaloneMonths : symbols.shortMonths)[(f.month - 1) % 12]
+                    case 4: result += (standalone ? symbols.standaloneMonths : symbols.months)[(f.month - 1) % 12]
+                    default: result += String(symbols.standaloneMonths[(f.month - 1) % 12].prefix(1))
                     }
                 case "d": result += pad(f.day, count)
                 case "D": result += pad(f.dayOfYear, count)
@@ -131,13 +178,13 @@ package enum _DatePattern {
                 case "E", "c", "e":
                     if count <= 2, letter != "E" { result += letter == "e" ? pad(f.weekday, count) : String(f.weekday) } else {
                         switch count {
-                        case 1, 2, 3: result += shortWeekdayNames[f.weekday - 1]
-                        case 4: result += weekdayNames[f.weekday - 1]
-                        case 5: result += String(weekdayNames[f.weekday - 1].prefix(1))
-                        default: result += shortestWeekdayNames[f.weekday - 1]
+                        case 1, 2, 3: result += symbols.shortWeekdays[f.weekday - 1]
+                        case 4: result += symbols.weekdays[f.weekday - 1]
+                        case 5: result += symbols.narrowWeekdays[f.weekday - 1]
+                        default: result += symbols.shortestWeekdays[f.weekday - 1]
                         }
                     }
-                case "a": result += count == 5 ? (f.hour < 12 ? "a" : "p") : (f.hour < 12 ? "AM" : "PM")
+                case "a": result += count == 5 ? (f.hour < 12 ? "a" : "p") : (f.hour < 12 ? symbols.am : symbols.pm)
                 case "b", "B":
                     if f.hour == 12, f.minute == 0, f.second == 0 { result += "noon" } else if f.hour == 0, f.minute == 0, f.second == 0 { result += "midnight" }
                     else if count == 5 { result += f.hour < 12 ? "a" : "p" } else { result += f.hour < 12 ? "AM" : "PM" }

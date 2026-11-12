@@ -178,6 +178,13 @@ public struct Locale: Hashable, Sendable, Codable, CustomStringConvertible {
     /// (BCP 47), of a language, region or script code (`type` is "language", "region" or
     /// "script"); nil for a code it doesn't know.
     nonisolated(unsafe) public static var _hostDisplayName: ((_ locale: String, _ type: String, _ code: String) -> String?)?
+    /// Set by the canvas host from `Intl.DateTimeFormat`: the LDML pattern a locale (BCP 47)
+    /// formats a canonical skeleton (`"EEEEdMMMM"`) or a style (`"style:<date>:<time>"`, the
+    /// `Date.FormatStyle` raw values) with; nil when it can't say, and then the `en` pattern is used.
+    nonisolated(unsafe) public static var _hostDatePattern: ((_ locale: String, _ request: String) -> String?)?
+    /// Set by the canvas host from `Intl.DateTimeFormat`: a locale's month and weekday names and
+    /// day periods.
+    nonisolated(unsafe) package static var _hostDateSymbols: ((_ locale: String) -> _DatePattern.Symbols?)?
     private static func normalized(_ tag: String) -> String { String(tag.map { $0 == "-" ? "_" : $0 }) }
     public var languageCode: String? { identifier.split { $0 == "_" || $0 == "-" }.first.map(String.init) }
     public var regionCode: String? {
@@ -550,5 +557,12 @@ public struct Calendar: Hashable, Sendable, Codable, CustomStringConvertible {
     public var pmSymbol: String { "PM" }
 
     public var description: String { identifier.rawValue }
+}
+
+extension Locale {
+    /// A day of the week (Foundation's, as AlarmKit's weekly recurrence and `Locale.firstDayOfWeek` name it).
+    public enum Weekday: String, Codable, Hashable, Sendable, CaseIterable {
+        case sunday, monday, tuesday, wednesday, thursday, friday, saturday
+    }
 }
 #endif

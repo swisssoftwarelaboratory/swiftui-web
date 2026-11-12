@@ -186,9 +186,18 @@ public enum _MemoryFiles {
         files[url.absoluteString] = data
         return url
     }
+    /// Reads one of the app's bundled files (`Bundle.url(forResource:)`: a URL relative to the
+    /// page, under `Bundle._resourceBase`) from the host, at once, as iOS reads a bundle's files
+    /// (the browser host fetches it synchronously); nil when the host has no such file.
+    nonisolated(unsafe) public static var _hostResource: ((String) -> Data?)?
+
     public static func read(_ url: URL) -> Data? {
         let key = url.absoluteString
         if let data = files[key] { return data }
+        if url.scheme == nil, key.hasPrefix(Bundle._resourceBase), let data = _hostResource?(key) {
+            files[key] = data
+            return data
+        }
         guard isDurable(url), let text = _hostStore?.load(url.path), let data = Data(base64Encoded: text) else { return nil }
         files[key] = data
         return data

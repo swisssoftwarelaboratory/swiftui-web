@@ -58,10 +58,17 @@ public struct EntryMacro: AccessorMacro, PeerMacro {
             return ["private struct \(raw: key): \(raw: container.key) { typealias Value = \(raw: unwrapped(property.type)) }"]
         }
         guard let initializer = property.initializer else {
+            // An optional entry without one defaults to nil, as Apple's macro does
+            // (`@Entry var navigation: Navigation?`).
+            if property.type.hasSuffix("?") || property.type.hasPrefix("Optional<") {
+                return ["private struct \(raw: key): \(raw: container.key) { static var defaultValue: \(raw: property.type) { nil } }"]
+            }
             context.diagnose(Diagnostic(node: Syntax(declaration), message: EntryMessage("'@Entry' needs a default value")))
             return []
         }
-        return ["private struct \(raw: key): \(raw: container.key) { static let defaultValue: \(raw: property.type) = \(raw: initializer) }"]
+        // Computed, as Apple's expansion is: the initializer runs on each read, and a
+        // non-Sendable value (a main-actor closure) needs no concurrency-safe static.
+        return ["private struct \(raw: key): \(raw: container.key) { static var defaultValue: \(raw: property.type) { \(raw: initializer) } }"]
     }
 
     /// `T?` or `Optional<T>` → `T` (focused values are declared optional).

@@ -116,6 +116,12 @@ extension Text {
         self.init(storage: .date(date, style))
     }
 
+    /// Creates a timer over an interval: counting down, the time left to its end; counting up,
+    /// the time since its start (a live `.timer` text; it does not stop at the bounds or pause).
+    public init(timerInterval: ClosedRange<Date>, pauseTime: Date? = nil, countsDown: Bool = true, showsHours: Bool = true) {
+        self.init(storage: .date(countsDown ? timerInterval.upperBound : timerInterval.lowerBound, .timer))
+    }
+
     /// Creates a text view that displays the formatted representation of a value.
     public init<F: FormatStyle>(_ input: F.FormatInput, format: F) where F.FormatOutput == String {
         self.init(storage: .verbatim(format.format(input)))

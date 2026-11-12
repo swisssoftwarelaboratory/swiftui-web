@@ -639,11 +639,14 @@ public struct _PresentationOptionsModifier {
     package let detents: Set<PresentationDetent>?
     package let dragIndicator: Visibility?
     package let interactiveDismissDisabled: Bool?
+    package let background: AnyShapeStyle?
 
-    package init(detents: Set<PresentationDetent>? = nil, dragIndicator: Visibility? = nil, interactiveDismissDisabled: Bool? = nil) {
+    package init(detents: Set<PresentationDetent>? = nil, dragIndicator: Visibility? = nil, interactiveDismissDisabled: Bool? = nil,
+                 background: AnyShapeStyle? = nil) {
         self.detents = detents
         self.dragIndicator = dragIndicator
         self.interactiveDismissDisabled = interactiveDismissDisabled
+        self.background = background
     }
 }
 
@@ -728,9 +731,12 @@ public struct PresentationContentInteraction: Equatable, Sendable {
 }
 
 extension View {
-    /// Sets the presentation background of the enclosing sheet. Stored only: the runtime's sheet
-    /// keeps its own background.
-    nonisolated public func presentationBackground<S: ShapeStyle>(_ style: S) -> some View { self }
+    /// Sets the presentation background of the enclosing sheet or full-screen cover: the style
+    /// fills the card (the cover's whole window) in place of the system background, and `.clear`
+    /// lets what is behind show through (an app drawing its own dim and card in a cover).
+    nonisolated public func presentationBackground<S: ShapeStyle>(_ style: S) -> some View {
+        modifier(_PresentationOptionsModifier(background: AnyShapeStyle(style)))
+    }
 
     /// Sets the presentation background of the enclosing sheet to a custom view. Stored only:
     /// the runtime's sheet keeps its own background.

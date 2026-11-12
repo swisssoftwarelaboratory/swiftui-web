@@ -4,6 +4,9 @@
 // nothing an app draws depends on them.
 // Apple's frameworks re-export Foundation: a file importing only this module names Date.
 @_exported import WebFoundation
+#if os(WASI)
+@_exported import WASILibc   // libm, which Apple's Foundation re-exports through Darwin
+#endif
 
 /// The identifier of a system sound.
 public typealias SystemSoundID = UInt32

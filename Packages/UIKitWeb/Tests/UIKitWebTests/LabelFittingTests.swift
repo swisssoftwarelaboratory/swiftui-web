@@ -57,6 +57,37 @@ import UIKit
         #expect(label.attributedText == nil && label.runs.count == 1)
     }
 
+    /// A paragraph's fixed line height sets each line's height, with the extra space above the
+    /// text as TextKit puts it; `.baselineOffset` lifts the text and `.kern` spaces its letters.
+    @Test func paragraphLineHeightsKernAndBaselineOffset() {
+        let scene = scene()
+        let font = UIFont.systemFont(ofSize: 17)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = 30
+        paragraph.maximumLineHeight = 30
+        let label = UILabel()
+        label.attributedText = NSAttributedString(string: "Plain", attributes: [.font: font, .paragraphStyle: paragraph, .kern: 1.5, .baselineOffset: 2])
+        label.sizeToFit()
+        // One 30 pt line (17 pt text alone is 20.5 tall).
+        #expect(label.frame.height == 30)
+        label.frame.origin = .zero
+        let list = render(label, in: scene)
+        let drawn = list.commands.compactMap { command -> (DisplayFont, CGPoint)? in
+            if case .drawText(_, let font, let origin, _) = command { return (font, origin) }
+            return nil
+        }
+        #expect(drawn.count == 1)
+        // The baseline: the line's bottom less the descender, lifted by the offset.
+        #expect(abs(drawn[0].1.y - (30 + font.descender - 2)) < 0.01)
+        #expect(drawn[0].0.letterSpacing == 1.5)
+        // Plain text keeps the font's own line.
+        let plain = UILabel()
+        plain.text = "Plain"
+        plain.font = font
+        plain.sizeToFit()
+        #expect(plain.frame.height < 30)
+    }
+
     @Test func scalesToFitAndTruncatesAtTheFloor() {
         let scene = scene()
         let label = UILabel(frame: CGRect(x: 0, y: 0, width: 120, height: 24))

@@ -114,6 +114,12 @@ package final class ToolbarVisibilityNode<Content: View>: UnaryLayoutModifierNod
     }
 }
 
+extension ToolbarVisibilityNode: _NavigationBarVisibilityProviding {
+    /// The iOS navigation bar's visibility (the modifier names the window toolbar or the
+    /// navigation bar; on iOS only the bar exists).
+    package var _navigationBarVisibility: Visibility? { isMounted && modifier.visibility != .automatic ? modifier.visibility : nil }
+}
+
 /// The bar's view: leading items, the title, principal items centred, trailing items.
 struct _ToolbarBarView: View {
     let items: [_ToolbarItemData]

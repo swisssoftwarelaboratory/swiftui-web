@@ -75,6 +75,34 @@ import SwiftUIWebHeadless
         #expect(y(old) < y(before) && y(new) > y(before))
     }
 
+    struct ValueCounter: View {
+        let model: Model
+        var body: some View {
+            Text("\(model.count)").contentTransition(.numericText(value: Double(model.count)))._probe("text")
+        }
+    }
+
+    /// `numericText(value:)` rolls by how the value changed: down when it drops, as Apple's.
+    @Test func numericTextValueRollsByDirection() {
+        let model = Model()
+        model.count = 2
+        let r = runtime(ValueCounter(model: model))
+        let before = commands(r).first { $0.hasPrefix("drawText(\"2\"") }!
+        withAnimation(.linear(duration: 1)) { model.count = 1 }
+        relayout(r)
+        r.advanceAnimations(elapsed: 0.5)
+        let mid = commands(r)
+        let old = mid.first { $0.hasPrefix("drawText(\"2\"") }!
+        let new = mid.first { $0.hasPrefix("drawText(\"1\"") }!
+        func y(_ command: String) -> Double {
+            let rest = command[command.range(of: " at ")!.upperBound...]
+            let comma = rest.firstIndex(of: ",")!
+            return Double(rest[rest.index(after: comma)..<rest[comma...].firstIndex(of: " ")!])!
+        }
+        // Counting down: the old text has moved down, the new one comes from above.
+        #expect(y(old) > y(before) && y(new) < y(before))
+    }
+
     @Test func identityAndUnanimatedChangesSnap() {
         let model = Model()
         let r = runtime(Counter(model: model, transition: .identity))
