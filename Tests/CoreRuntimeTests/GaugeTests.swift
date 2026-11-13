@@ -44,7 +44,9 @@ import SwiftUIWebHeadless
             Gauge(value: 0.3) { Text("Battery") } currentValueLabel: { Text("60%") } minimumValueLabel: { Text("0")._probe("min") } maximumValueLabel: { Text("100")._probe("max") }
                 ._probe("bounded")
             Gauge(value: 25, in: 0...50) { Text("Battery") }.tint(.red)._probe("total")
-        }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
+        }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading), size: CGSize(width: 320, height: 400))
+        // (400 tall: the four gauges take about 290, and a flexible frame is never shorter than
+        // its child, so in 200 the column would overflow and centre, as in SwiftUI.)
         // The label sits over the 16 pt bar and the value label under it at the stack spacing
         // (the goldens prove the font-derived 8.15 and 4.74; this engine has no font table, so
         // 8); bounds labels flank the bar 8 apart; the bar fills the width.

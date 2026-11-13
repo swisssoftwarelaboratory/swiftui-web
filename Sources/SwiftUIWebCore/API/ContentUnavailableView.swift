@@ -25,8 +25,10 @@ public struct ContentUnavailableView<Label: View, Description: View, Actions: Vi
         // 190 pt frame drops the tray; a 169 pt one too, 169.5 keeps it).
         ViewThatFits(in: .vertical) {
             _UnavailableColumn(label: label, description: description, actions: actions, showsIcon: true)
+            // `minHeight: 0`: a column taller than the height on offer still takes only that
+            // height, from the top (without it a flexible frame is never shorter than its child).
             _UnavailableColumn(label: label, description: description, actions: actions, showsIcon: false)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity)
     }

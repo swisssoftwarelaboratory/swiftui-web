@@ -22,6 +22,10 @@ enum PainterScript {
       function setFont(ctx, font) {
         const parts = font.split('|');
         ctx.font = parts[0];
+        // Kerning on, as Core Text lays out: Chrome's canvas leaves "auto" without the pairs that
+        // start at a space (" W", " M" in San Francisco), so a 28 pt bold line measured 3 pt wider
+        // than on iOS and in Chrome's own page text, and wrapped a word early. WebKit kerns either way.
+        if (ctx.fontKerning !== undefined) ctx.fontKerning = 'normal';
         if (parts.length > 2 && parts[2][0] === 't') {
           let slot = slotCache.get(font);
           if (slot === undefined) { slot = ctx.measureText('0').width * Number(parts[2].slice(1)); slotCache.set(font, slot); }
