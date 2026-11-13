@@ -14,7 +14,7 @@ Apple docs: [position(x:y:)](https://developer.apple.com/documentation/swiftui/v
 | `safeAreaInset(edge:alignment:spacing:content:)` for vertical and horizontal edges | implemented (`HorizontalEdge` added) |
 | `safeAreaPadding(_:)` (insets, edges + length, length) | implemented |
 | `ignoresSafeArea(_:edges:)`, `edgesIgnoringSafeArea(_:)` | implemented (`SafeAreaRegions` added; the keyboard region does not exist in a browser) |
-| `GeometryProxy.safeAreaInsets` | still zero: the created safe areas are not reported to geometry readers |
+| `GeometryProxy.safeAreaInsets` | implemented: the overlap plus the extension (below) |
 
 ## Behaviour
 
@@ -45,7 +45,27 @@ measured on the simulator in `ios/representable/safearea-rule`, `safearea-color`
   the modifier sees that frame) and proposes its content that frame grown by the extension on
   the ignored edges, placed in the grown rect and centred when smaller; the content gets no safe
   area on those edges (a scroll view ignoring it does not inset), while the geometry stays in
-  `platformSafeAreaOverlap` for a hosted UIKit view (Representable.md).
+  `platformSafeAreaOverlap` for a hosted UIKit view (Representable.md). A content no larger
+  than the safe frame moves into the extension on the side it reaches (a bottom bar ignoring
+  the bottom edge sits on the home indicator), centred in the grown rect when it reaches both;
+- `background(_:ignoresSafeAreaEdges:)` and `overlay(_:ignoresSafeAreaEdges:)` with a style
+  wrap the fill in `ignoresSafeArea` on those edges (all by default), so a screen's ground
+  colour reaches under the status bar and the home indicator;
+- a scroll view's clip reaches through its extension: content scrolls on under the status bar
+  and the home indicator, nothing moves at rest;
+- `GeometryProxy.safeAreaInsets` is the reader's overlap plus its extension: a reader filling
+  an iPhone's safe area reports the status bar's and the home indicator's depths.
+
+### The device's safe area (sw-ios-safe-area, 2026-11-13)
+
+The page hands the app a phone's safe area (`HostedScene.hostSafeAreaInsets`: the container's
+`data-safe-area`, `?safeArea=59,0,34,0`, or else the browser's own `env(safe-area-inset-*)`).
+The root view is laid out inside it unless it extends into it. Presentations take it too
+(`Runtime.place(_:in:insets:)`, the root's rule in an area of the window): a full-screen
+cover's content is laid out in the window's safe area; an iOS sheet's card starts at
+`sheetTopInset` or the safe top, whichever is lower (59 on an iPhone 16 with iOS 27), has no
+unsafe region above it, and keeps its content clear of the home indicator below. Measured
+against Paulo's app on the iPhone 16 simulator (iOS 27), 105 screens side by side.
 
 The inset view is proposed the cross length and nothing along its edge's axis, placed at the edge
 aligned by `alignment`, and paints (and is hit tested) over the content. Its length plus the
