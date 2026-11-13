@@ -67,7 +67,7 @@ open class UIViewController: UIResponder, UITraitEnvironment, UITraitChangeObser
     // (`extension UINavigationController { open override func viewWillLayoutSubviews() }`), as
     // UIKit's Objective-C methods allow; containers do their own layout in
     // `layoutContainedViews()`, so such an override replaces nothing of theirs.
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     @objc dynamic open func viewWillLayoutSubviews() {}
     #else
     open func viewWillLayoutSubviews() {}

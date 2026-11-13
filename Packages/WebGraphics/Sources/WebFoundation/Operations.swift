@@ -24,7 +24,7 @@ open class Operation: NSObject, @unchecked Sendable {
     /// The queue running this operation.
     weak var _queue: OperationQueue?
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     @objc open var isCancelled: Bool { _cancelled }
     @objc open var isExecuting: Bool { _executing }
     @objc open var isFinished: Bool { _finished }

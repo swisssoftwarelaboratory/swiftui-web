@@ -62,7 +62,7 @@ extension UIApplicationDelegate {
 @discardableResult
 public func UIApplicationMain(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
                               _ principalClassName: String?, _ delegateClassName: String?) -> Int32 {
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     guard let name = delegateClassName, let type = NSClassFromString(name) as? NSObject.Type else {
         fatalError("UIApplicationMain: no delegate class named \(delegateClassName ?? "nil")")
     }
@@ -86,7 +86,7 @@ enum UIKitLaunch {
     /// The delegate instance: by the runtime's class instantiation with Objective-C (any
     /// initializer-free subclass of UIResponder), else the protocol's `init()`.
     static func instantiate<Delegate: UIApplicationDelegate>(_ type: Delegate.Type) -> any UIApplicationDelegate {
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         guard let objcType = type as? NSObject.Type, let delegate = objcType.init() as? any UIApplicationDelegate else {
             fatalError("\(type) must inherit from UIResponder (NSObject) to be instantiated at launch")
         }

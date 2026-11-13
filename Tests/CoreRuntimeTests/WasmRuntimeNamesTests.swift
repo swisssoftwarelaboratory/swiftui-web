@@ -1,6 +1,6 @@
 // The Objective-C runtime's names on the stock wasm SDK (WebFoundation, RuntimeNames.swift and
 // Responder.swift), as Nuke, Kingfisher and RevenueCat call them.
-#if os(WASI) && !canImport(ObjectiveC)
+#if os(WASI) && !_runtime(_ObjC)
 import Testing
 import WebFoundation
 

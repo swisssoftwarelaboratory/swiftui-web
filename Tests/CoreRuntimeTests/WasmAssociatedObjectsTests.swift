@@ -1,6 +1,6 @@
 // Associated objects on the stock wasm SDK (WebFoundation, AssociatedObjects.swift), as
 // Kingfisher uses them: a value kept per object and key, gone with the object, removable.
-#if os(WASI) && !canImport(ObjectiveC)
+#if os(WASI) && !_runtime(_ObjC)
 import Testing
 import WebFoundation
 

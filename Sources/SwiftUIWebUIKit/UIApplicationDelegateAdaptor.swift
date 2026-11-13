@@ -9,7 +9,7 @@
 import SwiftUIWebCore
 import UIKitWebCore
 import WebCombine
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 import ObjectiveC
 #endif
 
@@ -44,7 +44,7 @@ public enum _UIApplicationDelegateRegistry {
 
     static func delegate<D: UIApplicationDelegate>(of type: D.Type) -> D {
         if let existing = delegates[ObjectIdentifier(type)] as? D { return existing }
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         // With the Objective-C runtime (decision 0023) the class is instantiated as UIKit does,
         // without an `init()` requirement on the protocol.
         guard let objcType = type as? NSObject.Type, let delegate = objcType.init() as? D else {

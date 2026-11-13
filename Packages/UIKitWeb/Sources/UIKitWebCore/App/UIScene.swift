@@ -173,7 +173,7 @@ extension UIApplication {
     public func requestSceneSessionDestruction(_ session: UISceneSession, options: Any?, errorHandler: ((Error) -> Void)? = nil) {}
 }
 
-#if !canImport(ObjectiveC)
+#if !_runtime(_ObjC)
 // With the Objective-C runtime NSObject supplies the identity Equatable/Hashable (decision 0023).
 extension UIScene: Hashable {
     nonisolated public static func == (lhs: UIScene, rhs: UIScene) -> Bool { lhs === rhs }

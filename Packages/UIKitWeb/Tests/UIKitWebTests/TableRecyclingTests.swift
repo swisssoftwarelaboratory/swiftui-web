@@ -57,7 +57,7 @@ import UIKit
     final class Badged: UITableViewCell {
         var badge = "new"
         var madeWith: String?
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         override init(style: CellStyle, reuseIdentifier: String?) {
             madeWith = reuseIdentifier
             super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
@@ -71,7 +71,7 @@ import UIKit
         required init?(coder: NSCoder) { nil }
     }
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     /// Only an initializer of its own, as SwiftyFORM's cells have: it compiles because the
     /// style initializer is not required, as in UIKit.
     final class OwnInitializer: UITableViewCell {
@@ -97,7 +97,7 @@ import UIKit
         table.register(UITableViewCell.self, forCellReuseIdentifier: "plain")
         let plain = try #require(table.dequeueReusableCell(withIdentifier: "plain"))
         #expect(type(of: plain) == UITableViewCell.self && plain.style == .default && plain.reuseIdentifier == "plain")
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         let own = OwnInitializer(value: 3)
         #expect(own.value == 3 && own.style == .value1)
         #endif

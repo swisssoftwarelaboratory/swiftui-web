@@ -9,11 +9,10 @@
 // ambiguous next to it. `Date` stays FoundationEssentials' (its member stands alone).
 #if os(WASI)
 @_exported import FoundationEssentials
-#if canImport(ObjectiveC)
-// The interop SDK (decision 0023): Selector, NSObject and NSObjectProtocol come from the
-// Objective-C runtime, as Apple's Foundation re-exports them.
+// Selector, NSObject and NSObjectProtocol, as Apple's Foundation re-exports them: the Objective-C
+// runtime's with the interop SDK (decision 0023), Packages/ObjectiveC's stand-ins without it
+// (decision 0026).
 @_exported import ObjectiveC
-#endif
 #else
 @_exported import Foundation
 #endif

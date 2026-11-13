@@ -14,7 +14,7 @@ import Foundation
 /// The frame rate range a display link prefers (`CAFrameRateRange` in Core Animation).
 public typealias CAFrameRateRange = CADisplayLink.FrameRateRange
 
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 /// The link's superclass: `NSObject` where there is an Objective-C runtime, as on iOS, so an
 /// `@objc` method can take the link (`@objc func tick(_ link: CADisplayLink)`).
 public typealias _CADisplayLinkBase = NSObject
@@ -61,7 +61,7 @@ public final class CADisplayLink: _CADisplayLinkBase {
         super.init()
     }
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     /// iOS's link: `selector` is sent to `target` with the link each frame. As on iOS the link
     /// keeps its target until it is invalidated.
     public convenience init(target: Any, selector: Selector) {

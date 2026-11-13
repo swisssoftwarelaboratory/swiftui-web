@@ -4,7 +4,7 @@
 // (Kingfisher's display link protocol); `autoreleasepool` is in Threading.swift. With the
 // Objective-C runtime SDK the runtime's own declarations are in scope instead (WebFoundation
 // re-exports `ObjectiveC`, decision 0023).
-#if os(WASI) && !canImport(ObjectiveC)
+#if os(WASI) && !_runtime(_ObjC)
 
 /// The class Swift knows by `aClassName`, as `NSStringFromClass` names it ("Module.Class"),
 /// or nil. Without the runtime only Swift's own type metadata can be searched, so the name of

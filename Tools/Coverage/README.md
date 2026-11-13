@@ -82,7 +82,7 @@ On Linux with the wasm SDK (`scripts/bootstrap.sh`):
 python3 Tools/Coverage/sweep.py plan --corpus Tools/Coverage/corpus.json --work /tmp/corpus -o plan.json
 python3 Tools/Coverage/sweep.py prepare --plan plan.json --work /tmp/corpus --batch 0 --root "$PWD" -o /tmp/sweep
 python3 Tools/Coverage/sweep.py run --plan plan.json --work /tmp/corpus --pkg /tmp/sweep --batch 0 \
-  --sdk swift-6.3.3-RELEASE_wasm -o results-0.json
+  --sdk swift-6.4.2-RELEASE_wasm -o results-0.json
 python3 Tools/Coverage/report.py --plan plan.json --sweep results-*.json --md coverage.md --json coverage.json
 ```
 

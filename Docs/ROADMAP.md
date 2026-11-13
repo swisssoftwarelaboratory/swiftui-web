@@ -45,7 +45,7 @@ App source (unchanged) ──import SwiftUI──▶ SwiftUI (thin: @_exported i
 ### Repository layout
 
 ```
-Package.swift (tools 6.1+), .swift-version = 6.3.3, LICENSE, README.md
+Package.swift (tools 6.1+), .swift-version = 6.4.2 (6.3.3 until decision 0026), LICENSE, README.md
 Sources/SwiftUI/                 thin re-export module (hedge against macOS shadowing)
 Sources/SwiftUIWebCore/          API/  Runtime/  Layout/  Text/  Display/  Platform/  Semantics/
 Sources/SwiftUIWebCanvas/        wasm-only (JavaScriptKit dep gated `.when(platforms: [.wasi])`)

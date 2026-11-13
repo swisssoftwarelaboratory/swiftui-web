@@ -55,7 +55,7 @@ done
 . scripts/env.sh
 for product in SwiftUI2048 Scrumdinger Ember ChartsExamples Buttoncraft Pompaddo SimpleScores SimpleToDo; do
   echo "== $product (wasm)"
-  if (cd Apps && swift build --swift-sdk "${SWIFTUIWEB_WASM_SDK:-swift-6.3.3-RELEASE_wasm}" --product "$product" 2>&1 | grep -E "error:|warning:" | sort -u | sed 's/^/    /'; test "${PIPESTATUS[0]}" -eq 0); then
+  if (cd Apps && swift build --swift-sdk "${SWIFTUIWEB_WASM_SDK:-swift-$(cat ../.swift-version)-RELEASE_wasm}" --product "$product" 2>&1 | grep -E "error:|warning:" | sort -u | sed 's/^/    /'; test "${PIPESTATUS[0]}" -eq 0); then
     echo "✓ $product builds"
   else
     echo "✗ $product does not build"; status=1

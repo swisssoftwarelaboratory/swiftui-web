@@ -151,7 +151,7 @@ public final class UIApplication: UIResponder {
     /// selectors to send, so nothing handles it.
     @discardableResult
     public func sendAction(_ action: Selector, to target: Any?, from sender: Any?, for event: UIEvent?) -> Bool {
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         let receiver: NSObject?
         if let target = target as? NSObject {
             receiver = target.responds(to: action) ? target : nil
@@ -248,7 +248,7 @@ public final class UIApplication: UIResponder {
 /// The methods the app object calls on its delegate.
 @preconcurrency @MainActor
 public protocol UIApplicationDelegate: AnyObject {
-    #if !canImport(ObjectiveC)
+    #if !_runtime(_ObjC)
     /// Without an Objective-C runtime the launch cannot instantiate the delegate class by
     /// name; with one (decision 0023) it does, as UIKit does.
     init()

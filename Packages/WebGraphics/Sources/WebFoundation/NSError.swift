@@ -21,7 +21,7 @@ extension LocalizedError {
     public var helpAnchor: String? { nil }
 }
 
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 // With an Objective-C runtime (decision 0023) `NSError` is an `NSObject`, as Foundation's is, so
 // `@objc` members can take and hand back errors (a `(CustomerInfo?, NSError?) -> Void` completion).
 // It describes itself through `NSObject`'s `description` (ObjectiveCBridging.swift).

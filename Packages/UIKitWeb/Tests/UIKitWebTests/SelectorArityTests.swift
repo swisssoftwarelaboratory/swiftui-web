@@ -2,7 +2,7 @@
 // notification observers name methods with the sender (`newGame(_:)`) or without (`refresh`).
 // On the Objective-C runtime's wasm build a send with the wrong count traps (wasm checks every
 // indirect call's signature); here the count each method received is checked.
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 import Testing
 import UIKitWebCore
 #if os(WASI)

@@ -273,7 +273,7 @@ extension _PersistedProperty {
 /// observation. Models and contexts are not isolated to an actor (as Apple's): they belong
 /// to the actor that made them — the main actor for `mainContext` and `@Query`, a
 /// `@ModelActor` for its own; on wasm there is one thread.
-public protocol PersistentModel: AnyObject, Observable, Identifiable, Hashable {
+public protocol PersistentModel: AnyObject, Observable, Hashable, Identifiable, SendableMetatype {
     /// The entity's name (the class name).
     nonisolated static var _entityName: String { get }
     /// The persisted properties, declaration order.
@@ -1065,7 +1065,6 @@ extension View {
     /// `isUndoEnabled` accepted; `onSetup` told).
     nonisolated public func modelContainer(for modelTypes: [any PersistentModel.Type], inMemory: Bool = false, isAutosaveEnabled: Bool = true,
                                            isUndoEnabled: Bool = false, onSetup: @escaping (Result<ModelContainer, Error>) -> Void = { _ in }) -> some View {
-        nonisolated(unsafe) let modelTypes = modelTypes
         nonisolated(unsafe) let onSetup = onSetup
         let container: ModelContainer? = MainActor.assumeIsolated {
             do {
@@ -1091,7 +1090,6 @@ extension Scene {
         return _wrappingRoots { AnyView($0.modelContainer(container)) }
     }
     public func modelContainer(for modelTypes: [any PersistentModel.Type], inMemory: Bool = false, isAutosaveEnabled: Bool = true, isUndoEnabled: Bool = false) -> some Scene {
-        nonisolated(unsafe) let modelTypes = modelTypes
         return _wrappingRoots { AnyView($0.modelContainer(for: modelTypes, inMemory: inMemory, isAutosaveEnabled: isAutosaveEnabled, isUndoEnabled: isUndoEnabled)) }
     }
     public func modelContainer(for modelType: any PersistentModel.Type, inMemory: Bool = false, isAutosaveEnabled: Bool = true, isUndoEnabled: Bool = false) -> some Scene {

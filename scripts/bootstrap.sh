@@ -3,7 +3,7 @@
 set -euo pipefail
 SWIFT_VERSION="$(cat "$(dirname "$0")/../.swift-version")"
 WASM_SDK_URL="https://download.swift.org/swift-${SWIFT_VERSION}-release/wasm-sdk/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE_wasm.artifactbundle.tar.gz"
-WASM_SDK_CHECKSUM="cabfa08b73bb8ac783927ecd15fa386e99d0c139c5f232445067bcf58379cae7"  # 6.3.3; update with .swift-version
+WASM_SDK_CHECKSUM="83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5"  # 6.4.2; update with .swift-version
 
 if ! command -v swiftly >/dev/null; then
   if [[ "$(uname)" == "Darwin" ]]; then brew install swiftly binaryen

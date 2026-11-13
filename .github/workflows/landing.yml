@@ -56,7 +56,7 @@ concurrency:
 permissions:
   contents: write
 env:
-  SWIFT_VERSION: "6.3.3"
+  SWIFT_VERSION: "6.4.2"
 jobs:
   deploy:
     runs-on: macos-15
@@ -70,8 +70,9 @@ jobs:
           . ~/.swiftly/env.sh
           swiftly install $SWIFT_VERSION --use --assume-yes
           swift sdk install https://download.swift.org/swift-${SWIFT_VERSION}-release/wasm-sdk/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE_wasm.artifactbundle.tar.gz \
-            --checksum cabfa08b73bb8ac783927ecd15fa386e99d0c139c5f232445067bcf58379cae7
-          swift sdk install https://github.com/iamcgn/swift-objc-wasm/releases/download/v0.1.1/swift-${SWIFT_VERSION}-RELEASE_wasm-objc.artifactbundle.tar.gz \
+            --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
+          swiftly install 6.3.3 --assume-yes   # the compiler the runtime SDK is built for (decision 0026)
+          swift sdk install https://github.com/iamcgn/swift-objc-wasm/releases/download/v0.1.1/swift-6.3.3-RELEASE_wasm-objc.artifactbundle.tar.gz \
             --checksum d493aecef947d8a8a4d224264ace14d28a423677d949bcd756838c3080638328
           scripts/objc-sdk/add-api-notes.sh
       - uses: actions/setup-node@v4

@@ -330,7 +330,7 @@ extension UIKitScene {
             handler(keyCommand)
             return true
         }
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         guard let action = command.action else { return false }
         var responder = start
         while let current = responder {

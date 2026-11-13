@@ -16,6 +16,15 @@ import PackageDescription
 //   WebGraphicsNative    macOS CoreText engine, CoreGraphics painter, AppKit host
 //   WebGraphicsHeadless  recorded text metrics and the asset manifest reader for tests
 //   WebGraphicsCairo     the Cairo painter for Linux (and anywhere cairo is installed; pf-linux)
+// On wasm WebFoundation re-exports a module named `ObjectiveC` (decision 0026): the Objective-C
+// runtime SDK's (decision 0023, `SWIFTUIWEB_WASM_SDK=swift-<version>-RELEASE_wasm-objc`), or
+// Packages/ObjectiveC's stand-ins with the stock SDK. Never both: the stand-in would shadow the
+// runtime's.
+let objcRuntimeSDK = (Context.environment["SWIFTUIWEB_WASM_SDK"] ?? "").hasSuffix("-objc")
+let objectiveC: [Target.Dependency] = objcRuntimeSDK ? [] : [
+    .product(name: "ObjectiveC", package: "ObjectiveCStandIn", condition: .when(platforms: [.wasi])),
+]
+
 let package = Package(
     name: "WebGraphics",
     platforms: [.macOS(.v14)],
@@ -33,10 +42,11 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.49.0"),
-    ],
+    ] + (objcRuntimeSDK ? [] : [.package(name: "ObjectiveCStandIn", path: "../ObjectiveC")]),
     targets: [
         .target(
             name: "WebFoundation",
+            dependencies: objectiveC,
             swiftSettings: [.treatAllWarnings(as: .error)]
         ),
         // Foundation's less used formatting, calendar search and XMLParser on wasm, re-exported by

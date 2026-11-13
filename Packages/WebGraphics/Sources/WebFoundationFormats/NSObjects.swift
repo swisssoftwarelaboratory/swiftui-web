@@ -13,7 +13,7 @@
 #if os(WASI)
 import WebFoundation
 
-#if !canImport(ObjectiveC)
+#if !_runtime(_ObjC)
 /// The object a dictionary is as Foundation's `NSDictionary` (ObjectiveCBridging.swift declares
 /// it with the runtime): its keys as `AnyHashable`, values as `Any`. Equal when the entries are.
 open class _WebNSDictionary: NSObject, @unchecked Sendable {

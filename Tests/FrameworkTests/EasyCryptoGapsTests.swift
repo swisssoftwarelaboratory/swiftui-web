@@ -52,7 +52,7 @@ import WebFoundationFormats
         #expect(NumberFormatter().number(from: "abc") == nil)
     }
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     /// EasyCrypto's DecimalFormatter form: digits read as cents.
     final class CentsFormatter: NumberFormatter, @unchecked Sendable {
         override func getObjectValue(_ obj: AutoreleasingUnsafeMutablePointer<AnyObject?>?, for string: String,
