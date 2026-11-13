@@ -49,6 +49,17 @@ Why not the runtime SDK for everything: it is 659 MB, exists for 6.3.3 only (so 
 the 6.4.2 type checker the second setting needs), and an app that writes no `@objc` gains nothing
 from it. Its bundle cost was therefore not measured.
 
+## What else 6.4.2 asked for
+
+- Every module named `os` must declare `osLogStringSectionName` (the section the compiler puts
+  optimised log strings in); without it 6.4 warns, an error under warnings-as-errors. Shadows'
+  `os` declares one, though its plain interpolations never reach it.
+- In release builds on CI's macOS 15 runners (never on a macOS 26 Mac), 6.4.2 crashed folding
+  `T.self as? any Equatable.Type` in specializations of `_valuesDiffer`: in SILCombine for `Text`
+  (`createApplyWithConcreteType`), then in IRGen for `Path` (`emitExistentialMetatypeContainer`).
+  `_valuesDiffer` is no longer specialized, so the cast is a runtime lookup the runtime caches
+  per type. The view-diffing cost of that is not measured here.
+
 ## Swift Build
 
 SwiftPM 6.4 builds with Swift Build (Xcode's engine) by default; the native build system is

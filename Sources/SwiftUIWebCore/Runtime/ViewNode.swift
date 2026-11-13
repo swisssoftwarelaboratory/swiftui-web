@@ -628,9 +628,13 @@ package final class ObservationToken: Sendable {
 
 /// Whether two view values differ. Equatable types compare with `==`; plain-old-data types
 /// compare bitwise; anything else (closures, existentials) is assumed to have changed.
+/// Never specialized: in release builds on CI's macOS 15 runners, Swift 6.4.2 crashed folding
+/// `T.self as? any Equatable.Type` in a specialization, in SILCombine for `Text` and in IRGen for
+/// `Path` (decision 0026). The cast stays a runtime lookup, which the runtime caches per type.
+@inline(never) @_semantics("optimize.sil.specialize.generic.never")
 package func _valuesDiffer<T>(_ old: T, _ new: T) -> Bool {
     if let equatable = T.self as? any Equatable.Type {
-        return !_equalAsEquatable(equatable, old, new)
+        return !_openEquatable(equatable, old, new)
     }
     if _isPOD(T.self) {
         return withUnsafeBytes(of: old) { a in
@@ -640,14 +644,6 @@ package func _valuesDiffer<T>(_ old: T, _ new: T) -> Bool {
         }
     }
     return true
-}
-
-/// Opens the type outside `_valuesDiffer`'s specializations. Swift 6.4.2's SILCombine crashed
-/// propagating `Text` into the opened metatype of a `_valuesDiffer<Text>` specialization
-/// (`createApplyWithConcreteType`, release builds on CI's macOS 15 runners; decision 0026).
-@inline(never) @_semantics("optimize.sil.specialize.generic.never")
-private func _equalAsEquatable(_ type: any Equatable.Type, _ a: Any, _ b: Any) -> Bool {
-    _openEquatable(type, a, b)
 }
 
 private func _openEquatable<E: Equatable>(_: E.Type, _ a: Any, _ b: Any) -> Bool {
