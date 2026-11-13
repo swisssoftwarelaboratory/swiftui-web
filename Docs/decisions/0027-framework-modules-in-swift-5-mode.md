@@ -28,11 +28,16 @@ Swift 6 feature turned on. Swift 6 mode cannot turn the feature off
 
 ## What was chosen
 
-- **Swift 5 language mode with the other 14 Swift 6 features on** (`ConciseMagicFile` …
-  `NonfrozenEnumExhaustivity`, `StrictConcurrency` among them, as `swiftc -print-supported-features`
+- **Swift 5 language mode with the Swift 6 features that check at compile time** (`ConciseMagicFile`
+  … `NonfrozenEnumExhaustivity`, `StrictConcurrency` among them, as `swiftc -print-supported-features`
   lists them for 6), and warnings as errors. The framework code is checked as strictly as before
-  except for the one rule apps see; `DynamicActorIsolation` stays on, so runtime isolation checks
-  are unchanged.
+  except for the one rule apps see.
+- **Not `DynamicActorIsolation`.** In Swift 5 mode it puts a main-actor check at the start of every
+  `@MainActor` closure; Swift 6 mode puts none in the same closures (compared in the SIL of both).
+  With it on, a notification test whose fake browser answers on a background thread trapped on
+  Linux. Apple's frameworks don't turn it on either. Runtime checks the fork's code had in Swift 6
+  mode (in witnesses of `@preconcurrency` requirements and the like) are gone with it; on wasm
+  there is one thread, so none of them could fire there.
 - **Where the fork's own code leaned on the rule**, it says so in place, without changing a
   declaration an app sees:
   - host plumbing that crosses into WebGraphics (still Swift 6) or is called from tests spells

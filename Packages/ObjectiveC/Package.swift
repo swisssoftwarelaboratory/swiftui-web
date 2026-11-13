@@ -17,13 +17,15 @@ import PackageDescription
 // Framework modules build the way Apple builds its own (decision 0027): in Swift 5 language
 // mode, so an app built in Swift 6 mode gets from them the warnings Xcode gives it from Apple's
 // (in Swift 6 mode a `@MainActor` closure parameter becomes `@Sendable`, and every app's
-// `Button(action: action)` warns). Every other check Swift 6 mode makes is turned on, and
-// warnings are errors, so the fork's own code stays as strictly checked as before.
+// `Button(action: action)` warns). Every other check Swift 6 mode makes at compile time is turned
+// on, and warnings are errors, so the fork's own code stays as strictly checked as before. Not
+// `DynamicActorIsolation`: in Swift 5 mode it traps in every main-actor closure called off the
+// main actor, where Swift 6 mode checks none of them, and Apple's frameworks don't turn it on.
 let framework: [SwiftSetting] = [.swiftLanguageMode(.v5), .treatAllWarnings(as: .error)] + [
     "ConciseMagicFile", "ForwardTrailingClosures", "StrictConcurrency", "BareSlashRegexLiterals",
     "DeprecateApplicationMain", "ImportObjcForwardDeclarations", "DisableOutwardActorInference",
     "IsolatedDefaultValues", "GlobalConcurrency", "InferSendableFromCaptures", "ImplicitOpenExistentials",
-    "RegionBasedIsolation", "DynamicActorIsolation", "NonfrozenEnumExhaustivity",
+    "RegionBasedIsolation", "NonfrozenEnumExhaustivity",
 ].map { .enableUpcomingFeature($0) }
 
 let package = Package(
