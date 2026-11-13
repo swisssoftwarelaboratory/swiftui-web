@@ -140,6 +140,50 @@ private struct Diagonal: Layout {
         #expect(f["clamp"]?.size == CGSize(width: 120, height: 20))
     }
 
+    /// The height a flexible frame round a 100 × 212 box takes when offered `proposed`.
+    private func flexHeight(_ proposed: CGFloat, _ frame: (Box) -> some View) -> CGFloat? {
+        let runtime = Runtime()
+        runtime.mount(frame(Box(w: 100, h: 212))._probe("f").frame(width: 300, height: proposed))
+        runtime.layout(in: CGSize(width: 300, height: 2000))
+        return frames(runtime)["f"]?.height
+    }
+
+    /// Each answer is SwiftUI's, measured with `NSHostingController.sizeThatFits` on macOS 26:
+    /// the child's length, at least the proposal up to a maximum, at most the proposal down to a minimum.
+    @Test func flexibleFrameNeverSqueezesAChildBelowItsLength() {
+        #expect(flexHeight(50) { $0.frame(maxHeight: .infinity) } == 212)
+        #expect(flexHeight(50) { $0.frame(maxHeight: 150) } == 150)
+        #expect(flexHeight(1000) { $0.frame(maxHeight: 400) } == 400)
+        #expect(flexHeight(50) { $0.frame(minHeight: 100) } == 100)
+        #expect(flexHeight(50) { $0.frame(minHeight: 300) } == 300)
+        #expect(flexHeight(500) { $0.frame(minHeight: 100) } == 212)
+        #expect(flexHeight(50) { $0.frame(minHeight: 100, maxHeight: .infinity) } == 100)
+        #expect(flexHeight(50) { $0.frame(minHeight: 250, maxHeight: 400) } == 250)
+    }
+
+    /// Paulo's day-one Weight history: two `maxHeight: .infinity` cards in a stack inside a
+    /// stack in a scroll view. The outer stack places the inner one at its ideal length; the
+    /// inner one shares that out, and must not give the chart's card less than its chart.
+    @Test func stretchyCardsInAScrollViewKeepTheirContent() {
+        let runtime = Runtime()
+        runtime.mount(ScrollView {
+            VStack(spacing: 0) {
+                Box(w: 300, h: 40)
+                VStack(spacing: 16) {
+                    VStack(spacing: 14) { Box(w: 100, h: 60); Box(w: 100, h: 212) }
+                        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)._probe("chart")
+                    VStack(spacing: 4) { Box(w: 100, h: 30); Box(w: 100, h: 90) }
+                        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)._probe("entries")
+                }
+            }
+        })
+        runtime.layout(in: CGSize(width: 393, height: 852))
+        let f = frames(runtime)
+        #expect(f["chart"]?.height == 334)
+        #expect(f["entries"]?.height == 172)
+        #expect(f["entries"]?.minY == (f["chart"]?.maxY ?? 0) + 16)
+    }
+
     @Test func fixedSizeUsesIdeal() {
         let runtime = Runtime()
         runtime.mount(Color.red.fixedSize()._probe("c"))

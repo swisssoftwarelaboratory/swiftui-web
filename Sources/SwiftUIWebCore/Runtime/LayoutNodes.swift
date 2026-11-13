@@ -389,14 +389,21 @@ package final class FlexFrameNode<Content: View>: UnaryLayoutModifierNode<Conten
             height: clampedProposal(proposal.height, min: modifier.minHeight, ideal: modifier.idealHeight, max: modifier.maxHeight))
     }
 
+    /// SwiftUI's rule, measured with `NSHostingController.sizeThatFits` on macOS 26: the child's
+    /// length, at least the proposal where a maximum is given (up to it), at most the proposal
+    /// where a minimum is given (down to it). A frame is never shorter than a child that can't
+    /// shrink unless its maximum says so: `.frame(maxHeight: .infinity)` round a 212 pt chart
+    /// offered 50 is 212 tall, not 50. (Taking the proposal outright made such a card answer 0
+    /// to a stack's zero probe, so a stack placed at its ideal length shared that length out and
+    /// squeezed the card under its sibling: Paulo's day-one Weight history.)
     private func resolve(proposal: CGFloat?, child: CGFloat, min: CGFloat?, ideal: CGFloat?, max: CGFloat?) -> CGFloat {
         guard let proposal else {
             return (ideal ?? child).clamped(min, max)
         }
-        if max != nil {
-            return proposal.clamped(min, max)
-        }
-        return child.clamped(min, nil)
+        var length = child
+        if let min { length = Swift.max(min, Swift.min(length, proposal)) }
+        if let max { length = Swift.min(max, Swift.max(length, proposal)) }
+        return length
     }
 
     override package func size(forChild childSize: CGSize, proposal: ProposedViewSize) -> CGSize {
