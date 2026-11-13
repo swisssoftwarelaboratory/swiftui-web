@@ -236,13 +236,15 @@ public final class UIKitScene: HostedScene {
     /// The host's share sheet and file panels (Containers/SystemSheets.swift); a hosting
     /// runtime hands its own down (SwiftUIWebUIKit).
     public var shareHandler: ((HostShareRequest) -> Void)?
-    public var fileOpenHandler: ((HostFileOpenRequest, _ completion: @escaping @MainActor ([HostFile]) -> Void) -> Void)?
+    // `@Sendable` spelled out: WebGraphics's `HostedScene` declares these in Swift 6 mode, where a
+    // `@MainActor` function type is `Sendable` by itself; this module is in Swift 5 mode (decision 0027).
+    public var fileOpenHandler: ((HostFileOpenRequest, _ completion: @escaping @MainActor @Sendable ([HostFile]) -> Void) -> Void)?
     public var fileSaveHandler: ((HostFile) -> Void)?
     /// A hosting runtime's pasteboard (SwiftUIWebUIKit installs these): what it holds, with the
     /// generation its copies advance, and where `UIPasteboard.general`'s text goes.
     public var pasteboardSource: (() -> (generation: Int, text: String?))?
     public var pasteboardSink: ((String?) -> Void)?
-    public var onNeedsFrame: (@MainActor () -> Void)?
+    public var onNeedsFrame: (@MainActor @Sendable () -> Void)?
     /// The host's link opener (`UIApplication.open`).
     public var openURL: ((String) -> Void)?
 

@@ -253,12 +253,12 @@ public final class Runtime {
     /// own sharing goes through `ShareAction.systemHandler`, its documents through the handlers
     /// in Runtime/DocumentNodes.swift).
     public var shareHandler: ((HostShareRequest) -> Void)?
-    public var fileOpenHandler: ((HostFileOpenRequest, _ completion: @escaping @MainActor ([HostFile]) -> Void) -> Void)?
+    public var fileOpenHandler: ((HostFileOpenRequest, _ completion: @escaping @MainActor @Sendable ([HostFile]) -> Void) -> Void)?
     public var fileSaveHandler: ((HostFile) -> Void)?
     /// Window scenes and the secondary windows opened from them (Runtime/WindowNodes.swift).
     package var windowDescriptors: [_WindowDescriptor] = []
     package var windowStore: (get: () -> String?, set: (String) -> Void)?
-    package var documentOpen: ((_ types: [UTType], _ completion: @escaping @MainActor (Data, String, URL?) -> Void) -> Void)?
+    package var documentOpen: ((_ types: [UTType], _ completion: @escaping @MainActor @Sendable (Data, String, URL?) -> Void) -> Void)?
     package var documentSave: ((_ data: Data, _ name: String, _ type: UTType, _ existing: URL?) -> URL?)?
     /// The app's menu commands (`Scene.commands`), mounted in a hidden tree so their shortcuts
     /// work; hosts with a menu bar read `commandMenus` (Runtime/CommandMenuNodes.swift).
@@ -782,7 +782,7 @@ package final class UpdateScheduler {
 
     /// Called the first time work becomes pending after an idle period. Hosts use it to request
     /// an animation frame; headless callers flush explicitly.
-    package var onNeedsFlush: (@MainActor () -> Void)?
+    package var onNeedsFlush: (@MainActor @Sendable () -> Void)?
 
     /// Number of `flush` calls that did work, for tests.
     package private(set) var flushCount = 0

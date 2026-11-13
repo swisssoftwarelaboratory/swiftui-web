@@ -14,6 +14,18 @@
 // the SDK's, and WebGraphics leaves this package out (`SWIFTUIWEB_WASM_SDK`, decision 0023).
 import PackageDescription
 
+// Framework modules build the way Apple builds its own (decision 0027): in Swift 5 language
+// mode, so an app built in Swift 6 mode gets from them the warnings Xcode gives it from Apple's
+// (in Swift 6 mode a `@MainActor` closure parameter becomes `@Sendable`, and every app's
+// `Button(action: action)` warns). Every other check Swift 6 mode makes is turned on, and
+// warnings are errors, so the fork's own code stays as strictly checked as before.
+let framework: [SwiftSetting] = [.swiftLanguageMode(.v5), .treatAllWarnings(as: .error)] + [
+    "ConciseMagicFile", "ForwardTrailingClosures", "StrictConcurrency", "BareSlashRegexLiterals",
+    "DeprecateApplicationMain", "ImportObjcForwardDeclarations", "DisableOutwardActorInference",
+    "IsolatedDefaultValues", "GlobalConcurrency", "InferSendableFromCaptures", "ImplicitOpenExistentials",
+    "RegionBasedIsolation", "DynamicActorIsolation", "NonfrozenEnumExhaustivity",
+].map { .enableUpcomingFeature($0) }
+
 let package = Package(
     name: "ObjectiveCStandIn",
     platforms: [.macOS(.v14)],
@@ -21,6 +33,6 @@ let package = Package(
         .library(name: "ObjectiveC", targets: ["ObjectiveC"]),
     ],
     targets: [
-        .target(name: "ObjectiveC", swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "ObjectiveC", swiftSettings: framework),
     ]
 )

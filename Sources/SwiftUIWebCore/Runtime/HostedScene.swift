@@ -8,7 +8,7 @@ import Foundation
 
 extension Runtime: HostedScene {
     /// The host's frame request (the scheduler's flush hook).
-    public var onNeedsFrame: (@MainActor () -> Void)? {
+    public var onNeedsFrame: (@MainActor @Sendable () -> Void)? {
         get { scheduler.onNeedsFlush }
         set { scheduler.onNeedsFlush = newValue }
     }

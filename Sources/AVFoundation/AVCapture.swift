@@ -63,8 +63,9 @@ open class AVCaptureDeviceInput: AVCaptureInput, @unchecked Sendable {
     public init(device: AVCaptureDevice) throws { self.device = device }
 }
 
-/// A capture session: holds inputs and outputs, and runs nothing on the web.
-open class AVCaptureSession: NSObject, @unchecked Sendable {
+/// A capture session: holds inputs and outputs, and runs nothing on the web. Not `Sendable`,
+/// as on iOS (an app's `nonisolated(unsafe) let session` must not draw a warning).
+open class AVCaptureSession: NSObject {
     public struct Preset: Hashable, RawRepresentable, Sendable {
         public let rawValue: String
         public init(rawValue: String) { self.rawValue = rawValue }

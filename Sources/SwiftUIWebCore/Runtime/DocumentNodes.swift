@@ -16,7 +16,7 @@ extension Runtime {
 
     /// Shows the host's open panel for the types and hands back the chosen file's bytes, name
     /// and URL (nil in a browser). Installed by hosts.
-    public var documentOpenHandler: ((_ types: [UTType], _ completion: @escaping @MainActor (Data, String, URL?) -> Void) -> Void)? {
+    public var documentOpenHandler: ((_ types: [UTType], _ completion: @escaping @MainActor @Sendable (Data, String, URL?) -> Void) -> Void)? {
         get { documentOpen }
         set { documentOpen = newValue }
     }

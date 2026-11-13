@@ -16,12 +16,12 @@ public enum _SpeechHost {
     /// Asks whether `locale` (a BCP 47 tag) can be recognised on the device; with `install`,
     /// the host may download the locale's pack first (the one user-visible step, from the
     /// browser's vendor). The answer arrives when known.
-    nonisolated(unsafe) public static var availability: ((_ locale: String, _ install: Bool, _ completion: @escaping @MainActor (_SpeechAvailability) -> Void) -> Void)?
+    nonisolated(unsafe) public static var availability: ((_ locale: String, _ install: Bool, _ completion: @escaping @MainActor @Sendable (_SpeechAvailability) -> Void) -> Void)?
     /// Starts a session recognising `locale` with interim results when `partial`; `result`
     /// gets the transcript so far and whether it is the final one, `failed` an error; the
     /// returned session takes the audio.
-    nonisolated(unsafe) public static var start: ((_ locale: String, _ partial: Bool, _ result: @escaping @MainActor (String, Bool) -> Void,
-                                                  _ failed: @escaping @MainActor (String) -> Void) -> (any _SpeechSession)?)?
+    nonisolated(unsafe) public static var start: ((_ locale: String, _ partial: Bool, _ result: @escaping @MainActor @Sendable (String, Bool) -> Void,
+                                                  _ failed: @escaping @MainActor @Sendable (String) -> Void) -> (any _SpeechSession)?)?
     /// The authorisation the host remembers.
     nonisolated(unsafe) public static var authorization: SFSpeechRecognizerAuthorizationStatus = .notDetermined
     /// What the host last answered per locale: `isAvailable` is synchronous, so it reads this.
@@ -36,6 +36,7 @@ public enum _SpeechHost {
     }
 
     static func ask(_ locale: String, install: Bool, _ completion: @escaping @MainActor (_SpeechAvailability) -> Void) {
+        nonisolated(unsafe) let completion = completion   // runs on the main actor; Swift 5 mode (decision 0027)
         guard let availability else { MainActor.assumeIsolated { completion(.unavailable) }; return }
         availability(locale, install) { answer in
             known[locale] = answer

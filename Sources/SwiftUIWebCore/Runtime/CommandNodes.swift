@@ -117,6 +117,7 @@ package func _loadText(from providers: [NSItemProvider], completion: @escaping @
     #if !canImport(Darwin)
     completion(providers.lazy.compactMap { $0._text }.first)
     #else
+    nonisolated(unsafe) let completion = completion   // runs on the main actor; Swift 5 mode (decision 0027)
     guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { completion(nil); return }
     _ = provider.loadObject(ofClass: NSString.self) { object, _ in
         let text = (object as? NSString).map { $0 as String }

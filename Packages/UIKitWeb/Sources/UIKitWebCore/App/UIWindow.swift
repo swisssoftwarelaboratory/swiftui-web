@@ -193,6 +193,7 @@ public final class UIApplication: UIResponder {
         completionHandler?(true)
     }
 
+    @discardableResult
     public func open(_ url: URL, options: [OpenExternalURLOptionsKey: Any] = [:]) async -> Bool {
         await withCheckedContinuation { continuation in open(url, options: options) { continuation.resume(returning: $0) } }
     }

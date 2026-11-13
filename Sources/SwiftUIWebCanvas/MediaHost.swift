@@ -48,7 +48,7 @@ enum MediaHost {
 final class AudioElementPlayback: _AVAudioPlayback {
     private let element: JSObject
     private var endedClosure: JSClosure?
-    var onFinished: (@MainActor () -> Void)? {
+    var onFinished: (@MainActor @Sendable () -> Void)? {
         didSet {
             guard endedClosure == nil else { return }
             nonisolated(unsafe) weak let playback = self
@@ -108,6 +108,7 @@ final class MicrophoneCapture: _AVAudioCapture {
     private var stopped = false
 
     init?(bufferSize: Int, deliver: @escaping @MainActor ([Float], Double) -> Void, failed: @escaping @MainActor (String) -> Void) {
+        nonisolated(unsafe) let deliver = deliver, failed = failed   // run on the main actor; Swift 5 mode (decision 0027)
         guard let contextConstructor = JSObject.global.AudioContext.function ?? JSObject.global.webkitAudioContext.function else { return nil }
         let context = contextConstructor.new()
         self.context = context

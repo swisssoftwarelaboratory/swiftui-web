@@ -139,7 +139,8 @@ public struct WindowGroup<Content: View> {
 
     private static func valued<D: Hashable & Codable>(id: String?, title: String?, type: D.Type,
                                                        content: @escaping @MainActor (Binding<D?>) -> Content) -> _WindowDescriptor {
-        _WindowDescriptor(kind: .windowGroup, id: id, title: title, valueType: type) { box in
+        nonisolated(unsafe) let content = content   // runs on the main actor; Swift 5 mode (decision 0027)
+        return _WindowDescriptor(kind: .windowGroup, id: id, title: title, valueType: type) { box in
             let box = box ?? _WindowValueBox(nil)
             let binding = Binding<D?>(get: { box.value as? D }, set: { box.value = $0; box.onChange?() })
             return AnyView(content(binding))

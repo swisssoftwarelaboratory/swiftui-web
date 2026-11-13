@@ -8,7 +8,7 @@ import UIKitWebCore
 @MainActor
 final class RepresentableTree: _PlatformViewTree {
     let hosted = UIKitHostedTree()
-    var onNeedsFrame: (@MainActor () -> Void)? {
+    var onNeedsFrame: (@MainActor @Sendable () -> Void)? {
         didSet { hosted.onNeedsFrame = onNeedsFrame }
     }
     var onFocusedTextFieldChange: (@MainActor (Int?) -> Void)? {

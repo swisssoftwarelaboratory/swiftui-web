@@ -472,7 +472,7 @@ public struct AccessibilityRotorEntry<ID: Hashable>: AccessibilityRotorContent {
     nonisolated package let label: String
     nonisolated(unsafe) package let id: ID?
     nonisolated package let namespace: Namespace.ID?
-    nonisolated package let prepare: (@MainActor () -> Void)?
+    nonisolated(unsafe) package let prepare: (@MainActor () -> Void)?
 
     public init(_ label: Text, id: ID, in namespace: Namespace.ID? = nil, prepare: @escaping @MainActor () -> Void = {}) {
         self.label = label.resolvedString

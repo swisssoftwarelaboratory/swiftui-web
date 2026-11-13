@@ -167,7 +167,8 @@ extension _FocusableModifier: ViewModifier {
 extension View {
     /// Performs an action when the user presses `key` while the view has focus.
     nonisolated public func onKeyPress(_ key: KeyEquivalent, action: @escaping @MainActor () -> KeyPress.Result) -> some View {
-        modifier(_KeyPressModifier(keys: [key], phases: [.down, .repeat], action: _KeyPressBox { _ in action() }))
+        nonisolated(unsafe) let action = action   // Swift 5 mode (decision 0027)
+        return modifier(_KeyPressModifier(keys: [key], phases: [.down, .repeat], action: _KeyPressBox { _ in action() }))
     }
 
     /// Performs an action for the given phases of a press of `key` while the view has focus.

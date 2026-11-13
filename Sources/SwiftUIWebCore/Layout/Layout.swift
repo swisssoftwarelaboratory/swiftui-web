@@ -89,7 +89,11 @@ extension Layout {
 /// needn't be `Sendable` since it never leaves the main thread.
 package func onMain<T>(_ body: @MainActor () -> T) -> T {
     nonisolated(unsafe) var result: T?
-    MainActor.assumeIsolated { result = body() }
+    // Swift 5 mode (decision 0027): a `@MainActor` closure isn't `Sendable` by itself.
+    withoutActuallyEscaping(body) { body in
+        nonisolated(unsafe) let body = body
+        MainActor.assumeIsolated { result = body() }
+    }
     return result!
 }
 

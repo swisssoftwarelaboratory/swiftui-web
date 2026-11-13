@@ -13,6 +13,7 @@ open class Bundle: @unchecked Sendable {
     public var resourcePath: String? { bundlePath }
     public var resourceURL: URL? { bundleURL }
     /// The App Store receipt: none on the web, where nothing was bought from the App Store.
+    @available(*, deprecated, message: "Use AppTransaction.shared and Transaction.all from StoreKit.framework instead")
     public var appStoreReceiptURL: URL? { nil }
     public var bundleIdentifier: String? { Bundle._identifier }
     public var infoDictionary: [String: Any]? { Bundle._info }
