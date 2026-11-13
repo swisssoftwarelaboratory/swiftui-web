@@ -154,7 +154,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     /// The content offset when the gesture began (behaviours limit how far a gesture settles).
     private var trackingStartOffset = CGPoint.zero
     /// A scroll target behaviour carrying the content to its target.
-    private var settle: (from: CGPoint, to: CGPoint, elapsed: Double)?
+    private var settle: (from: CGPoint, to: CGPoint, elapsed: Double, velocity: CGSize)?
     /// Seconds of wheel quiet left before the wheel scroll counts as ended.
     private var wheelIdle = 0.0
 
@@ -785,7 +785,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             phase = .idle
             return
         }
-        settle = (contentOffset, destination, 0)
+        settle = (contentOffset, destination, 0, velocity)
         // The wheel is over: its quiet period must not settle again from mid-way.
         wheelIdle = 0
         phase = .decelerating
@@ -819,10 +819,30 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         var animating = false
         if var state = settle {
             state.elapsed += elapsed
-            let duration = environment.platformProfile.metrics.scrollTargetSettleSeconds
-            let progress = duration > 0 ? min(1, state.elapsed / duration) : 1
-            let eased = 1 - (1 - progress) * (1 - progress) * (1 - progress)
-            contentOffset = CGPoint(x: state.from.x + (state.to.x - state.from.x) * eased, y: state.from.y + (state.to.y - state.from.y) * eased)
+            let omega = environment.platformProfile.metrics.scrollTargetSpring
+            var progress: Double
+            if omega > 0 {
+                // x(t) = to + (d₀ + (v₀ + ω d₀) t) e^(−ωt): the finger's speed carries on into the
+                // spring, which then eases the content onto its target (iOS paging).
+                let t = state.elapsed, decay = _exp(-omega * t)
+                func axis(_ from: CGFloat, _ to: CGFloat, _ v: CGFloat) -> CGFloat {
+                    let d0 = Double(from - to)
+                    // A fast finger carries into the spring only up to 1.7 ω d₀ toward the target:
+                    // iOS overshoots a page by about 4 pt after a 3,000 pt/s flick, not 20.
+                    var v0 = Double(v)
+                    if v0 * d0 < 0 { v0 = max(-1.7 * omega * abs(d0), min(1.7 * omega * abs(d0), v0)) }
+                    return to + CGFloat((d0 + (v0 + omega * d0) * t) * decay)
+                }
+                let next = CGPoint(x: axis(state.from.x, state.to.x, state.velocity.width), y: axis(state.from.y, state.to.y, state.velocity.height))
+                let left = max(abs(next.x - state.to.x), abs(next.y - state.to.y))
+                progress = t > 0.05 && left < 0.25 ? 1 : 0
+                contentOffset = progress >= 1 ? state.to : next
+            } else {
+                let duration = environment.platformProfile.metrics.scrollTargetSettleSeconds
+                progress = duration > 0 ? min(1, state.elapsed / duration) : 1
+                let eased = 1 - (1 - progress) * (1 - progress) * (1 - progress)
+                contentOffset = CGPoint(x: state.from.x + (state.to.x - state.from.x) * eased, y: state.from.y + (state.to.y - state.from.y) * eased)
+            }
             runtime.noteScrolled(self)
             runtime.requestLayout(invalidatingSizes: false)
             updatePositionBinding()

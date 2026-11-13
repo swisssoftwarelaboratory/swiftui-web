@@ -744,6 +744,9 @@ package final class PlatformMetricsTable: @unchecked Sendable {
     package var scrollerFadeSeconds = 0.25                // unverified
     /// A scroll target behaviour carries the content to its target this long (ease out).
     package var scrollTargetSettleSeconds = 0.35          // unverified
+    /// A scroll target behaviour's settle as a critically damped spring of this angular
+    /// frequency (per second), started at the finger's speed; 0 eases over the seconds above.
+    package var scrollTargetSpring = 0.0
     /// Wheel deltas this far apart belong to separate scrolls (the phase ends, a behaviour settles).
     package var scrollWheelIdleSeconds = 0.15             // unverified
     /// Touch momentum: velocity multiplier per millisecond (UIScrollView's `normal` rate).

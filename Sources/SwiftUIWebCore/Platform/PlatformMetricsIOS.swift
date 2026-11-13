@@ -121,6 +121,9 @@ extension PlatformMetricsTable {
         t.listSeparatorAlpha = 25.0 / 255
         // Navigation bars (ios/nav/basic, ios/nav/inline): 116.5 with the large title, 64 inline.
         t.navigationBarLargeHeight = 116.5
+        // A paging view settles on a critically damped spring from the finger's speed: fitted to
+        // iOS 27 in the simulator frame by frame, ω 16 to 19 /s on clean releases (new-website#216).
+        t.scrollTargetSpring = 17
         t.navigationBarInlineHeight = 64
         t.navigationLargeTitleCollapse = 52.5                           // ios/nav/scroll: the bars' difference
         t.navigationTitleInset = 16                                     // the large title starts 16 in (ios/nav/basic pixels)

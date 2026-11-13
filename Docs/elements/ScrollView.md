@@ -60,6 +60,17 @@ a reader of its size alone is moved with the rest. `onGeometryChange` observers 
 a move, and the actions they queue run at the start of the next frame, which stays a move when
 they change no view (an app reporting its views' screen positions to a tour, new-website#216).
 
+Paging and swipes were measured against iOS 27 in the simulator, frame by frame (new-website#216):
+a touch pan follows from where the finger left the 10 pt slop; at the lift a paging view turns one
+page its way at 380 pt/s or more, otherwise to the nearer page, and settles on a critically
+damped spring (ω 17/s) started at the finger's speed (capped at 1.7 ω d₀ toward the target).
+A trackpad arrives as wheel events with no phases: a gesture keeps to its axis and its scroll
+views, ends on a 60 ms pause, a reversal or a clear new push, and moves a paging view at most a
+page from where it began; the finger counts as lifted when the speed, taken over 16 ms slices of
+the events' own times, stops rising and falls to three quarters of its peak, and the rest of the
+gesture is swallowed. `WheelGestureTests` replays a minute of real trackpad swipes and the
+simulator's drag table. Not matched yet: iOS's rubber band at a scroll view's ends.
+
 A control that tracks drags declares the axes it keeps (`_Interactive.dragAxes`; a slider's
 track claims `.horizontal`). When the finger crosses the slop on such a control, the movement's
 dominant axis decides: along a claimed axis the press keeps the touch and the pan is dropped
