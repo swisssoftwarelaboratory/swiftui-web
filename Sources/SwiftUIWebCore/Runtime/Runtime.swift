@@ -179,7 +179,7 @@ public final class Runtime {
     /// none): the root view is laid out inside it unless it extends into it, as under a
     /// `safeAreaPadding` (ios/representable/hostingsafearea).
     public var safeAreaInsets = EdgeInsets() {
-        didSet { if safeAreaInsets != oldValue { requestLayout() } }
+        didSet { if safeAreaInsets != oldValue { requestLayout(invalidatingSizes: true) } }
     }
 
     /// Whether the runtime draws window chrome a browser page lacks: the toolbar
@@ -725,6 +725,33 @@ package final class RootNode: ViewNode {
 
     /// The host's safe area is the root view's.
     override package func providedSafeAreaInsets(for child: ViewNode) -> EdgeInsets { runtime.safeAreaInsets }
+
+    /// The area a presentation's content is being placed in (`Runtime.place(_:in:insets:)`):
+    /// its bounds in the window and the unsafe depth at each of its edges.
+    private var placingArea: (bounds: CGRect, insets: EdgeInsets)?
+
+    /// A presentation's content takes its safe area from the presentation's area (a sheet's
+    /// card has no unsafe region above it), the root view from the window.
+    override package func assignSafeArea(to child: ViewNode) {
+        guard let area = placingArea else { return super.assignSafeArea(to: child) }
+        assignSafeArea(to: child, in: area.bounds, own: area.insets)
+    }
+
+    /// Places `node` in `bounds` as the root view is placed in the window: a view that extends
+    /// into the safe area (a scroll view, a geometry reader) takes the whole area and insets its
+    /// content by `insets`; any other view is proposed the safe part and centred in it.
+    package func place(_ node: ViewNode, in bounds: CGRect, insets: EdgeInsets) {
+        placingArea = (bounds, insets)
+        defer { placingArea = nil }
+        if node.extendsIntoSafeArea {
+            node.safeAreaOverlap = insets
+            node.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center, proposal: ProposedViewSize(bounds.size), by: self)
+        } else {
+            let safe = CGRect(x: bounds.minX + insets.leading, y: bounds.minY + insets.top,
+                              width: max(0, bounds.width - insets.leading - insets.trailing), height: max(0, bounds.height - insets.top - insets.bottom))
+            node.place(at: CGPoint(x: safe.midX, y: safe.midY), anchor: .center, proposal: ProposedViewSize(safe.size), by: self)
+        }
+    }
 
     fileprivate func mount<V: View>(_ view: V) -> TypedNode<V> {
         if let existing = child as? TypedNode<V> {

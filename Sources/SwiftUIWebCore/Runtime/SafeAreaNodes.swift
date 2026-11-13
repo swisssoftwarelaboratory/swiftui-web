@@ -155,6 +155,12 @@ package final class SafeAreaInsetNode<Content: View, Inset: View>: SafeAreaNode<
     }
 
     override package func placeInset(for target: ViewNode, in bounds: CGRect, by placer: ViewNode) {
+        // The inset view sits inside the safe area this node already has: on a scroll view
+        // reaching the screen's bottom, a footer stays above the home indicator.
+        let overlap = safeAreaOverlap
+        let bounds = CGRect(x: bounds.minX + overlap.leading, y: bounds.minY + overlap.top,
+                            width: max(0, bounds.width - overlap.leading - overlap.trailing),
+                            height: max(0, bounds.height - overlap.top - overlap.bottom))
         let proposal = insetProposal(ProposedViewSize(bounds.size))
         for node in insetNode(for: target).layoutChildren {
             let dims = node.dimensions(in: proposal)
@@ -238,13 +244,23 @@ package final class IgnoresSafeAreaNode<Content: View>: UnaryLayoutModifierNode<
         return size
     }
 
-    /// A child no larger than the safe frame is centred in it; a larger one spreads into the
-    /// extension in proportion to the depth on each side (a filling child covers it all).
-    /// Measured 2026-10-11: a 50 pt stack under a bottom inset sits at the safe frame's top.
+    /// A child no larger than the safe frame moves into the extension on the side it reaches
+    /// (an iPhone app's bottom bar with `ignoresSafeArea(edges: .bottom)` sits on the home
+    /// indicator: Paulo's tab bar 25 pt above the screen's bottom, not the safe area's, in the
+    /// iOS 27 simulator), centred in the grown rect when it reaches both ways and in the safe
+    /// frame when it reaches neither; a larger one spreads into the extension in proportion to
+    /// the depth on each side (a filling child covers it all).
     override package func childOrigin(_ child: ViewDimensions, in size: CGSize) -> CGPoint {
         let insets = ignored
         func offset(_ childLength: CGFloat, _ length: CGFloat, _ before: CGFloat, _ after: CGFloat) -> CGFloat {
-            if childLength <= length + 1e-9 { return (length - childLength) / 2 }
+            if childLength <= length + 1e-9 {
+                switch (before > 0, after > 0) {
+                case (true, false): return -before
+                case (false, true): return length + after - childLength
+                case (true, true): return (length + after - before - childLength) / 2
+                case (false, false): return (length - childLength) / 2
+                }
+            }
             let total = before + after
             return total > 0 ? -before * min(1, (childLength - length) / total) : (length - childLength) / 2
         }

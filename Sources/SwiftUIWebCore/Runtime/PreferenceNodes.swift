@@ -96,9 +96,9 @@ package final class CoordinateSpaceNode<Content: View, Name: Hashable>:
 @MainActor
 package final class GeometryReaderNode<Content: View>: LayoutNode<GeometryReader<Content>> {
     override package var readsGeometry: Bool { true }
-    /// A reader takes the whole frame under a safe-area inset and reports the inset
-    /// (`proxy.safeAreaInsets`), placing its content in the safe part (`position/safe-area-geometry`).
-    override package var extendsIntoSafeArea: Bool { true }
+    /// A reader is laid out in the safe area like any view (its size is the safe part, as on
+    /// iOS) and reports the unsafe depth beyond its edges as `proxy.safeAreaInsets`
+    /// (`position/safe-area-geometry`); its content is placed past any overlap it has.
     package private(set) var child: TypedNode<Content>?
 
     package init(_ context: _NodeContext<GeometryReader<Content>>) {
