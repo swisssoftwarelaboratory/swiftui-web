@@ -50,6 +50,9 @@ package final class TupleNode<T>: TypedNode<TupleView<T>> {
     override package var structuralChildren: [ViewNode] { children }
     override package var layoutChildren: [ViewNode] { children.flatMap(\.layoutChildren) }
     override package var nodeDescription: String { "Tuple(\(children.count))" }
+
+    /// Its elements are fixed by its type; each compares its own new value.
+    override package func newValueChangesSizes(from old: TupleView<T>, to new: TupleView<T>) -> Bool { false }
 }
 
 // MARK: _ConditionalContent
@@ -105,6 +108,15 @@ package final class ConditionalNode<TrueContent: View, FalseContent: View>:
             retire(activeNode)
             branch = makeBranch(for: view, environment: environment)
             noteInserted(activeNode)
+        }
+    }
+
+    /// Only a switch of branch (a new subtree); within a branch, the branch compares itself.
+    override package func newValueChangesSizes(from old: _ConditionalContent<TrueContent, FalseContent>,
+                                               to new: _ConditionalContent<TrueContent, FalseContent>) -> Bool {
+        switch (old.storage, new.storage) {
+        case (.trueContent, .trueContent), (.falseContent, .falseContent): return false
+        default: return true
         }
     }
 
@@ -263,4 +275,7 @@ package final class AnyViewNode: TypedNode<AnyView> {
     override package var structuralChildren: [ViewNode] { [child] }
     override package var layoutChildren: [ViewNode] { child.layoutChildren }
     override package var nodeDescription: String { "AnyView(\(_shortTypeName(childType)))" }
+
+    /// Only a view of another type (a new subtree); a view of the same type compares itself.
+    override package func newValueChangesSizes(from old: AnyView, to new: AnyView) -> Bool { old.viewType != new.viewType }
 }

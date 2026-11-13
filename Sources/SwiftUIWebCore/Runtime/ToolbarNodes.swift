@@ -294,8 +294,13 @@ extension Runtime {
     }
 
     package func setToolbarVisibility(_ node: ViewNode, _ visibility: Visibility?) {
+        let previous = toolbarVisibility.first { $0.node === node }?.visibility
         toolbarVisibility.removeAll { $0.node === node || $0.node == nil }
         if let visibility { toolbarVisibility.append(ToolbarVisibilitySource(node: node, visibility: visibility)) }
+        // Every update of the modifier's screen sets it again: only a change lays the window
+        // out anew (new-website#216: a screen hiding its bar measured the whole app, 11,000
+        // views, on every keystroke in its search field).
+        guard previous != visibility else { return }
         requestLayout()
     }
 

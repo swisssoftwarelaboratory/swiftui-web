@@ -71,7 +71,7 @@ package final class TextEditorNode: LeafNode<_TextEditorHost>, _Interactive, _Te
         guard contentOffset.y != y else { return }
         contentOffset.y = y
         clampOffset()
-        runtime.setNeedsDisplay()
+        runtime.requestRedraw()
     }
 
     // MARK: _Scrollable (the wheel over an unfocused editor scrolls its content)
@@ -82,7 +82,7 @@ package final class TextEditorNode: LeafNode<_TextEditorHost>, _Interactive, _Te
         let consumed = target - contentOffset.y
         guard consumed != 0 else { return delta }
         contentOffset.y = target
-        runtime.setNeedsDisplay()
+        runtime.requestRedraw()
         return CGSize(width: delta.width, height: delta.height - consumed)
     }
     package func showIndicators() {}

@@ -14,6 +14,8 @@ package final class GeometryChangeNode<Content: View, Value: Equatable>:
         runtime.preferenceObservers.append(WeakObserver(self))
     }
 
+    package var observesGeometry: Bool { true }
+
     package func evaluatePreference() {
         guard hasBeenPlaced else { return }
         let modifier = self.modifier
@@ -40,12 +42,19 @@ package protocol _RelativeFrameContainer: AnyObject {
     func addRelativeFrameDependent(_ node: ViewNode)
 }
 
+/// A view whose size follows lengths of its `_RelativeFrameContainer` along these axes only.
+@MainActor
+package protocol _RelativeFrameDependent: AnyObject {
+    var relativeFrameAxes: Axis.Set { get }
+}
+
 /// Node for `containerRelativeFrame`: proposes the child, and takes along the modifier's axes,
 /// the length computed from the nearest container's (a scroll view's visible size, else the
 /// window's safe area), aligning the child within it.
 @MainActor
-package final class ContainerRelativeFrameNode<Content: View>: UnaryLayoutModifierNode<Content, _ContainerRelativeFrameModifier> {
+package final class ContainerRelativeFrameNode<Content: View>: UnaryLayoutModifierNode<Content, _ContainerRelativeFrameModifier>, _RelativeFrameDependent {
     private weak var registeredContainer: AnyObject?
+    package var relativeFrameAxes: Axis.Set { modifier.axes }
     override package var changesChildSize: Bool { true }
 
     /// The nearest container's size; the window's safe area below the toolbar when there is none.

@@ -54,7 +54,14 @@ package final class PreferenceTransformNode<Content: View, K: PreferenceKey>: Un
 @MainActor
 package protocol _PreferenceObserver: AnyObject {
     var isMounted: Bool { get }
+    /// Whether the value comes from the node's geometry alone (`onGeometryChange`), so it is
+    /// re-read when scrolled content moves without a layout pass.
+    var observesGeometry: Bool { get }
     func evaluatePreference()
+}
+
+extension _PreferenceObserver {
+    package var observesGeometry: Bool { false }
 }
 
 @MainActor
@@ -93,16 +100,45 @@ package final class CoordinateSpaceNode<Content: View, Name: Hashable>:
 }
 
 /// Fills its proposal and builds its content from the resulting size during layout.
+///
+/// As in SwiftUI, the content is built again only when something it can depend on changed:
+/// the reader's size or safe area, its own value or environment (the parent's body ran again),
+/// or state the content closure read. A pass that changes none of them places the content as
+/// it is, with its memoised sizes: a reader around a whole screen (an app's tab) no longer makes
+/// every keystroke or scroll step measure that screen again (new-website#216: 10,000 views a
+/// frame in a real app). A reader whose content asked where it is (`frame(in: .global)`, an
+/// anchor) can change with any pass, so it builds its content on every one, as before.
 @MainActor
 package final class GeometryReaderNode<Content: View>: LayoutNode<GeometryReader<Content>> {
-    override package var readsGeometry: Bool { true }
+    /// Only a reader whose content reads its position follows a scroll: one that reads its size
+    /// alone lets the scroll view move its content without laying it out.
+    override package var readsGeometry: Bool { readsPosition }
     /// A reader is laid out in the safe area like any view (its size is the safe part, as on
     /// iOS) and reports the unsafe depth beyond its edges as `proxy.safeAreaInsets`
     /// (`position/safe-area-geometry`); its content is placed past any overlap it has.
     package private(set) var child: TypedNode<Content>?
 
+    /// Set for good once the content (or a view holding the proxy) asked where the reader is.
+    package private(set) var readsPosition = false
+    /// The size and safe area the content was last built for; nil until it is built, and again
+    /// after an update (a new value, a new environment, an observed change in the closure).
+    private var builtFor: (size: CGSize, safeArea: EdgeInsets)?
+    /// Number of times the content closure ran, for tests.
+    package private(set) var contentBuilds = 0
+
     package init(_ context: _NodeContext<GeometryReader<Content>>) {
         super.init(view: context.view, parent: context.parent, runtime: context.runtime, environment: context.environment)
+    }
+
+    override package func proxyReadPosition() {
+        guard !readsPosition else { return }
+        readsPosition = true
+        markPlacementStale()
+    }
+
+    override package func update(view: GeometryReader<Content>, environment: EnvironmentValues, force: Bool) {
+        super.update(view: view, environment: environment, force: force)
+        builtFor = nil
     }
 
     override package func computeSizeThatFits(_ proposal: ProposedViewSize) -> CGSize {
@@ -110,14 +146,22 @@ package final class GeometryReaderNode<Content: View>: LayoutNode<GeometryReader
     }
 
     override package func layoutContents(proposal: ProposedViewSize) {
-        let proxy = GeometryProxy(node: self, size: frame.size)
-        let content = view.content(proxy)
-        if let child {
-            child.update(view: content, environment: environment, force: true)
-        } else {
-            child = Content._makeNode(_NodeContext(view: content, parent: self, environment: environment))
-        }
         let safe = safeAreaOverlap
+        if child == nil || readsPosition || builtFor?.size != frame.size || builtFor?.safeArea != safe {
+            noteMemoReset(child == nil ? "reader built" : readsPosition ? "reader read its position" : builtFor == nil ? "reader updated"
+                          : builtFor?.size != frame.size ? "reader resized \(builtFor!.size) to \(frame.size)" : "reader safe area \(builtFor!.safeArea) to \(safe)")
+            builtFor = (frame.size, safe)
+            contentBuilds += 1
+            let proxy = GeometryProxy(node: self, size: frame.size)
+            // The closure's own reads of observable state rebuild it (the views it makes track
+            // their bodies themselves).
+            let content = _trackingObservation(for: self) { view.content(proxy) }
+            if let child {
+                child.update(view: content, environment: environment, force: true)
+            } else {
+                child = Content._makeNode(_NodeContext(view: content, parent: self, environment: environment))
+            }
+        }
         let childProposal = ProposedViewSize(width: max(0, frame.width - safe.leading - safe.trailing), height: max(0, frame.height - safe.top - safe.bottom))
         for node in child!.layoutChildren {
             node.place(at: CGPoint(x: safe.leading, y: safe.top), anchor: .topLeading, proposal: childProposal, by: self)

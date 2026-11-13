@@ -54,7 +54,8 @@ extension Anchor: Hashable where Value: Hashable {
 extension GeometryProxy {
     /// The anchor's value in this container's coordinate space.
     @MainActor public subscript<T>(anchor: Anchor<T>) -> T {
-        anchor.value(relativeTo: node.frameInRoot.origin)
+        node.proxyReadPosition()
+        return anchor.value(relativeTo: node.frameInRoot.origin)
     }
 }
 

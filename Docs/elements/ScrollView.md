@@ -52,9 +52,13 @@ at UIScrollView's normal rate (× 0.998 per millisecond) and stops at the edges.
 (`CanvasHost`) normalises `deltaMode` (lines × 16, pages × viewport), consumes the wheel event so
 the page does not scroll, and calls `advanceScrollAnimations` once per frame for momentum and
 the indicator fade. A scroll frame moves the content without a layout pass when nothing in the
-content reads its geometry (`ScrollNode.canMoveContentOnly`; a geometry reader in a background
+content reads its position (`ScrollNode.canMoveContentOnly`; a geometry reader in a background
 or overlay layer, such as a fixture probe, counts since 2026-09-18), else it lays out again
-(see the frame-time measurement below).
+(see the frame-time measurement below). Since 2026-11-12 a geometry reader counts only once its
+content asked where it is (`frame(in:)` in a space other than `.local`, `bounds(of:)`, an anchor):
+a reader of its size alone is moved with the rest. `onGeometryChange` observers are re-read after
+a move, and the actions they queue run at the start of the next frame, which stays a move when
+they change no view (an app reporting its views' screen positions to a tour, new-website#216).
 
 A control that tracks drags declares the axes it keeps (`_Interactive.dragAxes`; a slider's
 track claims `.horizontal`). When the finger crosses the slop on such a control, the movement's

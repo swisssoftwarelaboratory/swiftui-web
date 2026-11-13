@@ -337,9 +337,13 @@ public struct ScrollTargetBehaviorContext {
     package let startOffset: CGPoint
     /// The content insets: target offsets are in the geometry's coordinates (negative at rest).
     package let contentInsets: EdgeInsets
+    /// Where the content is as the finger lifts (the geometry's coordinates, like `startOffset`).
+    package var currentOffset: CGPoint?
 
     package init(originalTarget: ScrollTarget, velocity: CGVector, contentSize: CGSize, containerSize: CGSize, axes: Axis.Set,
-                 environment: EnvironmentValues, targets: [CGRect], startOffset: CGPoint, contentInsets: EdgeInsets) {
+                 environment: EnvironmentValues, targets: [CGRect], startOffset: CGPoint, contentInsets: EdgeInsets,
+                 currentOffset: CGPoint? = nil) {
+        self.currentOffset = currentOffset
         self.originalTarget = originalTarget
         self.velocity = velocity
         self.contentSize = contentSize
@@ -366,13 +370,30 @@ public protocol ScrollTargetBehavior {
 public struct PagingScrollTargetBehavior: ScrollTargetBehavior {
     public init() {}
 
+    /// The speed (points per second) from which a lift turns the page the finger was going,
+    /// however little it moved. Measured on iOS 27 in the simulator (new-website#216): 60 pt at
+    /// 400 pt/s and 30 pt at 800 pt/s turn a page, 100 pt at 360 pt/s and 60 pt at 330 pt/s
+    /// spring back; slower than that the nearer page wins (150 pt of 361 at 200 pt/s springs
+    /// back, 220 pt turns).
+    package static let flickSpeed: CGFloat = 380
+
     public func updateTarget(_ target: inout ScrollTarget, context: ScrollTargetBehaviorContext) {
         for axis in Axis.allCases where context.axes.contains(Axis.Set(axis)) {
             let length = context.containerSize[axis]
             guard length > 0 else { continue }
             let inset = axis == .horizontal ? context.contentInsets.leading : context.contentInsets.top
             let startPage = ((context.startOffset[axis] + inset) / length).rounded()
-            var page = ((target.rect.origin[axis] + inset) / length).rounded()
+            var page: CGFloat
+            if let current = context.currentOffset {
+                // As iOS pages: a flick turns one page its way; otherwise the nearer page.
+                let position = (current[axis] + inset) / length
+                let speed = axis == .horizontal ? context.velocity.dx : context.velocity.dy
+                if speed >= Self.flickSpeed { page = position.rounded(.down) + 1 }
+                else if speed <= -Self.flickSpeed { page = position.rounded(.up) - 1 }
+                else { page = position.rounded() }
+            } else {
+                page = ((target.rect.origin[axis] + inset) / length).rounded()
+            }
             page = min(max(page, startPage - 1), startPage + 1)
             target.rect.origin[axis] = page * length - inset
         }
@@ -536,7 +557,7 @@ extension View {
     /// Configures the content margin for the scrollable views within this view: the content is
     /// inset (and the scroll view grows across its axis by the margins, `scroll/margins`).
     nonisolated public func contentMargins(_ edges: Edge.Set = .all, _ insets: EdgeInsets, for placement: ContentMarginPlacement = .automatic) -> some View {
-        transformEnvironment(\._contentMargins) { $0.set(edges, insets, for: placement) }
+        _transformEnvironment("contentMargins", key: [AnyHashable(edges.rawValue), AnyHashable(insets), AnyHashable(placement)]) { $0._contentMargins.set(edges, insets, for: placement) }
     }
 
     /// Configures the content margin for the scrollable views within this view.
@@ -633,7 +654,7 @@ extension View {
     /// circumstance: the initial offset, the content size changing, or the alignment of content
     /// smaller than the viewport.
     nonisolated public func defaultScrollAnchor(_ anchor: UnitPoint?, for role: ScrollAnchorRole) -> some View {
-        transformEnvironment(\.self) { environment in
+        _transformEnvironment("defaultScrollAnchor", key: [AnyHashable(anchor), AnyHashable(role)]) { environment in
             switch role.role {
             case .initialOffset: environment.defaultScrollAnchor = anchor
             case .sizeChanges: environment._defaultScrollAnchorForSizeChanges = anchor

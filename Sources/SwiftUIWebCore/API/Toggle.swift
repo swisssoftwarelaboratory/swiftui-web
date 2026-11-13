@@ -413,6 +413,6 @@ extension View {
 
     /// Adds a condition that controls whether users can interact with this view.
     nonisolated public func disabled(_ disabled: Bool) -> some View {
-        transformEnvironment(\.isEnabled) { $0 = $0 && !disabled }
+        _transformEnvironment("disabled", key: disabled) { $0.isEnabled = $0.isEnabled && !disabled }
     }
 }

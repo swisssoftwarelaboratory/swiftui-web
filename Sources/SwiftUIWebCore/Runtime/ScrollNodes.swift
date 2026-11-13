@@ -50,6 +50,14 @@ package protocol _Scrollable: AnyObject {
     func endTracking(velocity: CGSize)
     /// Whether a pan starting in the scroll view drops keyboard focus (`scrollDismissesKeyboard`).
     var dismissesKeyboardOnScroll: Bool { get }
+    /// Whether the content settles somewhere when the finger lifts (a scroll target behaviour,
+    /// paging): a trackpad swipe settles it as the momentum begins instead of riding the tail.
+    var settlesOnRelease: Bool { get }
+    /// The axes it scrolls along.
+    var scrollAxes: Axis.Set { get }
+    /// A new wheel gesture starts over it: a settle still running is stopped, and the gesture
+    /// counts from where it was heading.
+    func beginWheelGesture()
 }
 
 extension Axis.Set {
@@ -72,6 +80,9 @@ extension _Scrollable {
     package func beginTracking() {}
     package func endTracking(velocity: CGSize) { beginMomentum(velocity: velocity) }
     package var dismissesKeyboardOnScroll: Bool { false }
+    package var settlesOnRelease: Bool { false }
+    package var scrollAxes: Axis.Set { [.horizontal, .vertical] }
+    package func beginWheelGesture() {}
 }
 
 package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, _ScrollTarget, _Scrollable, _RelativeFrameContainer {
@@ -81,7 +92,10 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     /// The current offset of the content within the viewport, clamped to the content at layout.
     package private(set) var contentOffset: CGPoint = .zero {
         // An iOS navigation bar collapses its large title as the screen's content scrolls.
-        didSet { if contentOffset.y != oldValue.y { environment._navigationContext?.stack?.scrollDidChange(self) } }
+        didSet {
+            if contentOffset.y != oldValue.y { environment._navigationContext?.stack?.scrollDidChange(self) }
+            if contentOffset != oldValue { markPlacementStale() }
+        }
     }
 
     /// The content's size for the most recent layout.
@@ -102,9 +116,26 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         let size = CGSize(width: max(0, (proposal.width ?? frame.width) - insets.leading - insets.trailing),
                           height: max(0, (proposal.height ?? frame.height) - insets.top - insets.bottom))
         guard size != relativeFrameContainerSize else { return }
+        var changed: Axis.Set = []
+        if size.width != relativeFrameContainerSize.width { changed.insert(.horizontal) }
+        if size.height != relativeFrameContainerSize.height { changed.insert(.vertical) }
         relativeFrameContainerSize = size
         relativeFrameDependents.removeAll { $0.node == nil }
-        for dependent in relativeFrameDependents { dependent.node?.invalidateSizeMemosUpward() }
+        // Only the views that read a changed length forget their sizes (a page as wide as its
+        // pager ignores the heights the pager is measured for), and only the memos inside the
+        // content: this node's and its ancestors' are keyed by the proposal the container size
+        // came from, so they stay right. Forgetting more made a pager measured for several
+        // heights in one pass re-measure its pages, and the window above them, on every frame
+        // that touched it (new-website#216: a keystroke on another tab measured 12,900 views).
+        for dependent in relativeFrameDependents {
+            if let reader = dependent.node as? any _RelativeFrameDependent, reader.relativeFrameAxes.isDisjoint(with: changed) { continue }
+            dependent.node?.noteMemoReset("relative frame \(changed)")
+            var node = dependent.node
+            while let current = node, current !== self {
+                current.invalidateSizeMemo()
+                node = current.parent
+            }
+        }
     }
 
     private var appliedDefaultAnchor = false
@@ -162,6 +193,25 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     }
 
     package var axes: Axis.Set { view.axes }
+    package var scrollAxes: Axis.Set { axes }
+    package var settlesOnRelease: Bool { environment._scrollTargetBehavior != nil }
+
+    /// Where the next wheel sequence counts from, when a settle it interrupted was heading there.
+    private var pendingWheelStart: CGPoint?
+    /// Where the current trackpad gesture began (a settle it interrupted: where that was
+    /// heading): a paging view keeps within a page of it for the whole gesture.
+    private var wheelGestureStart: CGPoint?
+
+    package func beginWheelGesture() {
+        // A swipe that interrupts a settle counts from where the settle was heading; the page
+        // rule measures from here too, even within the last swipe's quiet period.
+        let start = settle?.to ?? contentOffset
+        wheelGestureStart = start
+        trackingStartOffset = start
+        pendingWheelStart = nil
+        settle = nil
+        wheelIdle = 0
+    }
     package var isScrollEnabled: Bool { environment.isScrollEnabled }
     override package var extendsIntoSafeArea: Bool { true }
 
@@ -220,7 +270,19 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         return CGPoint(x: min(max(0, offset.x), maximum.x), y: min(max(0, offset.y), maximum.y))
     }
 
+    /// The offset and size the content was last placed for (see `layoutContents`).
+    private var placedViewport: (offset: CGPoint, size: CGSize)?
+
     override package func layoutContents(proposal: ProposedViewSize) {
+        // After a scroll, a resize or with a target to scroll to, the content is placed whole:
+        // lazy elements follow the viewport, not their proposal. Otherwise unchanged parts of it
+        // keep their placements like the rest of the window.
+        let whole = pendingTarget != nil || placedViewport.map { $0.offset != contentOffset || $0.size != frame.size } ?? true
+        if whole { runtime.wholePlacements += 1 }
+        defer {
+            if whole { runtime.wholePlacements -= 1 }
+            placedViewport = (contentOffset, frame.size)
+        }
         cachedLazyProviders = nil
         contentInsets = safeAreaOverlap + environment._contentMargins.content
         noteRelativeFrameContainer(proposal, insets: contentInsets)
@@ -631,10 +693,23 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         var remaining = delta
         var offset = contentOffset
         let maximum = maximumOffset
+        // A wheel over a paging view moves it at most one page from where the gesture began,
+        // as a finger on the glass can: the OS's momentum tail, which a page cannot tell from
+        // the finger, no longer carries it across the other pages before it settles back
+        // (new-website#216: one swipe ran to the last page, then back to the second).
+        let wheel = runtime.pan == nil && velocity == .zero && settle == nil
+        let gestureStart = wheel && settlesOnRelease ? wheelGestureStart : nil
         for axis in Axis.allCases where axes.contains(Axis.Set(axis)) {
             let target = offset[axis] + delta[axis]
-            let clampedValue = min(max(0, target), maximum[axis])
-            remaining[axis] = target - clampedValue
+            var low: CGFloat = 0, high = maximum[axis]
+            if let start = gestureStart {
+                let page = relativeFrameContainerSize[axis] > 0 ? relativeFrameContainerSize[axis] : frame.size[axis]
+                low = max(low, start[axis] - page)
+                high = min(high, start[axis] + page)
+            }
+            let clampedValue = min(max(low, target), high)
+            // What the page limit holds back stays with this view (the gesture is its own).
+            remaining[axis] = gestureStart != nil && clampedValue > 0 && clampedValue < maximum[axis] ? 0 : target - clampedValue
             offset[axis] = clampedValue
         }
         if mirrored { remaining.width = -remaining.width }
@@ -642,21 +717,30 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             contentOffset = offset
             runtime.noteScrolled(self)
             runtime.requestLayout(invalidatingSizes: false)
-            if runtime.pan?.active == true {
+            if runtime.pan != nil {
                 phase = .interacting
             } else if velocity == .zero, settle == nil {
                 // A wheel: interacting until it goes quiet (there is no gesture end to hear).
-                if wheelIdle == 0 { trackingStartOffset = CGPoint(x: offset.x - delta.width, y: offset.y - delta.height) }
+                if wheelIdle == 0 {
+                    trackingStartOffset = gestureStart ?? pendingWheelStart ?? CGPoint(x: offset.x - delta.width, y: offset.y - delta.height)
+                    pendingWheelStart = nil
+                }
                 phase = .interacting
                 wheelIdle = environment.platformProfile.metrics.scrollWheelIdleSeconds
                 runtime.animate(self)
             }
             updatePositionBinding()
+        } else if gestureStart != nil, delta != .zero {
+            // Held at the page limit, the gesture goes on: its quiet period starts again with
+            // every event, or it would settle and start counting afresh mid-swipe.
+            wheelIdle = environment.platformProfile.metrics.scrollWheelIdleSeconds
+            runtime.animate(self)
         }
         return remaining
     }
 
     package func beginTracking() {
+        wheelGestureStart = nil
         settle = nil
         wheelIdle = 0
         trackingStartOffset = contentOffset
@@ -692,7 +776,8 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             originalTarget: target, velocity: CGVector(dx: velocity.width, dy: velocity.height),
             contentSize: contentSize, containerSize: geometry.containerSize, axes: axes, environment: environment,
             targets: targets.map(\.rect), startOffset: CGPoint(x: trackingStartOffset.x - contentInsets.leading, y: trackingStartOffset.y - contentInsets.top),
-            contentInsets: contentInsets)
+            contentInsets: contentInsets,
+            currentOffset: CGPoint(x: contentOffset.x - contentInsets.leading, y: contentOffset.y - contentInsets.top))
         behavior.updateTarget(&target, context: context)
         let destination = clamped(CGPoint(x: target.rect.minX + contentInsets.leading, y: target.rect.minY + contentInsets.top))
         self.velocity = .zero
@@ -701,6 +786,8 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             return
         }
         settle = (contentOffset, destination, 0)
+        // The wheel is over: its quiet period must not settle again from mid-way.
+        wheelIdle = 0
         phase = .decelerating
         runtime.animate(self)
     }
@@ -902,6 +989,22 @@ package struct PanState {
     package var lastTime: Double
     package var velocity: CGSize = .zero
     package var active = false
+    /// The finger's recent path, (time, point), for its speed at the lift.
+    package var samples: [(Double, CGPoint)] = []
+
+    /// The finger's speed over the last 50 ms of its path (points per second, content
+    /// direction), as UIKit measures it: steady whatever the frames' spacing, where a smoothed
+    /// step-to-step speed ran low on uneven frames (new-website#216).
+    package var recentVelocity: CGSize? {
+        guard let last = samples.last, samples.count >= 2 else { return nil }
+        // The window reaches back to the previous sample at least: a late frame must not
+        // leave the last move alone in it.
+        var first = samples.first(where: { last.0 - $0.0 <= 0.05 }) ?? samples[samples.count - 2]
+        if last.0 - first.0 <= 0.004 { first = samples[samples.count - 2] }
+        guard last.0 - first.0 > 0.004 else { return nil }
+        let dt = last.0 - first.0
+        return CGSize(width: (first.1.x - last.1.x) / dt, height: (first.1.y - last.1.y) / dt)
+    }
 }
 
 extension Runtime {
@@ -960,7 +1063,72 @@ extension Runtime {
             delta = host.tree.scrollWheel(by: delta, at: CGPoint(x: point.x - origin.x, y: point.y - origin.y))
             if delta == .zero { return }
         }
-        scroll(by: delta, at: point)
+        wheelGestureEvent(delta, at: point)
+    }
+
+    /// A trackpad gesture as wheel events, the way a finger drives an iPhone's scroll views
+    /// (new-website#216). A browser's wheel events carry no phase: where the finger lifts and
+    /// the OS's momentum tail begins is read from the events themselves.
+    ///
+    /// - A gesture keeps to the axis it started along and to the scroll views under it then: a
+    ///   vertical swipe never turns a sideways pager, a sideways one never scrolls the page.
+    /// - The tail is recognised as AppKit synthesises it: the speed falling by a steady ratio.
+    ///   When the last five ratios of successive speeds all lie in 0.6…0.96 (the rule of the
+    ///   wheel-gestures library behind Embla's carousels), the finger has lifted.
+    /// - A paging view then settles on one page, in the direction the gesture moved, and the
+    ///   rest of the gesture is its momentum, swallowed: one swipe turns one page, as AppKit's
+    ///   fluid swiping commits ±1 at the gesture's end.
+    /// - In the tail, only a clear new push starts the next gesture (a delta over twice the last
+    ///   and over 2 pt), or a pause; before it, a pause of a tenth of a second or an event wholly
+    ///   along the other axis. A tail's own noise (a delta a little larger than the last) no
+    ///   longer starts a gesture that pages again and then settles back.
+    private func wheelGestureEvent(_ delta: CGSize, at point: CGPoint) {
+        let now = wheelEventTime ?? wheelClock()
+        let magnitude = max(abs(delta.width), abs(delta.height))
+        var gesture: WheelGesture
+        if var current = wheelGesture, current.nodes.allSatisfy(\.isMounted), current.continues(with: delta, magnitude: magnitude, at: now) {
+            current.record(delta, magnitude: magnitude, at: now)
+            gesture = current
+        } else {
+            // Along the larger delta; an event as far one way as the other keeps the last
+            // gesture's axis.
+            let axis: Axis = abs(delta.width) == abs(delta.height) ? (wheelGesture?.axis ?? .vertical)
+                : abs(delta.width) > abs(delta.height) ? .horizontal : .vertical
+            let nodes = scrollableNodes(at: point).filter { $0.scrollAxes.contains(Axis.Set(axis)) }
+            // A view still settling from the last swipe counts this one from where it settles.
+            for node in nodes { node.beginWheelGesture() }
+            gesture = WheelGesture(axis: axis, nodes: nodes, lastTime: now, lastMagnitude: magnitude)
+            gesture.displacement = axis == .horizontal ? delta.width : delta.height
+        }
+        defer { wheelGesture = gesture }
+        // The momentum of a settled gesture belongs to the view that settled.
+        if gesture.settled { return }
+        let locked = gesture.axis == .horizontal ? CGSize(width: delta.width, height: 0) : CGSize(width: 0, height: delta.height)
+        var remaining = locked
+        for node in gesture.nodes {
+            let before = node.contentOffset
+            remaining = node.scroll(by: remaining)
+            if node.contentOffset != before {
+                node.showIndicators()
+                if gesture.mover == nil { gesture.mover = node }
+            }
+            if remaining == .zero { break }
+        }
+        if gesture.inMomentum, let mover = gesture.mover, mover.settlesOnRelease {
+            gesture.settled = true
+            // The direction the gesture moved, at the speed the finger left with.
+            let speed = gesture.displacement.sign == .minus ? -abs(gesture.liftSpeed) : abs(gesture.liftSpeed)
+            mover.endTracking(velocity: gesture.axis == .horizontal ? CGSize(width: speed, height: 0) : CGSize(width: 0, height: speed))
+            requestLayout(invalidatingSizes: false)
+        }
+    }
+
+    /// A wheel event with its time (seconds, the host's clock): gesture gaps are measured
+    /// between the events themselves, not between the moments a busy page got to them.
+    public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double) {
+        wheelEventTime = time
+        defer { wheelEventTime = nil }
+        scrollWheel(by: delta, at: point)
     }
 
     /// The deepest list under `point` that takes sideways scrolls as swipes.
@@ -1013,9 +1181,13 @@ extension Runtime {
     /// wanders up or down still drives the slider rather than the scroll.
     package func continuePan(to point: CGPoint, time: Double) {
         guard var state = pan else { return }
+        // Every move of the finger, from the touch on, for its speed at the lift.
+        if state.samples.isEmpty { state.samples = [(state.startTime, state.start)] }
+        state.samples.append((time, point))
+        state.samples.removeAll { time - $0.0 > 0.1 }
         if !state.active {
             let dx = point.x - state.start.x, dy = point.y - state.start.y
-            guard dx * dx + dy * dy >= PlatformMetrics.panSlop * PlatformMetrics.panSlop else { return }
+            guard dx * dx + dy * dy >= PlatformMetrics.panSlop * PlatformMetrics.panSlop else { pan = state; return }
             if let pressed = pressedNode, !pressed.dragAxes.isEmpty {
                 let dominant: Axis.Set = abs(dx) >= abs(dy) ? .horizontal : .vertical
                 if pressed.dragAxes.contains(dominant) || time - state.startTime >= PlatformMetrics.touchHoldInterval {
@@ -1025,6 +1197,11 @@ extension Runtime {
                 }
             }
             state.active = true
+            // The content follows from here: the slop the finger travelled first is not made
+            // up at once (iOS: a 100 pt drag moves the content 90 pt, no jump at the start).
+            let travelled = (dx * dx + dy * dy).squareRoot()
+            let crossing = CGPoint(x: state.start.x + dx * PlatformMetrics.panSlop / travelled, y: state.start.y + dy * PlatformMetrics.panSlop / travelled)
+            state.last = crossing
             pressedNode?.pressEnded(inside: false)
             pressedNode = nil
             for node in simultaneousPressNodes { node.pressEnded(inside: false) }
@@ -1032,6 +1209,11 @@ extension Runtime {
             // iOS: scrolling dismisses the keyboard (`scrollDismissesKeyboard`).
             if let first = state.nodes.first, first.dismissesKeyboardOnScroll { focusTextField(nil) }
         }
+        // The pan is active before it moves anything: the scroll views tell a finger's move from
+        // a wheel's by it, and a first move read as a wheel's started the wheel's quiet period,
+        // whose settle then pulled a paged view back to its page while the finger still dragged
+        // it (new-website#216: the card followed for a sixth of a second, then slid back).
+        pan = state
         let delta = CGSize(width: state.last.x - point.x, height: state.last.y - point.y)
         let remaining = scroll(by: delta, through: state.nodes)
         // A finger past the top of a refreshable scroll view pulls it (iOS).
@@ -1059,7 +1241,7 @@ extension Runtime {
         }
         state.nodes.first?.endPull()
         // A finger that stopped before lifting leaves no momentum.
-        let velocity = time - state.lastTime < PlatformMetrics.panRestInterval ? state.velocity : .zero
+        let velocity = time - state.lastTime < PlatformMetrics.panRestInterval ? (state.recentVelocity ?? state.velocity) : .zero
         state.nodes.first?.endTracking(velocity: velocity)
         return true
     }
@@ -1076,4 +1258,15 @@ package func _decay(_ rate: Double, milliseconds: Double) -> Double {
         exponent >>= 1
     }
     return result
+}
+
+extension Runtime {
+    /// Every scroll view's frame in the window and its content offset (`HostedScene`).
+    public var debugScrollViews: [[Double]] {
+        root.descendants(where: { $0 is any _Scrollable }).compactMap { node in
+            guard let scroll = node as? (ViewNode & _Scrollable), node.isMounted else { return nil }
+            let f = node.frameInRoot
+            return [f.minX, f.minY, f.width, f.height, scroll.contentOffset.x, scroll.contentOffset.y].map { Double($0) }
+        }
+    }
 }

@@ -152,6 +152,7 @@ package final class ForEachNode<Data: RandomAccessCollection, ID: Hashable, Cont
     /// the page is re-measured.
     private func didMaterialize() {
         estimate = nil
+        noteMemoReset("collection placeholders")
         for entry in entries { entry.placeholder?.invalidateSizeMemo() }
         invalidateSizeMemosUpward()
     }

@@ -34,6 +34,11 @@ public struct EnvironmentValues: CustomStringConvertible {
             return K.defaultValue
         }
         set {
+            // Writing the value already there is no change: the generation stays, so the views
+            // under a node that derives its content's environment on every update (a scroll view
+            // clearing the lazy axis, a stack giving its context) keep their memoised sizes
+            // (new-website#216). Values that cannot be compared count as changed.
+            if !_valuesDiffer(self[key], newValue) { return }
             values[ObjectIdentifier(key)] = newValue
             didMutate()
         }
@@ -48,6 +53,7 @@ public struct EnvironmentValues: CustomStringConvertible {
     public subscript<T: AnyObject & Observable>(objectType: T.Type) -> T? {
         get { values[ObjectIdentifier(objectType)] as? T }
         set {
+            if (values[ObjectIdentifier(objectType)] as? T) === newValue, newValue != nil || values[ObjectIdentifier(objectType)] == nil { return }
             values[ObjectIdentifier(objectType)] = newValue
             didMutate()
         }
@@ -195,11 +201,79 @@ public struct _EnvironmentKeyWritingModifier<Value> {
 
 }
 
+/// Equal when it writes an equal value to the same key: a body evaluated again with the same
+/// `.font(…)` or `.environment(\.x, value)` hands its content the same environment generation,
+/// so the views under it keep their memoised sizes (new-website#216: every keystroke in a
+/// search re-measured each row under its `.font` and `.textCase`).
+extension _EnvironmentKeyWritingModifier: Equatable where Value: Equatable {
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.keyPath == rhs.keyPath && lhs.value == rhs.value
+    }
+}
+
 extension _EnvironmentKeyWritingModifier: ViewModifier, _EnvironmentModifier {
     public typealias Body = Never
 
     package func modifyEnvironment(_ values: inout EnvironmentValues) {
         values[keyPath: keyPath] = value
+    }
+}
+
+/// A change to the environment that compares equal when it was made from equal values (`key`,
+/// with the name of the modifier that made it): the fork's own modifiers that set several values
+/// at once (`scrollIndicators`, `contentMargins`, `disabled`…) use it instead of a closure, so a
+/// body evaluated again with the same arguments keeps its content's environment generation and
+/// the content keeps its memoised sizes (new-website#216).
+public struct _KeyedEnvironmentTransform<Key: Hashable> {
+    package var name: String
+    package var key: Key
+    package var transform: (inout EnvironmentValues) -> Void
+
+    package init(_ name: String, key: Key, transform: @escaping (inout EnvironmentValues) -> Void) {
+        self.name = name
+        self.key = key
+        self.transform = transform
+    }
+}
+
+extension _KeyedEnvironmentTransform: Equatable {
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.name == rhs.name && lhs.key == rhs.key }
+}
+
+extension _KeyedEnvironmentTransform: ViewModifier, _EnvironmentModifier {
+    public typealias Body = Never
+
+    package func modifyEnvironment(_ values: inout EnvironmentValues) {
+        transform(&values)
+    }
+
+    @MainActor
+    public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
+        EnvironmentModifierNode(context)
+    }
+}
+
+/// A key under which equal values compare equal: a `Hashable` value itself, a plain-data value by
+/// its type and bytes (a style struct without stored properties), anything else a key equal to
+/// nothing (compared as changed, as before).
+package func _equalityKey<T>(_ value: T) -> AnyHashable {
+    if let hashable = value as? any Hashable { return AnyHashable(hashable) }
+    if _isPOD(T.self) {
+        return AnyHashable([AnyHashable(ObjectIdentifier(T.self)), AnyHashable(withUnsafeBytes(of: value) { Array($0) })])
+    }
+    _unequalKeys &+= 1
+    return AnyHashable(_UnequalKey(serial: _unequalKeys))
+}
+
+/// A key equal to no other made before it.
+package struct _UnequalKey: Hashable { let serial: UInt64 }
+nonisolated(unsafe) private var _unequalKeys: UInt64 = 0
+
+extension View {
+    /// Changes the environment through `transform`, equal to another such change made by the same
+    /// modifier from an equal `key` (see `_KeyedEnvironmentTransform`).
+    nonisolated package func _transformEnvironment<Key: Hashable>(_ name: String, key: Key, _ transform: @escaping (inout EnvironmentValues) -> Void) -> some View {
+        modifier(_KeyedEnvironmentTransform(name, key: key, transform: transform))
     }
 }
 

@@ -111,5 +111,13 @@ inset view per target as the targets are placed (a list modifier applies to ever
 paints each over its element (`paintedChildren(of:)` on the proxies); dropped targets drop their
 views. `ScrollNode`'s indicator margins add the overlap.
 
+As in SwiftUI, a reader builds its content again only when its size or safe area changed, its
+own value or environment was updated (its parent's body ran), or state its closure read changed;
+any other pass places the content as it is, with its memoised sizes. A reader whose content
+asked where it is (`GeometryProxy.frame(in:)` in any space but `.local`, `bounds(of:)`, an
+anchor; recorded on the node through `ViewNode.proxyReadPosition`) builds it on every pass
+(new-website#216: an app wrapping each tab in a reader laid out all four tabs, 10,000 views, on
+every keystroke; `LayoutOnlyWhatChangedTests`).
+
 Tier A exact, Tier C `position/safe-area-geometry` 0.00 %, `position/safe-area-elements` within
 tolerance (text), Tier B Chromium 5/5 with exact frames.

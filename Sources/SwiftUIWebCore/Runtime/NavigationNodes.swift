@@ -225,8 +225,34 @@ package final class NavigationStackNode: LayoutNode<_NavigationStackHost>, _Fram
                    height: (showsLarge ? PlatformMetrics.navigationBarLargeHeight : PlatformMetrics.navigationBarInlineHeight) + barTopInset, items: items)
     }
 
-    /// The bars over `screens`, bottom to top.
+    /// What the bars are computed from besides the screens' subtrees.
+    private struct BarsKey: Equatable {
+        var tree: UInt64
+        var requests: UInt64
+        var collapsed: [Bool]
+        var rootBack: Bool
+        var topInset: CGFloat
+        /// The heights come from the metrics selected where the bars are asked for, which are
+        /// not always this stack's (ios/nav/push: the root screen measured after a pop).
+        var heights: [CGFloat]
+    }
+    private var barsMemo: (key: BarsKey, bars: [Bar?])?
+
+    /// The bars over `screens`, bottom to top. Remembered until a node is created, updated or
+    /// removed anywhere, a collapse or the root's back changes, or a full layout is requested:
+    /// each computation walks every screen's subtree several times, and a pass asked for them
+    /// about five times, a paint once more (new-website#216: 15% of a real app's layout).
     private var bars: [Bar?] {
+        let key = BarsKey(tree: runtime.treeVersion, requests: runtime.fullLayoutRequests,
+                          collapsed: [rootCollapsed] + entries.map(\.collapsed), rootBack: effectiveRootBack != nil, topInset: barTopInset,
+                          heights: [PlatformMetrics.navigationBarLargeHeight, PlatformMetrics.navigationBarInlineHeight])
+        if let memo = barsMemo, memo.key == key { return memo.bars }
+        let result = computeBars()
+        barsMemo = (key, result)
+        return result
+    }
+
+    private func computeBars() -> [Bar?] {
         var result: [Bar?] = []
         var previousLarge = false
         for (index, screen) in screens.enumerated() {

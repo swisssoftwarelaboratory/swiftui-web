@@ -72,6 +72,9 @@ package final class ModifierBodyNode<Content: View, Modifier: ViewModifier>:
 
     package var modifierType: Any.Type { Modifier.self }
 
+    /// Its sizes are its body's (see `CompositeNode`).
+    override package func newValueChangesSizes(from old: ModifiedContent<Content, Modifier>, to new: ModifiedContent<Content, Modifier>) -> Bool { false }
+
     package func makeContentNode(parent: ViewNode, environment: EnvironmentValues) -> ViewNode {
         Content._makeNode(_NodeContext(view: view.content, parent: parent, environment: environment))
     }
@@ -178,7 +181,12 @@ package final class EnvironmentModifierNode<Content: View, Modifier: ViewModifie
 
     override package func update(view: ModifiedContent<Content, Modifier>,
                                  environment: EnvironmentValues, force: Bool) {
-        if force || needsUpdate
+        // Not `force`: an equal modifier applied to the same environment gives the same values,
+        // so the content keeps its generation and its memoised sizes. A forced update came from
+        // above (a geometry reader building its content again) and reaches the content anyway;
+        // making a new generation for it made a whole screen forget its sizes on every keystroke
+        // (new-website#216). A modifier that cannot be compared still counts as changed.
+        if needsUpdate
             || self.environment.generation != environment.generation
             || _valuesDiffer(self.view.modifier, view.modifier)
         {
@@ -193,4 +201,7 @@ package final class EnvironmentModifierNode<Content: View, Modifier: ViewModifie
     override package var structuralChildren: [ViewNode] { [child] }
     override package var layoutChildren: [ViewNode] { child.layoutChildren }
     override package var nodeDescription: String { "Environment<\(_shortTypeName(Modifier.self))>" }
+
+    /// Transparent to layout: a new environment reaches the content's sizes through it.
+    override package func newValueChangesSizes(from old: ModifiedContent<Content, Modifier>, to new: ModifiedContent<Content, Modifier>) -> Bool { false }
 }

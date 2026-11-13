@@ -54,7 +54,7 @@ extension EnvironmentValues {
 extension View {
     /// Adds the given reasons to the environment's redaction reasons.
     nonisolated public func redacted(reason: RedactionReasons) -> some View {
-        transformEnvironment(\.redactionReasons) { $0.formUnion(reason) }
+        _transformEnvironment("redacted", key: reason.rawValue) { $0.redactionReasons.formUnion(reason) }
     }
 
     /// Removes any redaction applied by an ancestor.
