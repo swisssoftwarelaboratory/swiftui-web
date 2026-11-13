@@ -141,7 +141,7 @@ public final class NotificationCenter: @unchecked Sendable {
         observers = observers.filter { $0.value.owner != owner || (name != nil && $0.value.name != name) }
     }
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     /// Sends `selector` to `observer` for each matching post while the observer lives (the
     /// notification is not passed: it is a struct here, so an `@objc` method cannot take it).
     /// A selector with no argument (`synchronize`, `refresh`) is sent with none, one with an

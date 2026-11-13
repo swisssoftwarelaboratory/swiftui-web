@@ -16,7 +16,7 @@ on:
         description: Example package to build
         default: Examples/Counter
 env:
-  SWIFT_VERSION: 6.3.3
+  SWIFT_VERSION: 6.4.2
 jobs:
   compare:
     runs-on: macos-15
@@ -32,8 +32,8 @@ jobs:
           swiftly init --assume-yes --skip-install --no-modify-profile
           . ~/.swiftly/env.sh
           swiftly install $SWIFT_VERSION --use --assume-yes
-          swift sdk install https://download.swift.org/swift-6.3.3-release/wasm-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_wasm.artifactbundle.tar.gz \
-            --checksum cabfa08b73bb8ac783927ecd15fa386e99d0c139c5f232445067bcf58379cae7
+          swift sdk install https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz \
+            --checksum 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
       - name: Build both, with maps
         env: { APP: "${{ inputs.app || 'Examples/Counter' }}" }
         run: |
@@ -53,7 +53,7 @@ jobs:
               scripts/build-wasm.sh "$APP" > "$GITHUB_WORKSPACE/size/$side-build.log" 2>&1 \
                 || { tail -50 "$GITHUB_WORKSPACE/size/$side-build.log"; exit 1; }
               git checkout -- "$APP/Package.swift"
-              cp "$APP/.build/wasm/wasm32-unknown-wasip1/release/$NAME.wasm" "$GITHUB_WORKSPACE/size/$side-linked.wasm"
+              cp "$APP/.build/wasm/release/$NAME.wasm" "$GITHUB_WORKSPACE/size/$side-linked.wasm"
               cp "$APP/.build/wasm/plugins/PackageToJS/outputs/Package/$NAME.wasm" "$GITHUB_WORKSPACE/size/$side.wasm"
             )
           done

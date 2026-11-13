@@ -78,7 +78,7 @@ import Foundation
         #endif
     }
 
-    #if !canImport(ObjectiveC)
+    #if !_runtime(_ObjC)
     @Test func responderShimsKeepSelectorAndTextProviderBehavior() {
         #expect(Selector("copy:") == Selector("copy:"))
         #expect(Selector("copy:") != Selector("paste:"))

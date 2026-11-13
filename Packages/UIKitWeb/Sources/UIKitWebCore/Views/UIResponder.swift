@@ -2,7 +2,7 @@
 // walk it from the hit view outwards; the first responder takes keyboard input.
 import WebFoundation   // Foundation everywhere, and the Selector stand-in where ObjectiveC is absent
 
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 /// The responder chain's root: with an Objective-C runtime (decision 0023) it is `NSObject`,
 /// as UIKit's is, so `#selector`, `responds(to:)`, `perform(_:with:)` and target-action work
 /// on every responder.
@@ -40,7 +40,7 @@ open class UIResponder: UIResponderBase {
     /// The standard edit actions (`UIResponderStandardEditActions`): the defaults do nothing;
     /// text fields and text views act on their text and `UIPasteboard.general`
     /// (App/UIPasteboard.swift).
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     @objc open func copy(_ sender: Any?) {}
     @objc open func cut(_ sender: Any?) {}
     @objc open func paste(_ sender: Any?) {}
@@ -61,7 +61,7 @@ open class UIResponder: UIResponderBase {
     /// Whether this responder handles `action` (`UIResponderStandardEditActions` and
     /// target-action): with the runtime, whether it responds to the selector.
     open func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         return responds(to: action)
         #else
         return false
@@ -93,7 +93,7 @@ open class UIResponder: UIResponderBase {
 
     // `@objc` with the runtime, so `#selector(UIResponder.resignFirstResponder)` names them, as
     // apps' keyboard-dismissing `sendAction` calls do.
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     @discardableResult
     @objc open func becomeFirstResponder() -> Bool { _becomeFirstResponder() }
     @discardableResult

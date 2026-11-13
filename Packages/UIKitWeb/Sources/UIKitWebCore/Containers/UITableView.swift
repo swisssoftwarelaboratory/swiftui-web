@@ -234,7 +234,7 @@ open class UITableView: UIScrollView, UIGestureRecognizerDelegate {
 
     open func register(_ cellClass: AnyClass?, forCellReuseIdentifier identifier: String) {
         guard let type = cellClass as? UITableViewCell.Type else { return }
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         registeredCells[identifier] = { _makeRegisteredCell(type, reuseIdentifier: identifier) }
         #else
         registeredCells[identifier] = { type.init(style: .default, reuseIdentifier: identifier) }
@@ -1006,7 +1006,7 @@ open class UITableViewCell: UIView {
     public required init?(coder: NSCoder) { return nil }
 
     override open var canBecomeFocused: Bool { (closestCollectionContainer as? UITableView)?.allowsFocus ?? true }
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     @objc public enum CellStyle: Int, Sendable { case `default` = 0, value1, value2, subtitle }
     #else
     public enum CellStyle: Int, Sendable { case `default` = 0, value1, value2, subtitle }
@@ -1142,7 +1142,7 @@ open class UITableViewCell: UIView {
         }
     }
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     /// Not `required`, as UIKit's isn't, so a subclass may have only initializers of its own;
     /// `register(_:forCellReuseIdentifier:)` makes a registered class through the runtime, as
     /// UIKit does, which reaches a subclass's override.
@@ -1517,7 +1517,7 @@ open class UITableViewCell: UIView {
     }
 }
 
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 /// A registered cell made as UIKit makes one: `+alloc`, then `-initWithStyle:reuseIdentifier:`
 /// sent to the new object, so the subclass's own override runs. Each method is looked up and
 /// called with its own signature (WebAssembly checks the type of every indirect call).

@@ -13,7 +13,7 @@
 // names (`NSDictionary`, `NSSet`) as typealiases, `NSDate` is Core Data's spelling of `Date` here
 // (WebCoreData, Values.swift), and the compiler reads some Foundation class names in the module
 // named Foundation as Apple's Foundation being present (`NSString`, NSRegularExpression.swift).
-#if os(WASI) && canImport(ObjectiveC)
+#if os(WASI) && _runtime(_ObjC)
 
 /// The object an array becomes in Objective-C: its elements, each as `Any`.
 public final class _WebNSArray: NSObject, @unchecked Sendable {

@@ -21,10 +21,10 @@ on:
         type: boolean
         default: false
 env:
-  SWIFT_VERSION: "6.3.3"
-  WASM_SDK: swift-6.3.3-RELEASE_wasm
-  WASM_SDK_URL: https://download.swift.org/swift-6.3.3-release/wasm-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_wasm.artifactbundle.tar.gz
-  WASM_SDK_CHECKSUM: cabfa08b73bb8ac783927ecd15fa386e99d0c139c5f232445067bcf58379cae7
+  SWIFT_VERSION: "6.4.2"
+  WASM_SDK: swift-6.4.2-RELEASE_wasm
+  WASM_SDK_URL: https://download.swift.org/swift-6.4.2-release/wasm-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_wasm.artifactbundle.tar.gz
+  WASM_SDK_CHECKSUM: 83baca83553f8c443cda7b84800912e6e709c3acd2e7ebf277794ca5836c0da5
   # The Objective-C runtime SDK of decision 0023 (swift-objc-wasm v0.1.1, macOS arm64 only), as CI's browser job pins it.
   OBJC_SDK: swift-6.3.3-RELEASE_wasm-objc
   OBJC_SDK_URL: https://github.com/iamcgn/swift-objc-wasm/releases/download/v0.1.1/swift-6.3.3-RELEASE_wasm-objc.artifactbundle.tar.gz
@@ -48,7 +48,7 @@ jobs:
 
   ours:
     runs-on: ubuntu-24.04
-    container: swift:6.3.3
+    container: swift:6.4.2
     steps:
       - uses: actions/checkout@v4
       - name: Python and the wasm SDK
@@ -69,7 +69,7 @@ jobs:
 
   plan:
     runs-on: ubuntu-24.04
-    container: swift:6.3.3
+    container: swift:6.4.2
     outputs:
       batches: ${{ steps.plan.outputs.batches }}
     steps:
@@ -88,7 +88,7 @@ jobs:
     # macOS runners for hours, which CI's macos and browser jobs wait behind.
     if: inputs.sdk == 'stock' || github.event_name == 'push'
     runs-on: ubuntu-24.04
-    container: swift:6.3.3
+    container: swift:6.4.2
     timeout-minutes: 300
     strategy:
       fail-fast: false
@@ -145,7 +145,8 @@ jobs:
           brew install swiftly
           swiftly init --assume-yes --skip-install --no-modify-profile
           . ~/.swiftly/env.sh
-          swiftly install $SWIFT_VERSION --use --assume-yes
+          # The runtime SDK is built for Swift 6.3.3 only (decision 0026); the sweep builds with it.
+          swiftly install 6.3.3 --use --assume-yes
           swift sdk install "$OBJC_SDK_URL" --checksum "$OBJC_SDK_CHECKSUM"
           scripts/objc-sdk/add-api-notes.sh
       - uses: actions/download-artifact@v4

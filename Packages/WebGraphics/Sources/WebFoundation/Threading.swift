@@ -282,7 +282,7 @@ public func os_unfair_lock_assert_not_owner(_ lock: os_unfair_lock_t) {
 
 // MARK: - Autorelease pools
 
-#if !canImport(ObjectiveC)
+#if !_runtime(_ObjC)
 /// Runs `body` in an autorelease pool, which Swift's own memory management makes a plain call
 /// here (Apple's ObjectiveC module declares it; the image caches drain one per decoded image).
 public func autoreleasepool<Result>(invoking body: () throws -> Result) rethrows -> Result {

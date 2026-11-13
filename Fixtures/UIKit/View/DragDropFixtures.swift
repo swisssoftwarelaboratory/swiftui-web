@@ -15,7 +15,7 @@ typealias DragText = NSString
 
 /// A provider carrying `text` (Foundation's takes an `NSString`, WebFoundation's stand-in a `String`).
 func dragTextProvider(_ text: String) -> NSItemProvider {
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     return NSItemProvider(object: text as NSString)
     #else
     return NSItemProvider(object: text)

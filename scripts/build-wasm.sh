@@ -43,6 +43,36 @@ SCRATCH=.build/wasm; [[ "$SDK" != "$STOCK_SDK" ]] && SCRATCH=".build/wasm-${SDK#
 # cannot compress, and some of them changed from one clean build to the next (the drift of
 # Counter's compressed size around the decision 0006 budget).
 NO_MODHASH=(-Xswiftc -Xfrontend -Xswiftc -disable-incremental-llvm-codegen)
+# A change to the library itself (SwiftUIWeb, UIKitWeb, WebGraphics, the shadows: anything under
+# Sources, Packages or Plugins) recompiles all of the bundle's wasm code, the app's included. Twice an
+# incremental build after a UIKitWeb change linked code compiled against the old UIKitWeb with the
+# new one (the page failed with "function signature mismatch"; decision 0026), and a few minutes
+# of compiling are cheaper than chasing that. An edit to the app alone stays incremental. The
+# host's tools (macros, plugins) and fetched packages are kept. The stamp is taken when the build
+# starts, so an edit made while it runs is seen by the next one.
+LIBRARY_STAMP="$PWD/$SCRATCH/.library-stamp"
+STARTED="$(mktemp "${TMPDIR:-/tmp}/swiftuiweb-build.XXXXXX")"; trap 'rm -f "$STARTED"' EXIT
+# The wasm outputs: Swift Build's (SwiftPM's engine since Swift 6.4, `out/…-webassembly-wasm32`)
+# and the native build system's (`wasm32-unknown-wasip1`).
+shopt -s nullglob
+WASM_OUTPUTS=("$SCRATCH"/wasm32-unknown-wasip1 "$SCRATCH"/out/Products/*-webassembly-wasm32 "$SCRATCH"/out/Intermediates.noindex/*.build/*-webassembly-wasm32)
+shopt -u nullglob
+if [[ ${#WASM_OUTPUTS[@]} -gt 0 ]] && { [[ ! -f "$LIBRARY_STAMP" ]] || [[ -n "$(cd "$ROOT" && find Sources Packages Plugins Package.swift \
+    \( -name .build -o -name .swiftpm -o -name node_modules -o -name Tests \) -prune -o -newer "$LIBRARY_STAMP" -print 2>/dev/null | head -1)" ]]; }; then
+  echo "The library changed since this bundle's last build: recompiling its wasm code."
+  rm -rf "${WASM_OUTPUTS[@]}"
+fi
+# An SDK is built for exactly one compiler: build with the toolchain its name gives
+# (`swift-<version>-RELEASE_wasm…`). The Objective-C runtime SDK exists for Swift 6.3.3 only
+# (decision 0023), while .swift-version is 6.4.2 (decision 0026).
+SDK_SWIFT="${SDK#swift-}"; SDK_SWIFT="${SDK_SWIFT%%-RELEASE*}"
+swift() {
+  if [[ "$SDK_SWIFT" != "$(cat "$ROOT/.swift-version")" ]] && command -v swiftly >/dev/null; then
+    swiftly run swift "$@" "+$SDK_SWIFT"
+  else
+    command swift "$@"
+  fi
+}
 if [[ $DEBUG == 1 ]]; then
   swift package --disable-sandbox --swift-sdk "$SDK" --scratch-path "$SCRATCH" "${NO_MODHASH[@]}" js $PRODUCT_FLAG --use-cdn --debug-info-format dwarf
 else
@@ -55,6 +85,7 @@ else
   swift package --disable-sandbox --swift-sdk "$SDK" --scratch-path "$SCRATCH" -c release -Xswiftc -Osize "${NO_MODHASH[@]}" \
     -Xswiftc -Xfrontend -Xswiftc -internalize-at-link js $PRODUCT_FLAG --use-cdn
 fi
+mv "$STARTED" "$LIBRARY_STAMP"
 # Asset catalogs (decision 0011): every *.xcassets of the package becomes assets/manifest.js plus
 # the image files in the bundle; index.html includes the script before the module.
 BUNDLE=".build/wasm/plugins/PackageToJS/outputs/Package"
@@ -71,10 +102,12 @@ case "$PRODUCT" in
 esac
 rm -rf "$BUNDLE/assets"
 python3 "$ROOT/scripts/assets.py" "$ASSETS" --js "$BUNDLE/assets/manifest.js" --out "$BUNDLE/assets"
-# A package target's processed resources (`resources: [.process("Resources")]`, SwiftPM lays
-# them out as `<Package>_<Target>.resources`) join the assets, where `Bundle.url(forResource:)`
-# looks (decision 0021); catalogs and string catalogs are the manifest's.
-for RES in "$SCRATCH"/wasm32-unknown-wasip1/*/*.resources; do
+# A package target's processed resources (`resources: [.process("Resources")]`, which SwiftPM's
+# native build system lays out as `<Package>_<Target>.resources` and Swift Build as
+# `<Package>_<Target>.bundle`) join the assets, where `Bundle.url(forResource:)` looks (decision
+# 0021); catalogs and string catalogs are the manifest's.
+CONFIG=release; [[ $DEBUG == 1 ]] && CONFIG=debug
+for RES in "$SCRATCH"/wasm32-unknown-wasip1/$CONFIG/*.resources "$SCRATCH"/$CONFIG/*.bundle; do
   [[ -d "$RES" ]] || continue
   (cd "$RES" && find . -type f ! -path '*.xcassets/*' ! -name '*.xcstrings' ! -name 'Info.plist' | while read -r f; do
     mkdir -p "$OLDPWD/$BUNDLE/assets/$(dirname "$f")" && cp "$f" "$OLDPWD/$BUNDLE/assets/$f"; done)

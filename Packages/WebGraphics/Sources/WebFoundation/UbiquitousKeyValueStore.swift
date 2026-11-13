@@ -11,7 +11,7 @@ import Foundation
 
 /// An iCloud-based container of key-value pairs you use to share data among instances of your
 /// app running on a person's connected devices.
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 // An object of the runtime where there is one (decision 0023), so `#selector(synchronize)` names
 // it: CloudStorage observes `willEnterForegroundNotification` with that selector.
 public final class NSUbiquitousKeyValueStore: NSObject, @unchecked Sendable {

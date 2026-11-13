@@ -488,7 +488,7 @@ open class NumberFormatter: Formatter {
 
     /// The number in `string`, nil when it does not parse.
     public func number(from string: String) -> Double? {
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         // Through `getObjectValue`, as Foundation's, so a subclass's own reading applies.
         var object: AnyObject?
         try? getObjectValue(&object, for: string, range: nil)
@@ -510,7 +510,7 @@ open class NumberFormatter: Formatter {
         return allowsFloats || value.rounded(.towardZero) == value ? value : nil
     }
 
-    #if canImport(ObjectiveC)
+    #if _runtime(_ObjC)
     /// Reads the number in `string` into `obj` (an `NSNumber`); subclasses override it to read
     /// their own forms, as Foundation's does. Throws nothing here: a string that does not
     /// parse leaves `obj` nil.

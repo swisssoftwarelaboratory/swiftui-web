@@ -21,7 +21,7 @@ const report = {
   app: 'buttoncraft', upstream: 'https://github.com/atrinh0/buttoncraft',
   tested_commit: git('rev-parse HEAD'), working_tree: dirty.length ? `dirty: ${dirty.length} path(s) differ from the commit` : 'clean',
   app_pinned_revision: git('ls-files --stage Apps/upstream/buttoncraft').split(/\s+/)[1] || 'unknown',
-  sdk: 'swift-6.3.3-RELEASE_wasm', browser: null, url, started: new Date().toISOString(),
+  sdk: 'swift-6.4.2-RELEASE_wasm', browser: null, url, started: new Date().toISOString(),
   full_app_pass: false, flows: {}, problems: [], screenshots: [], trace: null,
 };
 const FLOWS = ['launch', 'press', 'slider', 'reset', 'toggle', 'code'];

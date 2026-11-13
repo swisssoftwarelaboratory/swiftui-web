@@ -12,7 +12,7 @@
 // object or bridges to one, as the setter then takes one; for any other value this module
 // cannot call the setter without its signature (a wrong one traps on wasm), so a class set by
 // key with one overrides `setValue(_:forKey:)`.
-#if os(WASI) && canImport(ObjectiveC)
+#if os(WASI) && _runtime(_ObjC)
 import ObjectiveC
 
 extension NSObject {

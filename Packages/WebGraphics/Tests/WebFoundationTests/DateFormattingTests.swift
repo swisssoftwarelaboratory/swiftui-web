@@ -176,7 +176,7 @@ let foundationIsCurrent: Bool = {
                                  5, 59, 60, 3600, 7200, 86400, 172800, 604800, 2_592_000, 31_536_000, 63_072_000, 0]
         var calendar = Self.calendar
         calendar.timeZone = Self.zone
-        #if canImport(ObjectiveC)
+        #if _runtime(_ObjC)
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Self.locale
         formatter.calendar = calendar
@@ -199,7 +199,7 @@ let foundationIsCurrent: Bool = {
                     #expect(ours == theirs, "\(offset) \(presentation) \(units)")
                 }
             }
-            #if canImport(ObjectiveC)   // corelibs Foundation has no RelativeDateTimeFormatter
+            #if _runtime(_ObjC)   // corelibs Foundation has no RelativeDateTimeFormatter
             // The formatter keeps whole units (no rounding) and maps full and spellOut to the style's,
             // short to abbreviated, abbreviated to narrow.
             let now = Date(timeIntervalSince1970: 1_775_000_000)

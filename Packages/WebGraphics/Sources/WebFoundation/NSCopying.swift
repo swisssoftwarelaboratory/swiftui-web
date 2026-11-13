@@ -3,7 +3,7 @@
 // `NSZone` is the Objective-C runtime's where that SDK is in use, a placeholder otherwise;
 // zones are unused either way, as on Apple platforms since ARC.
 #if os(WASI)
-#if !canImport(ObjectiveC)
+#if !_runtime(_ObjC)
 /// A memory zone: unused, as on Apple platforms.
 public struct NSZone: Sendable {}
 #endif

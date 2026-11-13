@@ -4,7 +4,7 @@
 // an extra argument; WebAssembly checks the signature of every indirect call, so on the
 // Objective-C runtime build (decision 0023) sending a no-argument method one argument traps. The
 // count comes from the selector's colons, as it does for any Objective-C method.
-#if canImport(ObjectiveC)
+#if _runtime(_ObjC)
 import ObjectiveC
 
 extension NSObject {

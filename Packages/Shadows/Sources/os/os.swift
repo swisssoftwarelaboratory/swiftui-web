@@ -8,6 +8,11 @@
 // thread, so it orders nothing and needs no lock of its own.
 #if os(WASI)
 
+/// Where the compiler puts log strings it optimises (Swift 6.4 asks every module named `os` for
+/// it, decision 0026). This module's messages are plain interpolations the compiler leaves alone,
+/// so nothing lands there; the name is a wasm data segment's.
+let osLogStringSectionName = ".rodata.oslogstring"
+
 // MARK: Levels and logs
 
 /// The level of a log message.

@@ -17,7 +17,7 @@ on:
         type: string
         required: true
 env:
-  SWIFT_VERSION: 6.3.3
+  SWIFT_VERSION: 6.4.2
   # On a push, the branch name after `claude/app-` (claude/app-pompaddo builds Pompaddo).
   PRODUCT: ${{ inputs.product }}
 jobs:
@@ -40,6 +40,7 @@ jobs:
           swiftly init --assume-yes --skip-install --no-modify-profile
           . ~/.swiftly/env.sh
           swiftly install $SWIFT_VERSION --use --assume-yes
+          swiftly install 6.3.3 --assume-yes   # the compiler the runtime SDK is built for (decision 0026)
           swift sdk install https://github.com/iamcgn/swift-objc-wasm/releases/download/v0.1.1/swift-6.3.3-RELEASE_wasm-objc.artifactbundle.tar.gz \
             --checksum d493aecef947d8a8a4d224264ace14d28a423677d949bcd756838c3080638328
           scripts/objc-sdk/add-api-notes.sh

@@ -9,7 +9,7 @@
 // identifier comes round again or at the next sweep of the tables. A value type has no identity
 // to hang values on (Apple boxes it afresh each time, so its values are never found again);
 // here it gets no values either. A page runs one thread, so the tables take no lock.
-#if os(WASI) && !canImport(ObjectiveC)
+#if os(WASI) && !_runtime(_ObjC)
 
 /// How an associated value is held, as the Objective-C runtime names the policies. Weak,
 /// unretained (`ASSIGN`) values are held weakly here; the others are retained, and the copying

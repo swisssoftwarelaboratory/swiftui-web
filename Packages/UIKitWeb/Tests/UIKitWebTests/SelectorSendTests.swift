@@ -2,7 +2,7 @@
 // is answered, so Kingfisher's lookup of the shared application by selector, which checks
 // `responds(to:)` first, finds nothing, as in an app extension. With the runtime the real
 // NSObject answers (decision 0023).
-#if !canImport(ObjectiveC)
+#if !_runtime(_ObjC)
 import Testing
 import UIKit
 @testable import UIKitWebCore

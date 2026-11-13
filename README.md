@@ -64,7 +64,7 @@ components and the projects whose ideas are borrowed with attribution are listed
 ## Getting started
 
 ```sh
-./scripts/bootstrap.sh          # swiftly + Swift 6.3.3 + wasm SDK + binaryen
+./scripts/bootstrap.sh          # swiftly + Swift 6.4.2 + wasm SDK + binaryen
 swift test                      # native runtime + layout tests (fast)
 ./scripts/build-wasm.sh Examples/Counter   # wasm bundle
 ./scripts/serve.sh Examples/Counter        # open in a browser
@@ -72,7 +72,7 @@ swift test                      # native runtime + layout tests (fast)
 
 ### Linux headless tests
 
-Use the pinned Swift 6.3.3 toolchain. The core, headless renderer, UIKitWeb and fixtures build
+Use the pinned Swift 6.4.2 toolchain. The core, headless renderer, UIKitWeb and fixtures build
 on Linux. Run `swift test --scratch-path .build/native`, `(cd Packages/UIKitWeb && swift test)`
 and `(cd Packages/WebGraphics && swift test)` (the last needs `libcairo2-dev` for the Cairo
 painter's tests; `brew install cairo` on macOS). Native Foundation geometry and attributed strings retain their identities; WebGraphics
@@ -82,7 +82,7 @@ and WebFoundation supply the missing CoreGraphics and Objective-C-facing value A
 parsers. Other Formatter subclasses leave the bound value unchanged when edited; use a
 `ParseableFormatStyle` for custom parsing.
 
-For wasm tests, use `swift package --disable-sandbox --swift-sdk swift-6.3.3-RELEASE_wasm js
+For wasm tests, use `swift package --disable-sandbox --swift-sdk swift-6.4.2-RELEASE_wasm js
 test` without a scratch-path override. JavaScriptKit's test packager requires the default
 `.build` directory, so keep native tests in `.build/native` as above.
 

@@ -50,7 +50,7 @@ if [[ -z "${1:-}" ]]; then "$ROOT/scripts/size-gate.sh" Examples/Progress 367001
 # runtime SDK (decision 0023), installed where this runs; it goes last because the Apps scratch
 # path's bundle is the one last built (build-wasm.sh copies the other SDK's bundle into it).
 "$ROOT/scripts/check-apps.sh" --verify
-OBJC_SDK="swift-$(cat "$ROOT/.swift-version")-RELEASE_wasm-objc"
+OBJC_SDK="swift-6.3.3-RELEASE_wasm-objc"   # built for Swift 6.3.3 only (decisions 0023, 0026)
 # shellcheck disable=SC1091
 . "$ROOT/scripts/env.sh"
 swift sdk list | grep -qx "$OBJC_SDK" || { echo "build-landing: the Objective-C runtime SDK $OBJC_SDK is not installed (decision 0023); SwiftUI2048 cannot be built"; exit 1; }
