@@ -26,6 +26,7 @@ extension View {
     nonisolated public func onReceive<P: Publisher>(_ publisher: P, perform action: @escaping @MainActor (P.Output) -> Void) -> some View where P.Failure == Never {
         // The publisher is used on the main actor only (the node subscribes when it mounts).
         nonisolated(unsafe) let held = publisher
-        return modifier(_OnReceiveModifier(subscribe: { MainActor.assumeIsolated { held._subscribe(action) } }))
+        nonisolated(unsafe) let action = action   // WebCombine takes a `Sendable` one; Swift 5 mode (decision 0027)
+        return modifier(_OnReceiveModifier(subscribe: { MainActor.assumeIsolated { held._subscribe({ action($0) }) } }))
     }
 }

@@ -19,7 +19,7 @@ public enum _UserNotificationsHost {
     /// Asks the browser (a prompt the first time); the answer on the main actor.
     nonisolated(unsafe) public static var requestPermission: ((@escaping @MainActor (UNAuthorizationStatus) -> Void) -> Void)?
     /// Shows a notification; `onClick` is the user opening it.
-    nonisolated(unsafe) public static var show: ((_ title: String, _ body: String, _ identifier: String, _ onClick: @escaping @MainActor () -> Void) -> Void)?
+    nonisolated(unsafe) public static var show: ((_ title: String, _ body: String, _ identifier: String, _ onClick: @escaping @MainActor @Sendable () -> Void) -> Void)?
 }
 
 // MARK: - Authorization

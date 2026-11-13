@@ -40,7 +40,7 @@ public enum _CoreLocationHost {
         case timeout = 3
     }
 
-    public typealias Update = @MainActor (Result<Position, Failure>) -> Void
+    public typealias Update = @MainActor @Sendable (Result<Position, Failure>) -> Void
 
     /// The Permissions API's state for geolocation as last read ("granted", "denied", "prompt"),
     /// when the host is in place; nil where the browser can't say.
@@ -55,5 +55,5 @@ public enum _CoreLocationHost {
     @MainActor public static func permissionDidChange() { _authorizationObserver?() }
 
     /// Set by CoreLocation's first location manager.
-    nonisolated(unsafe) public static var _authorizationObserver: (@MainActor () -> Void)?
+    nonisolated(unsafe) public static var _authorizationObserver: (@MainActor @Sendable () -> Void)?
 }

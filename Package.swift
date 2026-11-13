@@ -2,6 +2,20 @@
 import PackageDescription
 import CompilerPluginSupport
 
+// Framework modules build the way Apple builds its own (decision 0027): in Swift 5 language
+// mode, so an app built in Swift 6 mode gets from them the warnings Xcode gives it from Apple's
+// (in Swift 6 mode a `@MainActor` closure parameter becomes `@Sendable`, and every app's
+// `Button(action: action)` warns). Every other check Swift 6 mode makes at compile time is turned
+// on, and warnings are errors, so the fork's own code stays as strictly checked as before. Not
+// `DynamicActorIsolation`: in Swift 5 mode it traps in every main-actor closure called off the
+// main actor, where Swift 6 mode checks none of them, and Apple's frameworks don't turn it on.
+let framework: [SwiftSetting] = [.swiftLanguageMode(.v5), .treatAllWarnings(as: .error)] + [
+    "ConciseMagicFile", "ForwardTrailingClosures", "StrictConcurrency", "BareSlashRegexLiterals",
+    "DeprecateApplicationMain", "ImportObjcForwardDeclarations", "DisableOutwardActorInference",
+    "IsolatedDefaultValues", "GlobalConcurrency", "InferSendableFromCaptures", "ImplicitOpenExistentials",
+    "RegionBasedIsolation", "NonfrozenEnumExhaustivity",
+].map { .enableUpcomingFeature($0) }
+
 // SwiftUIWeb: an open-source SwiftUI reimplementation that runs unmodified SwiftUI
 // source in the browser (WebAssembly + Canvas) and, later, natively.
 //
@@ -84,23 +98,23 @@ let package = Package(
                 .target(name: "WebCoreData", condition: .when(platforms: [.wasi], traits: ["CoreData"])),
                 .product(name: "WebFoundationFormats", package: "WebGraphics", condition: .when(platforms: [.wasi], traits: ["FoundationFormats"])),
             ],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // Swift Charts over the display list (sw-frameworks, decision 0018): `import Charts`.
         .target(
             name: "Charts",
             dependencies: ["SwiftUI"],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // Map, VideoPlayer and WebView (sw-frameworks): painted tiles, host elements over the canvas.
-        .target(name: "CoreLocationHost", swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "CoreLocation", dependencies: ["CoreLocationHost", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "MapKit", dependencies: ["SwiftUI", "CoreLocation"], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "CoreLocationHost", swiftSettings: framework),
+        .target(name: "CoreLocation", dependencies: ["CoreLocationHost", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "MapKit", dependencies: ["SwiftUI", "CoreLocation"], swiftSettings: framework),
         // The player and capture layers subclass UIKitWeb's CALayer; AudioToolbox carries the
         // CoreAudioTypes a render block names, which Apple's AVFoundation re-exports.
-        .target(name: "AVFoundation", dependencies: ["AudioToolbox", .product(name: "UIKitWebCore", package: "UIKitWeb"), .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "SwiftData", dependencies: ["SwiftUIWebCore", "SwiftDataMacros", .product(name: "WebFoundation", package: "WebGraphics"), .product(name: "WebCombine", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "AVFoundation", dependencies: ["AudioToolbox", .product(name: "UIKitWebCore", package: "UIKitWeb"), .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "AVKit", dependencies: ["SwiftUI", "AVFoundation"], swiftSettings: framework),
+        .target(name: "SwiftData", dependencies: ["SwiftUIWebCore", "SwiftDataMacros", .product(name: "WebFoundation", package: "WebGraphics"), .product(name: "WebCombine", package: "WebGraphics")], swiftSettings: framework),
         // The `@Model`, `#Predicate` and `@ModelActor` macros (host-compiled, as `#Preview`'s plugin).
         .macro(
             name: "SwiftDataMacros",
@@ -117,7 +131,7 @@ let package = Package(
             name: "WebCoreData",
             dependencies: ["SwiftUIWebCore", "SwiftData", .product(name: "WebFoundation", package: "WebGraphics"),
                            .product(name: "WebFoundationFormats", package: "WebGraphics"), .product(name: "WebCombine", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // The CoreDataModel plugin's tool: `.xcdatamodeld` to Swift (host only).
         .executableTarget(name: "CoreDataModelGen", swiftSettings: [.treatAllWarnings(as: .error)]),
@@ -125,11 +139,11 @@ let package = Package(
         // The AssetSymbols plugin's tool: `.xcassets` to `ImageResource` and `ColorResource` symbols (host only).
         .executableTarget(name: "AssetSymbolsGen", swiftSettings: [.treatAllWarnings(as: .error)]),
         .plugin(name: "AssetSymbols", capability: .buildTool(), dependencies: ["AssetSymbolsGen"]),
-        .target(name: "UserNotifications", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "UserNotifications", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         // Hashes, HMAC and symmetric keys; haptics on hardware without an engine; the app's calls
         // to its widgets (none on the web). Pure Swift values over WebFoundation.
-        .target(name: "CryptoKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "CoreHaptics", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "CryptoKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "CoreHaptics", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         // Core Image's images, filters and contexts as display-list recordings (filters the
         // painters draw), with UIKit's CIColor and UIImage additions. Apps import it as
         // `CoreImage`, the Shadows module that re-exports it on wasm (a root module of that
@@ -139,33 +153,33 @@ let package = Package(
             dependencies: [.product(name: "UIKit", package: "UIKitWeb"), .product(name: "WebGraphics", package: "WebGraphics"),
                            .product(name: "WebFoundation", package: "WebGraphics"),
                            .product(name: "WebImageIO", package: "WebGraphics", condition: .when(platforms: [.wasi]))],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
-        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         // Live Activities and alarms: neither is enabled on the web (no Lock Screen); the types
         // are values, so an app's code for them compiles and its "off" path runs. iOS-only
         // frameworks, so these root modules shadow nothing in a macOS build.
-        .target(name: "ActivityKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "AlarmKit", dependencies: ["ActivityKit", "AppIntents", "SwiftUI"], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "EventKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "AudioToolbox", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "Speech", dependencies: ["AVFoundation", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "WebKit", dependencies: ["SwiftUI"], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "ActivityKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "AlarmKit", dependencies: ["ActivityKit", "AppIntents", "SwiftUI"], swiftSettings: framework),
+        .target(name: "EventKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "AudioToolbox", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "Speech", dependencies: ["AVFoundation", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "WebKit", dependencies: ["SwiftUI"], swiftSettings: framework),
         // In-app purchases with an empty store (no products load on the web) and its SwiftUI views.
         .target(
             name: "StoreKit",
             dependencies: ["SwiftUI", .product(name: "WebFoundation", package: "WebGraphics"),
                            .product(name: "WebDecimalFormats", package: "WebGraphics", condition: .when(platforms: [.wasi]))],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // Intents, entities and App Shortcuts. Nothing runs them from Siri or Shortcuts on the web;
         // Button(intent:) and Toggle(isOn:intent:) run them.
-        .target(name: "AppIntents", dependencies: ["SwiftUI", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "AppIntents", dependencies: ["SwiftUI", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         // The representables (decision 0014, Phase 2): UIKit views hosted as SwiftUI leaves.
         .target(
             name: "SwiftUIWebUIKit",
             dependencies: ["SwiftUIWebCore", .product(name: "UIKitWebCore", package: "UIKitWeb"), .product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // Compiler plugin: `#Preview` expands to nothing, so preview blocks in app sources compile.
         .macro(
@@ -179,12 +193,12 @@ let package = Package(
         .target(
             name: "SwiftUIWebCore",
             dependencies: [.product(name: "WebFoundation", package: "WebGraphics"), .product(name: "WebCombine", package: "WebGraphics"), .product(name: "WebGraphics", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "SwiftUIWebHeadless",
             dependencies: ["SwiftUIWebCore", .product(name: "WebGraphicsHeadless", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "SwiftUIWebTestSupport",
@@ -196,7 +210,7 @@ let package = Package(
         .target(
             name: "SwiftUIWebNative",
             dependencies: ["SwiftUIWebCore", .product(name: "WebGraphicsNative", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // The browser host: the runtime in the substrate's canvas host (decisions 0007, 0014).
         .target(
@@ -212,7 +226,7 @@ let package = Package(
                 .product(name: "WebGraphicsCanvas", package: "WebGraphics"),
                 .product(name: "JavaScriptEventLoop", package: "JavaScriptKit", condition: .when(platforms: [.wasi])),
             ],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // FixtureKit is the SwiftUIWeb twin of Harness/Sources/FixtureKit; SwiftUIWebFixtures compiles
         // the fixture sources shared with Harness/ (which builds them against Apple's SwiftUI).

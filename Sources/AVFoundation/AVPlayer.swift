@@ -41,6 +41,7 @@ public class AVAsset: @unchecked Sendable {
     public init(url: URL) { self.url = url }
     /// The asset's duration (deprecated on iOS for `load(.duration)`): unknown until a host
     /// element has read the file, which nothing does yet.
+    @available(*, deprecated, message: "Use load(.duration) instead")
     public var duration: CMTime { .invalid }
 }
 

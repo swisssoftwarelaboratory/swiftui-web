@@ -160,6 +160,7 @@ final class SpeechSession: _SpeechSession {
     private var closures: [JSClosure] = []
 
     init?(_ make: JSObject, locale: String, partial: Bool, result: @escaping @MainActor (String, Bool) -> Void, failed: @escaping @MainActor (String) -> Void) {
+        nonisolated(unsafe) let result = result, failed = failed   // run on the main actor; Swift 5 mode (decision 0027)
         let onResult = JSClosure { (arguments: [JSValue]) -> JSValue in
             let transcript = arguments.first?.string ?? ""
             let isFinal = arguments.count > 1 ? (arguments[1].boolean ?? false) : false

@@ -31,6 +31,20 @@
 // binary module wants the SDK's Foundation.
 import PackageDescription
 
+// Framework modules build the way Apple builds its own (decision 0027): in Swift 5 language
+// mode, so an app built in Swift 6 mode gets from them the warnings Xcode gives it from Apple's
+// (in Swift 6 mode a `@MainActor` closure parameter becomes `@Sendable`, and every app's
+// `Button(action: action)` warns). Every other check Swift 6 mode makes at compile time is turned
+// on, and warnings are errors, so the fork's own code stays as strictly checked as before. Not
+// `DynamicActorIsolation`: in Swift 5 mode it traps in every main-actor closure called off the
+// main actor, where Swift 6 mode checks none of them, and Apple's frameworks don't turn it on.
+let framework: [SwiftSetting] = [.swiftLanguageMode(.v5), .treatAllWarnings(as: .error)] + [
+    "ConciseMagicFile", "ForwardTrailingClosures", "StrictConcurrency", "BareSlashRegexLiterals",
+    "DeprecateApplicationMain", "ImportObjcForwardDeclarations", "DisableOutwardActorInference",
+    "IsolatedDefaultValues", "GlobalConcurrency", "InferSendableFromCaptures", "ImplicitOpenExistentials",
+    "RegionBasedIsolation", "NonfrozenEnumExhaustivity",
+].map { .enableUpcomingFeature($0) }
+
 let package = Package(
     name: "Shadows",
     platforms: [.macOS(.v14)],
@@ -84,61 +98,61 @@ let package = Package(
                 .product(name: "WebCoreData", package: "SwiftUIWeb", condition: .when(traits: ["CoreData"])),
                 .product(name: "WebDecimalFormats", package: "WebGraphics", condition: .when(traits: ["DecimalFormatting"])),
             ],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "Combine",
             dependencies: [.product(name: "WebCombine", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "Dispatch",
             dependencies: [.product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "CoreFoundation",
             dependencies: [.product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "Security",
             dependencies: ["CoreFoundation", .product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "SafariServices",
             dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb"), .product(name: "WebKit", package: "SwiftUIWeb")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "os",
             // `import os.log` and the other submodules resolve through this clang module of the same
             // name (wasm only: on Apple platforms the SDK's own `os` is the one in scope).
             dependencies: [.target(name: "OSSubmodules", condition: .when(platforms: [.wasi]))],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(name: "OSSubmodules"),
         .target(
             name: "OSLog",
             dependencies: ["os"],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "CoreGraphics",
             dependencies: [.product(name: "WebGraphics", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "ImageIO",
             dependencies: ["CoreGraphics", .product(name: "WebImageIO", package: "WebGraphics"),
                            .product(name: "WebFoundationFormats", package: "WebGraphics"), .product(name: "WebGraphics", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "CoreImage",
             dependencies: ["CoreGraphics", .product(name: "WebCoreImage", package: "SwiftUIWeb")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "SystemConfiguration",
@@ -146,63 +160,63 @@ let package = Package(
             // same name (wasm only, as `os`'s submodules do).
             dependencies: ["CoreFoundation", .product(name: "WebFoundation", package: "WebGraphics"),
                            .target(name: "SCSubmodules", condition: .when(platforms: [.wasi]))],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(name: "SCSubmodules"),
         .target(
             name: "FoundationNetworking",
             dependencies: ["Foundation", .product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "FoundationXML",
             dependencies: ["Foundation", .product(name: "WebFoundationFormats", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "CommonCrypto",
             dependencies: [.product(name: "CryptoKit", package: "SwiftUIWeb")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "Network",
             dependencies: [.product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "LocalAuthentication",
             dependencies: [.product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "MobileCoreServices",
             dependencies: [.product(name: "WebFoundation", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "UniformTypeIdentifiers",
             dependencies: [.product(name: "WebGraphics", package: "WebGraphics")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         .target(
             name: "CoreData",
             dependencies: [.product(name: "WebCoreData", package: "SwiftUIWeb")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
         // Graphics and device frameworks a page has no hardware for (no GPU device, no Health
         // store, no photo library): `simd`'s functions over the standard library's vectors,
         // `Metal` with no device, `QuartzCore` (UIKitWeb's layers, and a Metal layer with no
         // drawable), `CoreAudio` (AudioToolbox's CoreAudioTypes), `HealthKit` with no store,
         // `PhotosUI` with an inert picker. Apps take the paths they have for missing hardware.
-        .target(name: "simd", swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "Metal", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "simd", swiftSettings: framework),
+        .target(name: "Metal", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(
             name: "QuartzCore",
             dependencies: ["Metal", .product(name: "UIKitWebCore", package: "UIKitWeb")],
-            swiftSettings: [.treatAllWarnings(as: .error)]
+            swiftSettings: framework
         ),
-        .target(name: "CoreAudio", dependencies: [.product(name: "AudioToolbox", package: "SwiftUIWeb")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "HealthKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: [.treatAllWarnings(as: .error)]),
-        .target(name: "PhotosUI", dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb")], swiftSettings: [.treatAllWarnings(as: .error)]),
+        .target(name: "CoreAudio", dependencies: [.product(name: "AudioToolbox", package: "SwiftUIWeb")], swiftSettings: framework),
+        .target(name: "HealthKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "PhotosUI", dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb")], swiftSettings: framework),
     ]
 )

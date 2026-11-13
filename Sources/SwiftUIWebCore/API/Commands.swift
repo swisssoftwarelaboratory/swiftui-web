@@ -48,13 +48,15 @@ extension View {
 
     /// Takes the pasteboard's items of the supported types for the Paste command (⌘V).
     nonisolated public func onPasteCommand(of supportedContentTypes: [UTType], perform payloadAction: @escaping @MainActor ([NSItemProvider]) -> Void) -> some View {
-        modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedContentTypes.map(\.identifier), run: { payloadAction($0); return true }))))
+        nonisolated(unsafe) let payloadAction = payloadAction   // Swift 5 mode (decision 0027)
+        return modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedContentTypes.map(\.identifier), run: { payloadAction($0); return true }))))
     }
 
     /// Takes the pasteboard's items the validator accepts for the Paste command.
     nonisolated public func onPasteCommand<Payload>(of supportedContentTypes: [UTType], validator: @escaping @MainActor ([NSItemProvider]) -> Payload?,
                                                      perform payloadAction: @escaping @MainActor (Payload) -> Void) -> some View {
-        modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedContentTypes.map(\.identifier), run: { items in
+        nonisolated(unsafe) let validator = validator, payloadAction = payloadAction   // Swift 5 mode (decision 0027)
+        return modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedContentTypes.map(\.identifier), run: { items in
             guard let payload = validator(items) else { return false }
             payloadAction(payload)
             return true
@@ -63,12 +65,14 @@ extension View {
 
     /// The older form naming the types by identifier.
     nonisolated public func onPasteCommand(of supportedTypes: [String], perform payloadAction: @escaping @MainActor ([NSItemProvider]) -> Void) -> some View {
-        modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedTypes, run: { payloadAction($0); return true }))))
+        nonisolated(unsafe) let payloadAction = payloadAction   // Swift 5 mode (decision 0027)
+        return modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedTypes, run: { payloadAction($0); return true }))))
     }
 
     nonisolated public func onPasteCommand<Payload>(of supportedTypes: [String], validator: @escaping @MainActor ([NSItemProvider]) -> Payload?,
                                                      perform payloadAction: @escaping @MainActor (Payload) -> Void) -> some View {
-        modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedTypes, run: { items in
+        nonisolated(unsafe) let validator = validator, payloadAction = payloadAction   // Swift 5 mode (decision 0027)
+        return modifier(_EditCommandModifier(box: _EditCommandBox(.paste(types: supportedTypes, run: { items in
             guard let payload = validator(items) else { return false }
             payloadAction(payload)
             return true

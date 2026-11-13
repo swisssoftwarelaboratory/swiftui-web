@@ -10,7 +10,7 @@
 package protocol _PlatformViewTree: AnyObject {
     /// A view inside changed something the host must lay out again for (an intrinsic size, a
     /// frame, a colour). Set by the node.
-    var onNeedsFrame: (@MainActor () -> Void)? { get set }
+    var onNeedsFrame: (@MainActor @Sendable () -> Void)? { get set }
     /// The text field inside with keyboard focus changed (nil: none). Set by the node.
     var onFocusedTextFieldChange: (@MainActor (Int?) -> Void)? { get set }
 
@@ -379,9 +379,9 @@ package struct WeakPlatformHost {
 /// The host's sheets as a hosted tree sees them (nil where the host has none).
 public struct _HostServices {
     public let share: ((HostShareRequest) -> Void)?
-    public let open: ((HostFileOpenRequest, _ completion: @escaping @MainActor ([HostFile]) -> Void) -> Void)?
+    public let open: ((HostFileOpenRequest, _ completion: @escaping @MainActor @Sendable ([HostFile]) -> Void) -> Void)?
     public let save: ((HostFile) -> Void)?
-    public init(share: ((HostShareRequest) -> Void)?, open: ((HostFileOpenRequest, _ completion: @escaping @MainActor ([HostFile]) -> Void) -> Void)?, save: ((HostFile) -> Void)?) {
+    public init(share: ((HostShareRequest) -> Void)?, open: ((HostFileOpenRequest, _ completion: @escaping @MainActor @Sendable ([HostFile]) -> Void) -> Void)?, save: ((HostFile) -> Void)?) {
         self.share = share; self.open = open; self.save = save
     }
 }

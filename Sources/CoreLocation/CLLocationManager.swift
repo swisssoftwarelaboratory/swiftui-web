@@ -217,7 +217,8 @@ open class CLLocationManager: NSObject {
         if let circle = region as? CLCircularRegion, let location = Self.lastLocation {
             state = circle.contains(location.coordinate) ? .inside : .outside
         }
-        later { $0.delegate?.locationManager($0, didDetermineState: state, for: region) }
+        let settled = state
+        later { $0.delegate?.locationManager($0, didDetermineState: settled, for: region) }
     }
 
     // MARK: What a page has no hardware for

@@ -13,10 +13,10 @@ public enum _AVAudioHost {
     /// A player for the URL, or nil when the host cannot play it.
     nonisolated(unsafe) public static var makePlayer: ((URL) -> (any _AVAudioPlayback)?)?
     /// Asks for the microphone; the answer arrives on the main actor.
-    nonisolated(unsafe) public static var requestRecordPermission: ((@escaping @MainActor (Bool) -> Void) -> Void)?
+    nonisolated(unsafe) public static var requestRecordPermission: ((@escaping @MainActor @Sendable (Bool) -> Void) -> Void)?
     /// Opens the microphone: samples arrive as mono float frames with their sample rate
     /// (chunks of `bufferSize` frames or whatever the host delivers), until stopped.
-    nonisolated(unsafe) public static var openMicrophone: ((_ bufferSize: Int, _ deliver: @escaping @MainActor ([Float], Double) -> Void, _ failed: @escaping @MainActor (String) -> Void) -> (any _AVAudioCapture)?)?
+    nonisolated(unsafe) public static var openMicrophone: ((_ bufferSize: Int, _ deliver: @escaping @MainActor @Sendable ([Float], Double) -> Void, _ failed: @escaping @MainActor @Sendable (String) -> Void) -> (any _AVAudioCapture)?)?
     /// The permission already answered (a host remembers the browser's grant).
     nonisolated(unsafe) public static var recordPermission: AVAudioSession.RecordPermission = .undetermined
 }
@@ -32,7 +32,7 @@ public protocol _AVAudioPlayback: AnyObject {
     var rate: Double { get set }
     var loops: Int { get set }
     var isPlaying: Bool { get }
-    var onFinished: (@MainActor () -> Void)? { get set }
+    var onFinished: (@MainActor @Sendable () -> Void)? { get set }
 }
 
 /// An open microphone in the host.

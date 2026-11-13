@@ -201,12 +201,12 @@ extension View {
     }
 
     /// Sets the view's horizontal alignment.
-    nonisolated public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> some View {
+    @preconcurrency nonisolated public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping @Sendable (ViewDimensions) -> CGFloat) -> some View {
         modifier(_AlignmentGuideModifier(key: g.key, computeValue: computeValue))
     }
 
     /// Sets the view's vertical alignment.
-    nonisolated public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> some View {
+    @preconcurrency nonisolated public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping @Sendable (ViewDimensions) -> CGFloat) -> some View {
         modifier(_AlignmentGuideModifier(key: g.key, computeValue: computeValue))
     }
 

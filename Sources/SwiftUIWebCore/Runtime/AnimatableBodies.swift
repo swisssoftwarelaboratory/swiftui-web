@@ -39,7 +39,7 @@ extension Shape where AnimatableData == EmptyAnimatableData {
 // (the representables do the same in their own files).
 
 extension EnvironmentalModifier where Self: Animatable {
-    public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
+    @MainActor public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
         EnvironmentalModifierNode(context)
     }
 }

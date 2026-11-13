@@ -150,11 +150,11 @@ private struct AccessibilityEnabledKey: EnvironmentKey {
 public protocol EnvironmentalModifier: ViewModifier where Body == Never {
     associatedtype ResolvedModifier: ViewModifier
     /// Resolve to a concrete modifier using the given environment.
-    func resolve(in environment: EnvironmentValues) -> ResolvedModifier
+    nonisolated func resolve(in environment: EnvironmentValues) -> ResolvedModifier
 }
 
 extension EnvironmentalModifier {
-    public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
+    @MainActor public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
         EnvironmentalModifierNode(context)
     }
 }

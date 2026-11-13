@@ -98,6 +98,7 @@ enum UIKitLaunch {
 
     /// Sets up the host for the platform, makes the delegate and launches the app.
     nonisolated static func run(name: String, makeDelegate: @escaping @MainActor () -> any UIApplicationDelegate) {
+        nonisolated(unsafe) let makeDelegate = makeDelegate   // runs on the main actor; Swift 5 mode (decision 0027)
         #if os(WASI)
         JavaScriptEventLoop.installGlobalExecutor()
         MainActor.assumeIsolated {

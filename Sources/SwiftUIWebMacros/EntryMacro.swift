@@ -42,6 +42,10 @@ public struct EntryMacro: AccessorMacro, PeerMacro {
             context.diagnose(Diagnostic(node: Syntax(node), message: EntryMessage("'@Entry' can only be applied inside an extension of EnvironmentValues, FocusedValues, Transaction or ContainerValues")))
             return []
         }
+        if let closure = storedClosure(in: declaration) {
+            context.diagnose(Diagnostic(node: closure, message: EntryWarning(
+                "Storing a closure in '@Entry var \(property.name)' may invalidate dependents on every update because closures may not be comparable.")))
+        }
         let key = "__Key_\(property.name)"
         return [
             "get { self[\(raw: key).self] }",
@@ -71,6 +75,31 @@ public struct EntryMacro: AccessorMacro, PeerMacro {
         return ["private struct \(raw: key): \(raw: container.key) { static var defaultValue: \(raw: property.type) { \(raw: initializer) } }"]
     }
 
+    /// Where Apple's macro warns that the entry holds a closure: at a function type (through
+    /// attributes, parentheses and optionals), or else at a closure written as the default.
+    private static func storedClosure(in declaration: some DeclSyntaxProtocol) -> Syntax? {
+        guard let binding = declaration.as(VariableDeclSyntax.self)?.bindings.first else { return nil }
+        if let type = binding.typeAnnotation?.type, isFunction(type) { return Syntax(type) }
+        if let value = binding.initializer?.value, value.is(ClosureExprSyntax.self) { return Syntax(value) }
+        return nil
+    }
+
+    private static func isFunction(_ type: TypeSyntax) -> Bool {
+        if type.is(FunctionTypeSyntax.self) { return true }
+        if let attributed = type.as(AttributedTypeSyntax.self) { return isFunction(attributed.baseType) }
+        if let optional = type.as(OptionalTypeSyntax.self) { return isFunction(optional.wrappedType) }
+        if let unwrapped = type.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) { return isFunction(unwrapped.wrappedType) }
+        if let tuple = type.as(TupleTypeSyntax.self), tuple.elements.count == 1, let only = tuple.elements.first, only.firstName == nil {
+            return isFunction(only.type)
+        }
+        if let named = type.as(IdentifierTypeSyntax.self), named.name.text == "Optional",
+           let arguments = named.genericArgumentClause?.arguments, arguments.count == 1,
+           let wrapped = Syntax(arguments.first!.argument).as(TypeSyntax.self) {
+            return isFunction(wrapped)
+        }
+        return false
+    }
+
     /// `T?` or `Optional<T>` → `T` (focused values are declared optional).
     private static func unwrapped(_ type: String) -> String {
         if type.hasSuffix("?") { return String(type.dropLast()) }
@@ -84,4 +113,11 @@ struct EntryMessage: DiagnosticMessage {
     init(_ message: String) { self.message = message }
     var diagnosticID: MessageID { MessageID(domain: "SwiftUIWebMacros", id: "entry") }
     var severity: DiagnosticSeverity { .error }
+}
+
+struct EntryWarning: DiagnosticMessage {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var diagnosticID: MessageID { MessageID(domain: "SwiftUIWebMacros", id: "entry-closure") }
+    var severity: DiagnosticSeverity { .warning }
 }

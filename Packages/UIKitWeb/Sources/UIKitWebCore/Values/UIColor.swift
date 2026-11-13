@@ -101,6 +101,7 @@ public final class UIColor: Hashable, @unchecked Sendable {
     }
 
     /// The light value's components; false when the colour is not RGB (never, here).
+    @discardableResult
     public func getRed(_ red: UnsafeMutablePointer<CGFloat>?, green: UnsafeMutablePointer<CGFloat>?, blue: UnsafeMutablePointer<CGFloat>?, alpha: UnsafeMutablePointer<CGFloat>?) -> Bool {
         red?.pointee = light.red
         green?.pointee = light.green

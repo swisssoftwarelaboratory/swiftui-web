@@ -49,9 +49,10 @@ open class UISheetPresentationController: UIPresentationController {
         }
         public let identifier: Identifier
         /// The height for a custom detent, given the container's maximum detent value.
-        package let resolver: (@MainActor (CGFloat) -> CGFloat?)?
+        /// `@Sendable` spelled out, as this module is in Swift 5 mode (decision 0027).
+        package let resolver: (@MainActor @Sendable (CGFloat) -> CGFloat?)?
 
-        package init(identifier: Identifier, resolver: (@MainActor (CGFloat) -> CGFloat?)?) {
+        package init(identifier: Identifier, resolver: (@MainActor @Sendable (CGFloat) -> CGFloat?)?) {
             self.identifier = identifier
             self.resolver = resolver
         }
@@ -61,7 +62,8 @@ open class UISheetPresentationController: UIPresentationController {
         @MainActor
         public static func custom(identifier: Identifier? = nil, resolver: @escaping @MainActor (_ maximumDetentValue: CGFloat) -> CGFloat?) -> Detent {
             customCount += 1
-            return Detent(identifier: identifier ?? Identifier("custom-\(customCount)"), resolver: resolver)
+            nonisolated(unsafe) let resolver = resolver
+            return Detent(identifier: identifier ?? Identifier("custom-\(customCount)"), resolver: { resolver($0) })
         }
         @MainActor private static var customCount = 0
 
