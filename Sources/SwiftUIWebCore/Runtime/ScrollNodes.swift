@@ -796,6 +796,15 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             // reaches up to the window's top (ios/nav/scroll `row1`).
             let overhang = environment._navigationBarOverhang
             if overhang > 0 { bounds = CGRect(x: bounds.minX, y: bounds.minY - overhang, width: bounds.width, height: bounds.height + overhang) }
+            // An edge on the safe area's boundary shows the content scrolling on under the
+            // status bar and the home indicator, as UIKit's scroll view reaches the screen's edges
+            // with its content inset by the safe area; at rest nothing moves.
+            let reach = safeAreaExtension
+            if reach != EdgeInsets() {
+                let top = max(0, reach.top - max(0, overhang))
+                bounds = CGRect(x: bounds.minX - reach.leading, y: bounds.minY - top,
+                                width: bounds.width + reach.leading + reach.trailing, height: bounds.height + top + reach.bottom)
+            }
             list.append(.save)
             list.append(.clipRect(bounds))
             // Subtrees entirely outside the viewport (by more than the margin) are not painted.

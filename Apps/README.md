@@ -33,8 +33,9 @@ The page also takes launch arguments, as `simctl launch <app> -screen settings` 
 `index.html?platform=ios&args=-screen%20settings` (split on spaces; `&arg=` adds one argument
 whole, for a value with spaces). They reach `ProcessInfo.arguments` and the standard
 `UserDefaults`' argument domain. `&safeArea=59,0,34,0` (or `data-safe-area` on the container)
-gives the app a phone's safe area in points, top, leading, bottom, trailing; views that extend
-into it (`ignoresSafeArea`, backgrounds) don't yet.
+gives the app a phone's safe area in points, top, leading, bottom, trailing, laid out as iOS
+does (sheets and covers inside it, scroll views and backgrounds reaching into it); without
+either, a phone's browser gives its own `env(safe-area-inset-*)` (`safeArea=env` asks for it).
 
 Published: `scripts/build-landing.sh` builds all three in release into the landing site at
 `/apps/scrumdinger/`, `/apps/ember/` and `/apps/2048/` (each `Apps/index.html` with its bundle

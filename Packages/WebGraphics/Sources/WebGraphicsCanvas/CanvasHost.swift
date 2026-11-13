@@ -753,10 +753,10 @@ public final class CanvasSceneHost {
 
     /// The device's safe area for the app (`HostedScene.hostSafeAreaInsets`): the container's
     /// `data-safe-area` or the page's `?safeArea=` ("top,leading,bottom,trailing" in points, as
-    /// a drawn phone around the app will set it). Not yet the browser's own
-    /// `env(safe-area-inset-*)`: the root is laid out inside the insets, and a view that extends
-    /// into them (`ignoresSafeArea`, a background) does not yet, so a phone's browser would show
-    /// bands at the top and bottom.
+    /// a drawn phone around the app sets it), else the browser's own `env(safe-area-inset-*)`
+    /// (a phone's browser on a page with `viewport-fit=cover`; zero on a desktop, which leaves
+    /// the app as it was). `env` as the value asks for the browser's explicitly. Read again
+    /// whenever the page resizes (a phone turning).
     private func applySafeArea() {
         var text = container.dataset.object?.safeArea.string
         if text == nil, let search = window.location.object?.search.string {
@@ -765,9 +765,32 @@ public final class CanvasSceneHost {
                 if parts.count == 2, parts[0] == "safeArea" { text = String(parts[1]).replacingOccurrences(of: "%2C", with: ",") }
             }
         }
-        guard let text else { return }
-        let insets = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)).map { CGFloat($0) } }
+        let insets: [CGFloat]
+        if let text, text != "env" {
+            insets = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)).map { CGFloat($0) } }
+        } else {
+            insets = browserSafeArea()
+        }
         if insets.count == 4, insets != scene.hostSafeAreaInsets { scene.hostSafeAreaInsets = insets }
+    }
+
+    /// The browser's `env(safe-area-inset-*)` in CSS pixels (points), top, leading, bottom,
+    /// trailing, measured on a hidden element's padding.
+    private func browserSafeArea() -> [CGFloat] {
+        guard let probe = document.createElement!("div").object, let style = probe.style.object,
+              let body = document.body.object else { return [] }
+        style.cssText = .string("position:fixed;visibility:hidden;pointer-events:none;left:0;top:0;width:0;height:0;"
+            + "padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)")
+        _ = body.appendChild!(probe)
+        defer { _ = probe.remove!() }
+        guard let computed = window.getComputedStyle!(probe).object else { return [] }
+        func points(_ property: String) -> CGFloat {
+            let text = computed[property].string ?? "0"
+            return CGFloat(Double(text.replacingOccurrences(of: "px", with: "")) ?? 0)
+        }
+        let leftToRight = (computed.direction.string ?? "ltr") != "rtl"
+        let left = points("paddingLeft"), right = points("paddingRight")
+        return [points("paddingTop"), leftToRight ? left : right, points("paddingBottom"), leftToRight ? right : left]
     }
 
     /// Requests one animation frame; several invalidations coalesce into it.

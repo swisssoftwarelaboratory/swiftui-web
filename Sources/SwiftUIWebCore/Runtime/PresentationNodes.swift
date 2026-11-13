@@ -215,25 +215,34 @@ package final class PresentationNode: ViewNode {
         let padding: CGFloat = padsNothing ? 0 : PlatformMetrics.presentationPadding
         switch kind {
         case .sheet where options.fullScreen:
-            // A full-screen cover: the window is the panel; the content fills it.
+            // A full-screen cover: the window is the panel; the content is laid out in the
+            // window's safe area as the root view is (a scroll view or `ignoresSafeArea` reaching
+            // under the status bar and the home indicator).
             panel = CGRect(origin: .zero, size: window)
             arrow = nil
-            contentFrame = panel
-            target.place(at: .zero, anchor: .topLeading, proposal: ProposedViewSize(window), by: runtime.root)
+            runtime.root.place(target, in: panel, insets: runtime.safeAreaInsets)
+            contentFrame = target.frame
             return
         case .sheet where m.sheetsFillWindow:
-            // iOS: the large detent's card from `sheetTopInset` to the bottom, the medium detent's
-            // card floating in from the sides and the bottom; the content centred in the card.
+            // iOS: the large detent's card from `sheetTopInset` to the bottom, or from the
+            // window's safe top where that is lower (an iPhone 16 on iOS 27: the card's top at
+            // 59, the status bar's depth), the medium detent's card floating in from the sides
+            // and the bottom. The card has no unsafe region above it; at the bottom the content
+            // keeps clear of the home indicator unless it extends into it, as in the window.
+            let safe = runtime.safeAreaInsets
             if mediumDetent {
                 let height = (window.height * m.sheetMediumHeightFraction).rounded()
                 panel = CGRect(x: m.sheetMediumSideInset, y: window.height - height, width: window.width - 2 * m.sheetMediumSideInset, height: height - m.sheetMediumBottomInset)
             } else {
-                panel = CGRect(x: 0, y: m.sheetTopInset, width: window.width, height: window.height - m.sheetTopInset)
+                let top = max(m.sheetTopInset, safe.top)
+                panel = CGRect(x: 0, y: top, width: window.width, height: window.height - top)
             }
             arrow = nil
-            let size = target.sizeThatFits(ProposedViewSize(panel.size))
-            contentFrame = CGRect(x: panel.midX - size.width / 2, y: panel.midY - size.height / 2, width: size.width, height: size.height)
-            target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(size), by: runtime.root)
+            let insets = EdgeInsets(top: 0, leading: max(0, safe.leading - panel.minX),
+                                    bottom: max(0, panel.maxY - (window.height - safe.bottom)),
+                                    trailing: max(0, panel.maxX - (window.width - safe.trailing)))
+            runtime.root.place(target, in: panel, insets: insets)
+            contentFrame = target.frame
             return
         case .dialog where m.dialogsArePopovers:
             // iOS: a panel of `dialogWidth` centred on its source and floating above it, an arrow

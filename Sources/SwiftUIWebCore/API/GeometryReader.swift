@@ -50,8 +50,10 @@ public struct GeometryProxy {
     }
 
     /// The safe area inset of the container view: how much of the reader's frame lies under a
-    /// bar or a `safeAreaInset`; none inside `ignoresSafeArea` (`position/safe-area-geometry`).
-    @MainActor public var safeAreaInsets: EdgeInsets { node.safeAreaOverlap }
+    /// bar or a `safeAreaInset`, plus the unsafe depth beyond an edge on the safe boundary (a
+    /// reader filling an iPhone's safe area reports the status bar's 59 and the home indicator's
+    /// 34); none inside `ignoresSafeArea` (`position/safe-area-geometry`).
+    @MainActor public var safeAreaInsets: EdgeInsets { node.safeAreaOverlap + node.safeAreaExtension }
 
     /// Returns the container view's bounds rectangle, converted to a defined coordinate space.
     @MainActor

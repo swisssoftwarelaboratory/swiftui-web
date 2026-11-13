@@ -430,9 +430,14 @@ open class ViewNode {
     /// put, one whose frame touches it extends under the bar, through a frame or padding on the
     /// other edges).
     package func assignSafeArea(to child: ViewNode) {
-        let own = providedSafeAreaInsets(for: child)
-        let frame = child.frame
-        let size = self.frame.size
+        assignSafeArea(to: child, in: CGRect(origin: .zero, size: frame.size), own: providedSafeAreaInsets(for: child))
+    }
+
+    /// The rule above against `bounds` (in this node's space) with `own` unsafe depths at its
+    /// edges: the root places a presentation's content in the presentation's own area.
+    package final func assignSafeArea(to child: ViewNode, in bounds: CGRect, own: EdgeInsets) {
+        let frame = child.frame.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
+        let size = bounds.size
         func edge(_ distance: CGFloat, boundary: CGFloat, depth: CGFloat) -> (overlap: CGFloat, reach: CGFloat) {
             if distance > boundary + 0.01 { return (0, 0) }
             if distance > boundary - 0.01 { return (0, depth) }

@@ -108,7 +108,10 @@ extension View {
 
     /// Sets the view's background to a style.
     nonisolated public func background<S: ShapeStyle>(_ style: S, ignoresSafeAreaEdges edges: Edge.Set = .all) -> some View {
-        modifier(_BackgroundModifier(background: FillShapeView(shape: Rectangle(), style: style, fillStyle: FillStyle(), background: EmptyView()), alignment: .center))
+        // The fill reaches into the safe area on `edges` where this view touches it (a screen's
+        // ground colour under the status bar and the home indicator), as Apple's does.
+        modifier(_BackgroundModifier(background: FillShapeView(shape: Rectangle(), style: style, fillStyle: FillStyle(), background: EmptyView())
+            .modifier(_IgnoresSafeAreaModifier(regions: .container, edges: edges)), alignment: .center))
     }
 
     /// Sets the view's background to a shape filled with a style.
@@ -134,7 +137,10 @@ extension View {
 
     /// Layers a style in front of this view.
     nonisolated public func overlay<S: ShapeStyle>(_ style: S, ignoresSafeAreaEdges edges: Edge.Set = .all) -> some View {
-        modifier(_OverlayModifier(overlay: FillShapeView(shape: Rectangle(), style: style, fillStyle: FillStyle(), background: EmptyView()), alignment: .center))
+        // The fill reaches into the safe area on `edges` where this view touches it (a screen's
+        // ground colour under the status bar and the home indicator), as Apple's does.
+        modifier(_OverlayModifier(overlay: FillShapeView(shape: Rectangle(), style: style, fillStyle: FillStyle(), background: EmptyView())
+            .modifier(_IgnoresSafeAreaModifier(regions: .container, edges: edges)), alignment: .center))
     }
 
     /// Layers a shape filled with a style in front of this view.
