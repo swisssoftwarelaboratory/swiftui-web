@@ -246,6 +246,9 @@ public final class Runtime {
 
     /// Sheets, popovers, alerts and menus over the window, bottom to top (Runtime/PresentationNodes.swift).
     package var presentations: [PresentationNode] = []
+    /// iOS sheets dismissed but still sliding off the bottom: painted under the presentations,
+    /// never hit, unmounted when they are gone (Runtime/PresentationNodes.swift).
+    package var leavingPresentations: [PresentationNode] = []
     /// The app's pasteboard (Runtime/PasteboardNodes.swift) and the host's clipboard writer for text.
     package var pasteboard: [_TransferItem] = []
     public var clipboardWriter: ((String) -> Void)?

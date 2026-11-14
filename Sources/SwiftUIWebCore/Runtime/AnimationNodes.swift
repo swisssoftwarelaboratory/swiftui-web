@@ -191,6 +191,7 @@ extension Runtime {
     package func beginAnimationsOnScreen(lateness: Double) {
         guard lateness > 0 else { return }
         let now = animationClock
+        for entry in frameSubscribers { (entry.subscriber as? _StartsOnScreen)?.startOnScreen(now: now, lateness: lateness) }
         for entry in animatingNodes {
             guard let presentation = entry.node?.presentation else { continue }
             if presentation.frame?.start == now { presentation.frame?.start += lateness }

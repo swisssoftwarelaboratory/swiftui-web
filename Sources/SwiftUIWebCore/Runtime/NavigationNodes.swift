@@ -4,7 +4,7 @@
 // button (Docs/elements/iOS.md).
 
 @MainActor
-package final class NavigationStackNode: LayoutNode<_NavigationStackHost>, _FrameSubscriber {
+package final class NavigationStackNode: LayoutNode<_NavigationStackHost>, _FrameSubscriber, _StartsOnScreen {
     package private(set) var root: TypedNode<AnyView>!
     package private(set) var context: _NavigationContext!
 
@@ -657,7 +657,10 @@ package final class NavigationStackNode: LayoutNode<_NavigationStackHost>, _Fram
         }
         let upperBar = push ? nil : bar(over: upper, index: groups.count, previousLarge: bars.last??.large ?? false)
         slide = Slide(push: push, lower: lower, upper: upper, upperBar: upperBar, leaving: leaving)
-        slideTween = Tween(from: [0], to: [1], animation: .easeInOut(duration: PlatformMetrics.navigationPushDuration), start: runtime.animationClock)
+        // UIKit's push and pop: a critical spring at ω 18.26 /s, not an ease of fixed length
+        // (the simulator's push eases on to about 0.3 s, new-website#262). It starts when its
+        // first frame is shown (`startOnScreen`): laying out the new screen is not part of it.
+        slideTween = Tween(from: [0], to: [1], animation: Animation(spring: .navigation), start: runtime.animationClock)
         runtime.paintAnimations += 1
         runtime.subscribeFrames(self)
     }
@@ -677,6 +680,11 @@ package final class NavigationStackNode: LayoutNode<_NavigationStackHost>, _Fram
     package func frameDidAdvance() {
         if let slideTween, slideTween.isFinished(at: runtime.animationClock) { finishSlide() }
         runtime.requestRepaint()
+    }
+
+    /// A slide begun in this frame starts when the frame is shown (`Runtime.beginAnimationsOnScreen`).
+    package func startOnScreen(now: Double, lateness: Double) {
+        if slideTween?.start == now { slideTween?.start += lateness }
     }
 
     /// The slide in flight with its progress, or nil once its tween ended (finishing it then).

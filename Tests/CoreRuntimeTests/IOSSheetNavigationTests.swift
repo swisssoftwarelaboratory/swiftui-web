@@ -40,7 +40,12 @@ import SwiftUIWebHeadless
         return runtime
     }
 
-    private func relayout(_ r: Runtime) { r.layout(in: CGSize(width: 375, height: 667)) }
+    /// Lays out and lets a sheet finish sliding in or out (iOS sheets slide on the navigation spring).
+    private func relayout(_ r: Runtime) {
+        r.layout(in: CGSize(width: 375, height: 667))
+        r.advanceAnimations(elapsed: 1)
+        r.layout(in: CGSize(width: 375, height: 667))
+    }
     private func texts(_ r: Runtime) -> [String] {
         r.render(scale: 2).commands.map(\.description).compactMap { c in c.hasPrefix("drawText(\"") ? String(c.dropFirst(10).prefix { $0 != "\"" }) : nil }
     }

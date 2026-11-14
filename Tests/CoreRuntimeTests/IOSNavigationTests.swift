@@ -93,8 +93,9 @@ import SwiftUIWebHeadless
         box.path = [1]
         r.layout(in: CGSize(width: 320, height: 480))
         #expect(r.isAnimating)
-        // Half way (the curve's midpoint): both screens paint, the old one shifted left under a
-        // dimming and the new one arriving from the right.
+        // 0.175 s in, on UIKit's push spring (critical, ω 18.26 /s, 83 % of the way): both
+        // screens paint, the old one shifted left under a dimming and the new one arriving from
+        // the right.
         r.advanceAnimations(elapsed: 0.175)
         let midway = commands(r)
         #expect(texts(r).contains("Root") && texts(r).contains("Pushed"))
@@ -103,7 +104,8 @@ import SwiftUIWebHeadless
         #expect(shifts.count == 2, "\(shifts)")
         let dim = midway.first { $0.hasPrefix("fillRect(0, 0, 320, 480) #000000@") } ?? ""
         let dimAlpha = Double(dim.split(separator: "@").last ?? "") ?? 0
-        #expect(abs(dimAlpha - 0.05) < 1e-6, "\(dim)")
+        let progress = 1 - SpringModel.navigation.state(displacement: 1, velocity: 0, at: 0.175).displacement
+        #expect(abs(dimAlpha - 0.1 * progress) < 1e-6, "\(dim)")
         // Settled: only the new screen and its bar remain.
         r.advanceAnimations(elapsed: 1)
         #expect(!r.isAnimating)

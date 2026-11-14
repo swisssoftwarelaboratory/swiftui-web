@@ -40,14 +40,36 @@ begins an animation at its commit. Without it a chat opening under `.smooth(dura
 was 68 % open in its first frame after a slow update (new-website#262). Headless tests that don't
 call it keep the old timing.
 
+## What runs on it
+
+- **Push and pop** (`NavigationStackNode`): the slide is `Animation(spring: .navigation)`, UIKit's
+  critical spring, instead of a 0.35 s ease-in-out that arrived at 0.14 s where iOS eases on to
+  about 0.3 s. It starts when its first frame is shown (`_StartsOnScreen`).
+- **iOS sheets and covers** (`PresentationNode.slide`, a `Motion`): a sheet presented once its
+  presenter is on screen rises from just below the window on the navigation spring (within
+  4.5 pt rms of the simulator's Lights out sheet; most of that in its first fast frames); the dim
+  follows how far it is in. A finger on a sheet drags it down: the scroll views under the finger
+  scroll first and hand the sheet what is past their top, a finger going back up raises it first.
+  At the lift it closes when where it would coast (`DecayModel.projectedOffset`) is past half
+  its height, else springs back at the finger's speed. Dismissed (by a drag, `dismiss`, its
+  binding), it slides off from where it stands and stays painted, never hit, in
+  `Runtime.leavingPresentations` until it is gone. Covers slide but are not dragged; nor is a
+  sheet with `interactiveDismissDisabled`. A sheet there from the first frame doesn't slide.
+
 ## Not on it yet
 
-Which motions still run on their own timing, and their order, is new-website#264: the rubber
-band and bounce at a scroll view's ends (the pieces are here, the scroll view doesn't use them
-yet), system sheets, push and pop (still an ease-in-out of fixed duration), the app's own sheet
-at release, the tab highlight, and the keyboard.
+Still on their own timing, in new-website#264's order: the rubber band and bounce at a scroll
+view's ends (the pieces are here, the scroll view doesn't use them yet), the tab highlight, and
+the keyboard.
 
 ## Tests
+
+`SheetMotionTests`: a sheet rising against the simulator's curve, frame by frame on the spring;
+one there from the first frame not sliding; a long drag closing it and its slide off; a flick
+closing and a short slow drag springing back; a scroll view in a sheet scrolling and handing
+the sheet what is past its top; a cover not dragged away; a dismissed sheet sliding off while
+presses go behind it. `IOSNavigationTests`: the push at 0.175 s on the spring.
+
 
 `PhysicsTests`: SwiftUI's parameter mapping; the exact solution's velocity is its slope in each
 regime; `.snappy` against the simulator's toggle (rms under 0.2 pt with no fitted shape, only

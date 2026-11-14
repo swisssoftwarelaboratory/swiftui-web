@@ -33,6 +33,16 @@ action, an alert button, a menu row, a press outside) removes the node at once a
 binding. Content is mounted with the presenter's environment plus `dismiss`; `_dismissesOnActivation`
 makes an alert's buttons dismiss after running. `Runtime.dismissTopmostPresentation()` is for hosts.
 
+## Motion on iOS (new-website#264)
+
+A sheet or cover presented after its presenter is on screen slides up from below the window on
+UIKit's navigation spring, its dim following; a finger drags a sheet down (scroll views inside
+it first take what they can), and it closes past half its height or on a flick, else springs
+back; dismissed, it slides off and is painted from `Runtime.leavingPresentations` until it is
+gone, while presses already go behind it. A sheet's scroll views take touches and the wheel
+(`scrollableNodes` looks in the topmost presentation; nothing under a modal one scrolls). How
+it works: `Docs/elements/Physics.md`. Tests: `SheetMotionTests`.
+
 ## Geometry (macOS 27 window geometry measured 2026-10-12; the panels' chrome by eye)
 
 iOS is measured: the sheet, its medium detent, the alert and the dialog on the simulator are

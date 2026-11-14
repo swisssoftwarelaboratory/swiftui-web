@@ -10,6 +10,13 @@ import Foundation
 // window) a timeline pauses — its wakes land without re-rendering and the animation schedule
 // leaves the frame clock — and renders the current date once the host shows again (sw-timeline).
 
+/// A frame subscriber whose motion begun in a frame starts when that frame is shown: the host
+/// reports how late it was painted (`HostedScene.commitAnimations(lateness:)`).
+@MainActor
+package protocol _StartsOnScreen: AnyObject {
+    func startOnScreen(now: Double, lateness: Double)
+}
+
 @MainActor
 package protocol _FrameSubscriber: AnyObject {
     /// Called once per host frame while animations are advanced.

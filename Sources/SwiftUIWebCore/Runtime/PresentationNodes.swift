@@ -5,7 +5,7 @@
 /// A presented panel and its content, positioned relative to the window (and an anchor node for
 /// popovers and menus).
 @MainActor
-package final class PresentationNode: ViewNode {
+package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScreen {
     package let kind: _PresentationKind
     package private(set) var content: TypedNode<AnyView>!
     package weak var anchor: ViewNode?
@@ -47,6 +47,104 @@ package final class PresentationNode: ViewNode {
         contentEnvironment.isPresented = true
         content = AnyView._makeNode(_NodeContext(view: view, parent: self, environment: contentEnvironment))
         if preferredColorScheme != nil { applyPreferredColorScheme() }
+        // A sheet presented once its presenter is on screen slides up; one there from the first
+        // frame (a scene restored, a fixture) is simply there.
+        slidesIn = kind == .sheet && environment.platformProfile.isIOS && anchor?.hasBeenPlaced == true
+    }
+
+    // MARK: The slide of an iOS sheet
+
+    /// How far below its place the panel is drawn (points). An iOS sheet slides up from below
+    /// the window when presented, follows a finger dragging it down, and slides off when
+    /// dismissed, all on UIKit's navigation spring (`SpringModel.navigation`, which matches a
+    /// system sheet in the simulator, new-website#262) and from the speed the finger left with.
+    package private(set) var slide = Motion(position: 0)
+    /// The slide waits for the first layout, which tells it how far below the window starts.
+    private var slidesIn = false
+    /// The animation clock at the last frame of the slide; nil before its first frame is shown.
+    private var slideClock: Double?
+    private var slideRunning = false
+    private var slideBegan = 0.0
+    /// Laid out at least once (a sheet never shown is removed at once).
+    package private(set) var hasLaidOut = false
+    /// Dismissed, sliding off: no longer hit, unmounted at the bottom.
+    package private(set) var isLeaving = false
+
+    /// Whether this presentation slides (iOS sheets and covers) and follows a dragging finger
+    /// (sheets only: a cover is not dragged away, nor a sheet with `interactiveDismissDisabled`).
+    package var slides: Bool { kind == .sheet && environment.platformProfile.isIOS }
+    package var dragsToDismiss: Bool { slides && !options.fullScreen && !options.interactiveDismissDisabled && !isLeaving }
+
+    /// The distance from the panel's place to just below the window.
+    package var slideDistance: CGFloat { max(1, runtime.layoutSize.height - panel.minY) }
+
+    /// How much of the presentation is in (1 at its place, 0 below the window): the dim follows.
+    package var slideProgress: Double { min(1, max(0, 1 - slide.position / Double(slideDistance))) }
+
+    private func runSlide(to target: Double, velocity: Double? = nil) {
+        slide.animate(to: target, spring: .navigation, velocity: velocity)
+        guard slide.isMoving else { slideFinished(); return }
+        if !slideRunning {
+            slideRunning = true
+            slideClock = nil
+            slideBegan = runtime.animationClock
+            runtime.paintAnimations += 1
+            runtime.subscribeFrames(self)
+        }
+        runtime.requestRepaint()
+    }
+
+    private func stopSlideFrames() {
+        guard slideRunning else { return }
+        slideRunning = false
+        runtime.paintAnimations -= 1
+        runtime.unsubscribeFrames(self)
+    }
+
+    private func slideFinished() {
+        stopSlideFrames()
+        if isLeaving { runtime.finishLeaving(self) }
+        runtime.requestRepaint()
+    }
+
+    /// Each frame steps the slide by the real time since the last one, from when its first
+    /// frame was shown (`startOnScreen`): a slow first frame (laying out the sheet's content)
+    /// does not eat into it.
+    package func frameDidAdvance() {
+        let now = runtime.animationClock
+        defer { slideClock = now }
+        let last = slideClock ?? slideBegan
+        if !slide.step(now - last) { slideFinished() } else { runtime.requestRepaint() }
+    }
+
+    /// A slide begun in this frame starts when the frame is shown (`Runtime.beginAnimationsOnScreen`).
+    package func startOnScreen(now: Double, lateness: Double) {
+        if slideRunning, slideClock == nil, slideBegan == now { slideBegan += lateness }
+    }
+
+    /// A finger dragging the sheet: `offset` points below its place (none above it).
+    package func dragSlide(to offset: Double, velocity: Double) {
+        if slideRunning { stopSlideFrames() }
+        slide.hold(at: max(0, offset), velocity: velocity)
+        runtime.requestRepaint()
+    }
+
+    /// The finger lifted at `velocity` (points per second, down positive): the sheet goes when
+    /// where it would coast to (UIKit's projection) is past half its height, else springs back.
+    package func endDragSlide(velocity: Double) {
+        let projected = slide.position + DecayModel.normal.projectedOffset(velocity: velocity)
+        if projected > Double(slideDistance) / 2 {
+            slide.hold(at: slide.position, velocity: velocity)
+            dismiss()
+        } else {
+            runSlide(to: 0, velocity: velocity)
+        }
+    }
+
+    /// Starts sliding off (the runtime moved it to its leaving list).
+    package func beginLeaving() {
+        isLeaving = true
+        runSlide(to: Double(slideDistance))
     }
 
     package var isModal: Bool {
@@ -201,6 +299,14 @@ package final class PresentationNode: ViewNode {
 
     package func layout(in window: CGSize) {
         guard let target else { return }
+        defer {
+            hasLaidOut = true
+            if slidesIn {
+                slidesIn = false
+                slide.hold(at: Double(slideDistance))
+                runSlide(to: 0)
+            }
+        }
         isHostedWindow = kind.isWindow && runtime.realWindowHost != nil
         let m = metrics
         // macOS 27 sheets, alerts and popovers are windows the size of their content (which pads
@@ -458,8 +564,12 @@ package final class PresentationNode: ViewNode {
         let m = metrics
         let iOS = environment.platformProfile.isIOS
         if isModal && !(kind == .dialog && m.dialogsArePopovers) && !options.fullScreen {
-            list.append(.fillRect(context.absoluteRect(CGRect(origin: .zero, size: runtime.layoutSize)), RGBA(red: 0, green: 0, blue: 0, alpha: m.presentationDimAlpha)))
+            let alpha = m.presentationDimAlpha * (slides ? slideProgress : 1)
+            list.append(.fillRect(context.absoluteRect(CGRect(origin: .zero, size: runtime.layoutSize)), RGBA(red: 0, green: 0, blue: 0, alpha: alpha)))
         }
+        // A sliding sheet is drawn lower by its slide, at whole device pixels.
+        var context = context
+        if slides, slide.position != 0 { context.origin.y += context.round(CGFloat(slide.position)) }
         let rect = context.absoluteRect(panel)
         if kind == .sheet && options.fullScreen {
             // The cover's ground is the system background (or the content's
@@ -622,6 +732,8 @@ package final class PresentationNode: ViewNode {
 
     /// The interactive node under `point` (window coordinates), if inside the panel.
     package func interactiveNode(at point: CGPoint) -> (ViewNode & _Interactive)? {
+        var point = point
+        if slides { point.y -= CGFloat(slide.position) }
         guard panel.contains(point), let target else { return nil }
         if kind.isWindow, closeButtonFrame.insetBy(dx: -4, dy: -4).contains(point) { return closeButton }
         if kind.isWindow, windowOptions.resizable, resizeGripFrame.contains(point) { windowHandle.mode = .resize; return windowHandle }
@@ -656,6 +768,7 @@ package final class PresentationNode: ViewNode {
     override package var nodeDescription: String { "Presentation(\(kind))" }
 
     override package func unmount() {
+        stopSlideFrames()
         toolbarBar?.unmount()
         toolbarBar = nil
         content.unmount()
@@ -679,13 +792,26 @@ extension Runtime {
     package func remove(presentation node: PresentationNode) {
         guard let index = presentations.firstIndex(where: { $0 === node }) else { return }
         presentations.remove(at: index)
-        node.unmount()
+        // An iOS sheet on screen slides off first; its content stays until it is gone.
+        if node.slides, node.hasLaidOut, hostIsVisible {
+            leavingPresentations.append(node)
+            node.beginLeaving()
+        } else {
+            node.unmount()
+        }
         // Focus goes back to the element that had it before the presentation, when focus was
         // inside the presentation (its element is gone now) or nowhere.
         if let restore = node.focusToRestore, focusedIdentifier.flatMap({ interactiveNode(semanticsIdentifier: $0) }) == nil,
            interactiveNode(semanticsIdentifier: restore.identifier) != nil {
             focus(semanticsIdentifier: restore.identifier, keyboard: restore.keyboard)
         }
+        requestLayout()
+    }
+
+    /// A sheet that slid off: gone now.
+    package func finishLeaving(_ node: PresentationNode) {
+        leavingPresentations.removeAll { $0 === node }
+        if node.isMounted { node.unmount() }
         requestLayout()
     }
 
@@ -702,11 +828,11 @@ extension Runtime {
     public var hasPresentations: Bool { !presentations.isEmpty }
 
     package func layoutPresentations(in size: CGSize) {
-        for presentation in presentations { presentation.layout(in: size) }
+        for presentation in leavingPresentations + presentations { presentation.layout(in: size) }
     }
 
     package func paintPresentations(into list: inout DisplayList, context: PaintContext) {
-        for presentation in presentations { presentation.paintPresentation(into: &list, context: context) }
+        for presentation in leavingPresentations + presentations { presentation.paintPresentation(into: &list, context: context) }
     }
 
     /// The interactive node a press at `point` reaches through the presentations: a hit in the

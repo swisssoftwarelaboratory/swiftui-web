@@ -89,6 +89,12 @@ public struct Animation: Equatable, Sendable {
     public static var snappy: Animation { .snappy() }
     public static var bouncy: Animation { .bouncy() }
 
+    /// An animation on one of the runtime's springs (`SpringModel`): UIKit's push, pop and
+    /// sheet spring is `.init(spring: .navigation)`.
+    package init(spring: SpringModel) {
+        self.init(curve: .spring(omega: spring.omega, zeta: spring.zeta, velocity: 0), duration: Self.settlingTime(omega: spring.omega, zeta: spring.zeta))
+    }
+
     /// Seconds until a spring's envelope is within 0.05 % of the target.
     package static func settlingTime(omega: Double, zeta: Double) -> Double {
         let z = max(zeta, 0.05)
