@@ -14,7 +14,7 @@ extension ViewNode {
         guard old != new else { return }
         if let animation = runtime.effectiveUpdateAnimation(for: self) {
             let presentation = self.presentation ?? NodePresentation()
-            presentation.effect = Tween(from: old, to: new, animation: animation, start: runtime.animationClock)
+            presentation.effect = Tween(from: old, to: new, animation: animation, start: runtime.animationClock, continuing: presentation.effect)
             self.presentation = presentation
             runtime.register(animating: self)
         } else {

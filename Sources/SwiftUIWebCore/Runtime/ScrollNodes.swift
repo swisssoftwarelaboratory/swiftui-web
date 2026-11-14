@@ -566,7 +566,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         // UIScrollView's rubber band: the content moves (1 − 1 / (x·c/d + 1)) · d for a pull of
         // x against a view d tall, c = 0.55 — half the finger at first, ever less after.
         let d = max(1, frame.height), c = environment.platformProfile.metrics.refreshRubberBandConstant
-        pullDistance = (1 - 1 / (pullTravel * c / d + 1)) * d
+        pullDistance = CGFloat(RubberBand.offset(forOvershoot: Double(pullTravel), dimension: Double(d), constant: Double(c)))
         runtime.requestFullLayout()
         return true
     }
@@ -766,10 +766,9 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     private func settleWithBehavior(velocity: CGSize) {
         guard let behavior = environment._scrollTargetBehavior else { return }
         let metrics = environment.platformProfile.metrics
-        let rate = metrics.scrollDecelerationRate
         // The distance momentum would cover: the geometric sum of the per-millisecond decays.
-        let seconds = rate / (1 - rate) / 1000
-        let projected = clamped(CGPoint(x: contentOffset.x + velocity.width * seconds, y: contentOffset.y + velocity.height * seconds))
+        let decay = DecayModel(rate: metrics.scrollDecelerationRate)
+        let projected = clamped(CGPoint(x: contentOffset.x + decay.projectedOffset(velocity: velocity.width), y: contentOffset.y + decay.projectedOffset(velocity: velocity.height)))
         let geometry = scrollGeometry
         var target = ScrollTarget(rect: CGRect(origin: CGPoint(x: projected.x - contentInsets.leading, y: projected.y - contentInsets.top), size: geometry.containerSize))
         let context = ScrollTargetBehaviorContext(
@@ -824,14 +823,14 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             if omega > 0 {
                 // x(t) = to + (d₀ + (v₀ + ω d₀) t) e^(−ωt): the finger's speed carries on into the
                 // spring, which then eases the content onto its target (iOS paging).
-                let t = state.elapsed, decay = _exp(-omega * t)
+                let t = state.elapsed, spring = SpringModel(omega: omega, zeta: 1)
                 func axis(_ from: CGFloat, _ to: CGFloat, _ v: CGFloat) -> CGFloat {
                     let d0 = Double(from - to)
                     // A fast finger carries into the spring only up to 1.7 ω d₀ toward the target:
                     // iOS overshoots a page by about 4 pt after a 3,000 pt/s flick, not 20.
                     var v0 = Double(v)
                     if v0 * d0 < 0 { v0 = max(-1.7 * omega * abs(d0), min(1.7 * omega * abs(d0), v0)) }
-                    return to + CGFloat((d0 + (v0 + omega * d0) * t) * decay)
+                    return to + CGFloat(spring.state(displacement: d0, velocity: v0, at: t).displacement)
                 }
                 let next = CGPoint(x: axis(state.from.x, state.to.x, state.velocity.width), y: axis(state.from.y, state.to.y, state.velocity.height))
                 let left = max(abs(next.x - state.to.x), abs(next.y - state.to.y))
@@ -867,12 +866,14 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             }
         }
         if velocity != .zero {
-            let step = CGSize(width: velocity.width * elapsed, height: velocity.height * elapsed)
-            let remaining = scroll(by: step)
+            // Exact friction over the real frame time (`DecayModel`): the same coast at any
+            // frame rate.
+            let decay = DecayModel(rate: PlatformMetrics.scrollDecelerationRate)
+            let x = decay.state(velocity: Double(velocity.width), at: elapsed), y = decay.state(velocity: Double(velocity.height), at: elapsed)
+            let remaining = scroll(by: CGSize(width: x.offset, height: y.offset))
             // Momentum stops at an edge (no rubber band, see the element doc) and below a floor.
-            let decay = _decay(PlatformMetrics.scrollDecelerationRate, milliseconds: elapsed * 1000)
-            velocity = CGSize(width: remaining.width == 0 ? velocity.width * decay : 0,
-                              height: remaining.height == 0 ? velocity.height * decay : 0)
+            velocity = CGSize(width: remaining.width == 0 ? x.velocity : 0,
+                              height: remaining.height == 0 ? y.velocity : 0)
             if abs(velocity.width) < PlatformMetrics.scrollVelocityFloor { velocity.width = 0 }
             if abs(velocity.height) < PlatformMetrics.scrollVelocityFloor { velocity.height = 0 }
             if velocity != .zero { animating = true } else if phase == .decelerating { phase = .idle }
@@ -1009,21 +1010,13 @@ package struct PanState {
     package var lastTime: Double
     package var velocity: CGSize = .zero
     package var active = false
-    /// The finger's recent path, (time, point), for its speed at the lift.
-    package var samples: [(Double, CGPoint)] = []
+    /// The finger's recent path, for its speed at the lift.
+    package var tracker = VelocityTracker()
 
     /// The finger's speed over the last 50 ms of its path (points per second, content
-    /// direction), as UIKit measures it: steady whatever the frames' spacing, where a smoothed
-    /// step-to-step speed ran low on uneven frames (new-website#216).
+    /// direction: against the finger), as UIKit measures it (`VelocityTracker`).
     package var recentVelocity: CGSize? {
-        guard let last = samples.last, samples.count >= 2 else { return nil }
-        // The window reaches back to the previous sample at least: a late frame must not
-        // leave the last move alone in it.
-        var first = samples.first(where: { last.0 - $0.0 <= 0.05 }) ?? samples[samples.count - 2]
-        if last.0 - first.0 <= 0.004 { first = samples[samples.count - 2] }
-        guard last.0 - first.0 > 0.004 else { return nil }
-        let dt = last.0 - first.0
-        return CGSize(width: (first.1.x - last.1.x) / dt, height: (first.1.y - last.1.y) / dt)
+        tracker.recentVelocity.map { CGSize(width: -$0.width, height: -$0.height) }
     }
 }
 
@@ -1202,9 +1195,8 @@ extension Runtime {
     package func continuePan(to point: CGPoint, time: Double) {
         guard var state = pan else { return }
         // Every move of the finger, from the touch on, for its speed at the lift.
-        if state.samples.isEmpty { state.samples = [(state.startTime, state.start)] }
-        state.samples.append((time, point))
-        state.samples.removeAll { time - $0.0 > 0.1 }
+        if state.tracker.samples.isEmpty { state.tracker.add(state.start, at: state.startTime) }
+        state.tracker.add(point, at: time)
         if !state.active {
             let dx = point.x - state.start.x, dy = point.y - state.start.y
             guard dx * dx + dy * dy >= PlatformMetrics.panSlop * PlatformMetrics.panSlop else { pan = state; return }
@@ -1265,19 +1257,6 @@ extension Runtime {
         state.nodes.first?.endTracking(velocity: velocity)
         return true
     }
-}
-
-/// `rate` raised to the whole number of milliseconds, by squaring: no libm (`pow` is not
-/// importable on wasm through `@_silgen_name`, unlike `cos`/`sin`) and deterministic.
-package func _decay(_ rate: Double, milliseconds: Double) -> Double {
-    var exponent = max(0, Int(milliseconds.rounded()))
-    var base = rate, result = 1.0
-    while exponent > 0 {
-        if exponent & 1 == 1 { result *= base }
-        base *= base
-        exponent >>= 1
-    }
-    return result
 }
 
 extension Runtime {

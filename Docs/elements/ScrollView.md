@@ -47,8 +47,9 @@ Input is entirely in Swift (decision 0002). `Runtime.scrollWheel(by:at:)` walks 
 on the hit path innermost first and lets each consume what it can along its axes; the remainder
 chains outward. Desktop wheel deltas already carry the OS momentum, so none is added. A touch
 pointer becomes a pan after `panSlop` (10 pt); a pan cancels the pending press and follows the
-finger, and lifting hands the smoothed velocity to the innermost scroll view, which decelerates
-at UIScrollView's normal rate (× 0.998 per millisecond) and stops at the edges. The host
+finger, and lifting hands the finger's velocity over its last 50 ms (`VelocityTracker`) to the
+innermost scroll view, which decelerates at UIScrollView's normal rate (× 0.998 per millisecond,
+`DecayModel`, exact for any frame time) and stops at the edges ([Physics](Physics.md)). The host
 (`CanvasHost`) normalises `deltaMode` (lines × 16, pages × viewport), consumes the wheel event so
 the page does not scroll, and calls `advanceScrollAnimations` once per frame for momentum and
 the indicator fade. A scroll frame moves the content without a layout pass when nothing in the
