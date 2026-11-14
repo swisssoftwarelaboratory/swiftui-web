@@ -10,6 +10,8 @@ import SwiftUI
 import SwiftUIWebCore
 import SwiftUIWebHeadless
 
+#if !os(WASI)
+
 @MainActor private final class Count { var value = 0 }
 @MainActor private final class Seen { var label = ""; var ys: [CGFloat] = [] }
 
@@ -405,3 +407,4 @@ private struct TitledRoot: View {
         #expect(!drawn().contains { $0.hasPrefix("drawText(\"a\"") })
     }
 }
+#endif

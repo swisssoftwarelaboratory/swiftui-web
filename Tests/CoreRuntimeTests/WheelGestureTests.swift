@@ -5,6 +5,8 @@ import SwiftUI
 import SwiftUIWebCore
 import SwiftUIWebHeadless
 
+#if !os(WASI)
+
 @Observable private final class PagerModel { var index = 0 }
 
 /// The pager alone: paging, no position binding.
@@ -329,3 +331,4 @@ private struct PagedCard: View {
         #expect(model.index == pages, "\(Int(fraction * 361)) pt at \(Int(speed)) pt/s")
     }
 }
+#endif
