@@ -114,12 +114,23 @@ extension Runtime {
     /// The modifier keys held as a pointer event arrives (`HostedScene`).
     public func pointerModifiersChanged(_ modifiers: EventModifiers) { pointerModifiers = modifiers }
 
-    /// Pointer went down at `point` (points, window coordinates). A touch also starts tracking a
-    /// pan of the scroll views under it; `time` is in seconds (any monotonic clock).
+    /// Whether a press of this pointer acts as a finger: a touch always, and on iOS any press,
+    /// as in Apple's iPhone Simulator on a Mac, where a click-and-drag is the finger (it pulls
+    /// sheets down, drags and flicks lists, swipes pages; new-website#283). A Mac app's mouse
+    /// drag selects and drags as on the Mac. The browser host starts no system drag from a press
+    /// that acts as a finger (`HostedScene`). Wheels and two-finger scrolls go their own way
+    /// (`scrollWheel`) either way.
+    public func pressActsAsFinger(_ type: PointerType) -> Bool {
+        type == .touch || rootEnvironment.platformProfile.isIOS
+    }
+
+    /// Pointer went down at `point` (points, window coordinates). A press that acts as a finger
+    /// (`pressActsAsFinger`) also starts tracking a pan of the scroll views under it; `time` is
+    /// in seconds (any monotonic clock).
     public func pointerDown(at point: CGPoint, type: PointerType = .mouse, time: Double = 0) {
         lastPointerTime = time
         lastPointerType = type
-        if type == .touch { beginPan(at: point, time: time) }
+        if pressActsAsFinger(type) { beginPan(at: point, time: time) }
         // A touch that stopped a decelerating scroll view belongs to it, not to a control.
         if pan?.active == true { return }
         pendingDrag = dragSource(at: point).map { ($0, point) }
