@@ -33,6 +33,35 @@ import SwiftUIWebHeadless
         }
     }
 
+    /// The app's own pattern in full: a dim and the sheet, dismissed from the drag's end.
+    struct AppSheet: View {
+        let model: Model
+        var body: some View {
+            ZStack(alignment: .bottom) {
+                Color.white
+                if model.sheet != nil {
+                    Color.black.opacity(0.3).ignoresSafeArea().transition(.opacity)
+                }
+                if let sheet = model.sheet {
+                    Group { Color.red.frame(height: 300) }
+                        .padding(.bottom, 8)
+                        .offset(y: max(0, model.drag))
+                        .gesture(DragGesture()
+                            .onChanged { model.drag = $0.translation.height }
+                            .onEnded { value in
+                                if value.translation.height > 120 || value.predictedEndTranslation.height > 300 {
+                                    withAnimation(.smooth(duration: 0.3)) { model.sheet = nil }
+                                }
+                                withAnimation(.smooth) { model.drag = 0 }
+                            })
+                        .transition(.move(edge: .bottom))
+                        .id(sheet)
+                }
+            }
+            .ignoresSafeArea(.container, edges: .bottom)
+        }
+    }
+
     private let size = CGSize(width: 393, height: 852)
 
     /// Where the red card is drawn: its rect's top plus the translation it is drawn under.
@@ -79,6 +108,35 @@ import SwiftUIWebHeadless
         #expect((later ?? 0) > (early ?? .infinity), "\(String(describing: early)) \(String(describing: later))")
         r.advanceAnimations(elapsed: 2); r.layout(in: size)
         #expect(redTop(r) == nil)
+    }
+
+    @Test func aSheetDismissedByItsOwnDragSlidesOff() {
+        let model = Model()
+        model.sheet = 1
+        var environment = EnvironmentValues()
+        environment.platformProfile = .iOS
+        let r = Runtime(environment: environment)
+        r.mount(AppSheet(model: model))
+        r.layout(in: size)
+        func frame() { _ = r.advanceFrame(elapsed: 1.0 / 60); r.layout(in: size); _ = r.render(scale: 3) }
+        frame()
+        var t = 1.0
+        r.pointerDown(at: CGPoint(x: 196, y: 650), type: .touch, time: t)
+        for i in 1...20 {
+            t += 1.0 / 60
+            r.pointerMoved(to: CGPoint(x: 196, y: 650 + Double(i) * 10), time: t)
+            frame()
+        }
+        #expect(abs((redTop(r) ?? 0) - 744) < 1, "\(String(describing: redTop(r)))")
+        r.pointerUp(at: CGPoint(x: 196, y: 850), time: t)
+        #expect(model.sheet == nil)
+        var tops: [Double?] = []
+        for _ in 0..<90 { frame(); tops.append(redTop(r)) }
+        // It leaves the screen before it goes: its last drawn top is at the bottom edge.
+        let lastDrawn = tops.compactMap { $0 }.last ?? 0
+        #expect(lastDrawn > 840, "\(tops)")
+        #expect(tops.prefix(6).allSatisfy { $0 != nil }, "\(tops)")
+        #expect((tops[3] ?? 0) > 744, "\(tops)")
     }
 }
 #endif
