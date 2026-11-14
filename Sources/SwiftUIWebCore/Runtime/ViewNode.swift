@@ -27,8 +27,19 @@ open class ViewNode {
 
     /// The environment in which this node's view lives.
     package var environment: EnvironmentValues {
-        didSet { if oldValue.generation != environment.generation { invalidateSizeMemosUpward() } }   // see `clearNeedsUpdate`
+        didSet {   // see `clearNeedsUpdate`
+            guard oldValue.generation != environment.generation else { return }
+            if runtime.profileLayout {
+                // Where a new environment starts: the parent's own did not change in this pass.
+                environmentChangedInPass = runtime.fullLayoutCount
+                if let parent, parent.environmentChangedInPass != runtime.fullLayoutCount { noteMemoReset("environment made new by \(parent.nodeDescription.prefix(70))") }
+            }
+            invalidateSizeMemosUpward()
+        }
     }
+
+    /// The layout pass in which this node's environment last changed (with profiling on).
+    package var environmentChangedInPass: UInt64 = .max
 
     /// Set by `invalidate()`; cleared once the node has been updated.
     package private(set) var needsUpdate = false
@@ -69,6 +80,7 @@ open class ViewNode {
         self.parent = parent
         self.depth = (parent?.depth ?? -1) + 1
         self.environment = environment
+        runtime.treeVersion &+= 1
     }
 
     // MARK: Invalidation
@@ -106,13 +118,21 @@ open class ViewNode {
 
     package func clearNeedsUpdate() {
         needsUpdate = false
+        runtime.treeVersion &+= 1
         // Every update is applied through here; a node whose view or environment changed has
         // forgotten its memoised sizes and its ancestors' as they were assigned (theirs are
         // computed from it), and the rest of the page keeps its memos across the update, where
         // a generation bump would measure everything again (a row appearing in Ember's thread
         // laid the whole thread out again, 100 ms a time). A node re-evaluated by force keeps
         // nothing: its subtree may have been rebuilt from state its value does not show.
-        if needsForcedInvalidation { needsForcedInvalidation = false; invalidateSizeMemosUpward() }
+        if needsForcedInvalidation { needsForcedInvalidation = false; noteMemoReset("forced update"); invalidateSizeMemosUpward() }
+    }
+
+    /// With layout profiling on, counts why this node forgot its sizes (the host's
+    /// `layoutProfile().shares`): what made a pass measure views nothing visibly changed.
+    package final func noteMemoReset(_ why: String) {
+        guard runtime.profileLayout else { return }
+        runtime.shareProbes["\(why): \(nodeDescription.prefix(60))", default: 0] += 1
     }
 
     /// Set by `performUpdate` (a node invalidated by observation or `invalidate()`): the next
@@ -154,6 +174,7 @@ open class ViewNode {
     /// Tears the subtree down. Subclasses unmount children first, then call super.
     package func unmount() {
         for child in structuralChildren { child.unmount() }
+        runtime.treeVersion &+= 1
         isMounted = false
         needsUpdate = false
     }
@@ -204,6 +225,7 @@ open class ViewNode {
     /// placeholder stood. Every other node keeps its memo, where a generation bump
     /// (`Runtime.invalidateSizeMemos`) would re-measure the whole tree.
     package final func invalidateSizeMemosUpward() {
+        noteMemoReset("upward from")
         var node: ViewNode? = self
         while let current = node {
             current.invalidateSizeMemo()
@@ -213,6 +235,7 @@ open class ViewNode {
 
     /// Forgets this node's memoised sizes alone.
     package final func invalidateSizeMemo() {
+        placementIsCurrent = false
         sizeCache.removeAll(keepingCapacity: true)
         planCache.removeAll(keepingCapacity: true)
     }
@@ -221,6 +244,7 @@ open class ViewNode {
     private func refreshSizeMemo() {
         let generation = runtime.layoutGeneration
         if sizeCacheGeneration != generation {
+            if !sizeCache.isEmpty { noteMemoReset("generation \(sizeCacheGeneration)→\(generation)") }
             invalidateSizeMemo()
             sizeCacheGeneration = generation
         }
@@ -270,7 +294,47 @@ open class ViewNode {
         }
         hasBeenPlaced = true
         placer.assignSafeArea(to: self)
+        // A subtree placed before for the same proposal, size and safe area, in which nothing
+        // has changed since (no memo forgotten, no scroll moved), is placed as it was: its
+        // frames are relative to this node, so they all still hold. An update then places
+        // what it changed and the path to it, not the whole window (new-website#216: every
+        // keystroke placed all four tabs of an app, 20 ms).
+        let key = PlacementKey(proposal: proposal, size: frame.size, overlap: safeAreaOverlap, extension: safeAreaExtension,
+                               platformOverlap: platformSafeAreaOverlap, generation: runtime.layoutGeneration)
+        if placementIsCurrent, lastPlacement == key, presentation == nil, runtime.mayKeepPlacements {
+            runtime.keptPlacements += 1
+            return
+        }
+        placementIsCurrent = true
+        lastPlacement = key
         layoutContents(proposal: proposal)
+        // A node that reads where it is (a probe, a reader of its position) is placed on every
+        // pass, and so is the path to it.
+        if readsGeometry { markPlacementStale() }
+    }
+
+    /// What a placement depended on (see `place`).
+    private struct PlacementKey: Equatable {
+        var proposal: ProposedViewSize
+        var size: CGSize
+        var overlap: EdgeInsets
+        var `extension`: EdgeInsets
+        var platformOverlap: EdgeInsets
+        var generation: UInt64
+    }
+    private var lastPlacement: PlacementKey?
+    /// False once something under this node changed since it was last placed: set again when
+    /// the placement starts, so a change during it (a lazy element made) stays noted.
+    private var placementIsCurrent = false
+
+    /// Has this node and the path to it placed again on the next pass (a scroll offset moved,
+    /// a reader started reading its position).
+    package final func markPlacementStale() {
+        var node: ViewNode? = self
+        while let current = node {
+            current.placementIsCurrent = false
+            node = current.parent
+        }
     }
 
     /// Lays out children inside `CGRect(origin: .zero, size: frame.size)`. Layout nodes with
@@ -460,6 +524,11 @@ open class ViewNode {
     /// view holding one lays its content out on every scroll frame instead of moving it.
     package var readsGeometry: Bool { false }
 
+    /// Called when a `GeometryProxy` of this node is asked where the node is (`frame(in:)` in
+    /// any space but `.local`, `bounds(of:)`, an anchor), not only how large it is. A geometry
+    /// reader then rebuilds its content on every pass and keeps scroll views off the fast path.
+    package func proxyReadPosition() {}
+
     /// Moves a placed node without laying it out again (a scroll frame whose content is unchanged).
     package final func moveFrame(toOrigin origin: CGPoint) {
         frame.origin = origin
@@ -493,8 +562,17 @@ open class TypedNode<V: View>: ViewNode {
     /// plain data (most hold a closure) counts as changed; the member-by-member one, tried,
     /// reflected over every node of a re-evaluated screen for longer than measuring it took.
     package var view: V {
-        didSet { if _valuesDiffer(oldValue, view) { invalidateSizeMemosUpward() } }
+        didSet { if newValueChangesSizes(from: oldValue, to: view) { noteMemoReset("new value"); invalidateSizeMemosUpward() } }
     }
+
+    /// Whether a new value makes the sizes memoised from the old one stale (see `view`). A node
+    /// whose sizes are its content's (a body, a modifier around its content, a stack around its
+    /// subviews) compares only what it adds: a changed content forgets its own sizes and
+    /// therefore this node's as it is updated, so comparing the content here too only made a
+    /// re-evaluated body forget every size in it, unchanged rows included, because most view
+    /// values hold a closure somewhere (new-website#216: each keystroke in a search re-measured
+    /// every row of the results).
+    package func newValueChangesSizes(from old: V, to new: V) -> Bool { _valuesDiffer(old, new) }
 
     package init(view: V, parent: ViewNode?, runtime: Runtime, environment: EnvironmentValues) {
         self.view = view
@@ -588,6 +666,9 @@ package final class CompositeNode<V: View>: TypedNode<V> {
 
     override package var structuralChildren: [ViewNode] { child.map { [$0] } ?? [] }
     override package var layoutChildren: [ViewNode] { child?.layoutChildren ?? [] }
+
+    /// Its sizes are its body's: a new value that changes the body changes them through it.
+    override package func newValueChangesSizes(from old: V, to new: V) -> Bool { false }
 }
 
 // MARK: - Observation

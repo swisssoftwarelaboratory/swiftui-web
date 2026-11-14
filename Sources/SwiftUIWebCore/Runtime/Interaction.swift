@@ -408,6 +408,9 @@ package final class ButtonHostNode: LayoutNode<_ButtonHost>, _Interactive {
     override package var structuralChildren: [ViewNode] { [child] }
     override package var nodeDescription: String { "Button" }
 
+    /// Its sizes are its label's (the action and press binding change none).
+    override package func newValueChangesSizes(from old: _ButtonHost, to new: _ButtonHost) -> Bool { false }
+
     package func pressBegan() { if environment.isEnabled { view.isPressed.wrappedValue = true } }
     package func pressEnded(inside: Bool) {
         view.isPressed.wrappedValue = false

@@ -191,6 +191,8 @@ package final class TableNode: LayoutNode<_TableHost>, _Interactive, _KeyHandlin
     }
 
     override package func layoutContents(proposal: ProposedViewSize) {
+        runtime.wholePlacements += 1
+        defer { runtime.wholePlacements -= 1 }
         columnFrames = Self.columnFrames(view.columns, width: aligned.width, options: options, overrides: pitchOverrides)
         clampOffset()
         for (rowIndex, row) in view.rows.enumerated() {

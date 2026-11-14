@@ -547,7 +547,7 @@ public final class CanvasSceneHost {
                 let mode = e.deltaMode.number ?? 0
                 let factor = mode == 1 ? 16.0 : mode == 2 ? self.height : 1.0
                 let delta = CGSize(width: (e.deltaX.number ?? 0) * factor, height: (e.deltaY.number ?? 0) * factor)
-                self.scene.scrollWheel(by: delta, at: self.point(of: e))
+                self.scene.scrollWheel(by: delta, at: self.point(of: e), time: self.seconds(of: e))
                 if self.scene.needsFrame { self.scheduleFrame() }
             }
             return .undefined
@@ -887,9 +887,12 @@ public final class CanvasSceneHost {
         }
         let progress = min(1, (time - drag.startTime) / max(0.001, drag.duration))
         let point = CGPoint(x: drag.start.x + drag.delta.x * progress, y: drag.start.y + drag.delta.y * progress)
-        scene.pointerMoved(to: point, time: time)
+        // Stamped with when the finger was there: a late frame must not make a finger that
+        // lifted on time look as if it had stopped first (its speed at the lift is measured).
+        let eventTime = min(time, drag.startTime + drag.duration)
+        scene.pointerMoved(to: point, time: eventTime)
         if progress >= 1 {
-            scene.pointerUp(at: point, time: time)
+            scene.pointerUp(at: point, time: eventTime)
             scriptedDrag = nil
         }
     }
@@ -1863,6 +1866,19 @@ public final class CanvasSceneHost {
         }
         closures += [frames, displayList, frameCount, frameMillis, framePhases, pendingImages, animating, semantics, foundation, drag, dragging, bench, layoutProfile]
         debug.layoutProfile = .object(layoutProfile)
+        // scrollViews(): every scroll view's [x, y, w, h, offsetX, offsetY] in points.
+        let scrollViews = JSClosure { [weak self] _ in
+            guard let self else { return .undefined }
+            let list = JSObject.global.Array.function!.new()
+            for entry in self.scene.debugScrollViews {
+                let row = JSObject.global.Array.function!.new()
+                for value in entry { _ = row.push!(JSValue.number(value)) }
+                _ = list.push!(row)
+            }
+            return .object(list)
+        }
+        closures.append(scrollViews)
+        debug.scrollViews = .object(scrollViews)
         debug.bench = .object(bench)
         debug.drag = .object(drag)
         debug.dragging = .object(dragging)

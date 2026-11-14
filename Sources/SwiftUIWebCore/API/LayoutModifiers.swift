@@ -140,6 +140,8 @@ public struct _LayoutValueModifier<K: LayoutValueKey> {
     }
 }
 
+extension _LayoutValueModifier: Equatable where K.Value: Equatable {}
+
 extension _LayoutValueModifier: ViewModifier {
     public typealias Body = Never
 

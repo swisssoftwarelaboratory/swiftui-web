@@ -136,7 +136,7 @@ extension Runtime {
         focusedIdentifier = semanticsIdentifier
         focusVisible = keyboard
         notifyFocusChanged()
-        setNeedsDisplay()
+        requestRedraw()
     }
 
     /// The element lost the host's focus.

@@ -67,6 +67,9 @@ public protocol HostedScene: AnyObject {
     /// the pass's measurements and memo misses, for the host's frame statistics; a scene that
     /// does not know says nothing.
     var lastLayoutReason: String { get }
+    /// Every scroll view's frame in the window and content offset, [x, y, w, h, offsetX, offsetY]
+    /// (debugging: a gesture's motion read frame by frame).
+    var debugScrollViews: [[Double]] { get }
     var lastLayoutMeasures: Int { get }
     var lastLayoutComputes: Int { get }
     /// Layout profiling (`layoutProfile()` on the debug bridge): on, the last pass's
@@ -101,6 +104,9 @@ public protocol HostedScene: AnyObject {
     func secondaryPointerDown(at point: CGPoint)
     /// A wheel or trackpad scroll by `delta` points (positive moves content up and left).
     func scrollWheel(by delta: CGSize, at point: CGPoint)
+    /// The same, with the event's time in seconds (the host's clock): a scene that reads a
+    /// trackpad gesture out of its wheel events measures their gaps with it.
+    func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double)
     /// A pinch from a trackpad or two touches: `scale` and `rotation` (radians, clockwise) are
     /// cumulative since `began`; `point` is the pinch's centre.
     func pinch(_ phase: ContinuousGesturePhase, scale: CGFloat, rotation: Double, at point: CGPoint, time: Double)
@@ -304,6 +310,7 @@ public struct ColorPanelRequest: Equatable, Sendable {
 }
 
 extension HostedScene {
+    public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double) { scrollWheel(by: delta, at: point) }
     public func hostElements() -> [HostElement] { [] }
     public func colorPanel(_ identifier: Int, didPick color: RGBA) {}
     public func colorPanelDidClose(_ identifier: Int) {}
@@ -365,6 +372,7 @@ extension HostedScene {
 
 extension HostedScene {
     public var lastLayoutReason: String { "" }
+    public var debugScrollViews: [[Double]] { [] }
     public var lastLayoutMeasures: Int { 0 }
     public var lastLayoutComputes: Int { 0 }
     public var profileLayout: Bool { get { false } set {} }

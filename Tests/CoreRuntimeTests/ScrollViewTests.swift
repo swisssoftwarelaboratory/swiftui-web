@@ -246,7 +246,9 @@ private struct Changing: View {
         #expect(runtime.probeFrames["content"]?.minY == 0)
         runtime.pointerMoved(to: CGPoint(x: 150, y: 100), time: 0.02)      // 50 pt in 20 ms
         runtime.layout(in: CGSize(width: 300, height: 200))
-        #expect(runtime.probeFrames["content"]?.minY == -50)
+        // The content follows from where the finger left the 10 pt slop, as on iOS (a 100 pt
+        // drag in the simulator moves a page 90 pt; new-website#216).
+        #expect(runtime.probeFrames["content"]?.minY == -40)
         runtime.pointerUp(at: CGPoint(x: 150, y: 100), time: 0.03)
         #expect(runtime.needsFrame)
         // Momentum keeps the content moving, slowing down and stopping on its own.
@@ -339,7 +341,9 @@ private struct Changing: View {
         let jumped = box.value
         runtime.pointerMoved(to: CGPoint(x: track.minX + 63, y: y - 30), time: 1.02)
         runtime.layout(in: size)
-        #expect(runtime.probeFrames["content"]?.minY == -30)
+        // Past the 10 pt slop along the finger's path (3, -30): the content follows the rest.
+        let followed = -30 * (1 - 10 / (3.0 * 3 + 30 * 30).squareRoot())
+        #expect(abs((runtime.probeFrames["content"]?.minY ?? 0) - followed) < 0.01)
         #expect(box.value == jumped)
         #expect(before == jumped)
         runtime.pointerUp(at: CGPoint(x: track.minX + 63, y: y - 30), time: 1.5)
@@ -354,7 +358,7 @@ private struct Changing: View {
         runtime.pointerMoved(to: CGPoint(x: scrolled.minX + 80, y: scrolled.midY + 40), time: 2.3)
         runtime.layout(in: size)
         #expect(box.value > held)
-        #expect(runtime.probeFrames["content"]?.minY == -30)
+        #expect(abs((runtime.probeFrames["content"]?.minY ?? 0) - followed) < 0.01)
     }
 
     @Test func mouseInputStillPressesButtons() {

@@ -486,6 +486,16 @@ public final class Runtime {
     /// A touch pan of scroll views in progress.
     package var pan: PanState?
 
+    /// The trackpad gesture the last wheel event belonged to (`wheelGestureEvent`).
+    package var wheelGesture: WheelGesture?
+    /// The time of the wheel event being handled, when the host gave one.
+    package var wheelEventTime: Double?
+    /// Seconds on a steady clock, for wheel gestures; tests set their own.
+    package var wheelClock: () -> Double = {
+        let elapsed = ContinuousClock.now - _wheelClockOrigin
+        return Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+    }
+
     /// Scroll views with momentum or fading indicators (`advanceScrollAnimations`).
     package var animatingScrollNodes: [ViewNode & _Scrollable] = []
 
@@ -551,11 +561,48 @@ public final class Runtime {
     /// navigation bar collapsed and its screen's frame changes).
     private var layoutForced = false
 
+    /// Counts node creations, updates and removals: what a node derives from its subtree (the
+    /// navigation bars from the titles and toolbars in it) stays valid while it is unchanged.
+    package var treeVersion: UInt64 = 0
+    /// Counts `requestFullLayout` calls (state outside the views changed: a search presented).
+    package private(set) var fullLayoutRequests: UInt64 = 0
+
+    /// Whether a placement may be kept (`ViewNode.place`): not in a pass that animates (it sets
+    /// tweens from the frames it moves), one asked to place everything, or inside content that
+    /// is placed whole (a scroll view's, whose lazy elements follow the viewport).
+    package var mayKeepPlacements: Bool {
+        keepsPlacements && !placesEverything && layoutAnimation == nil && wholePlacements == 0
+    }
+    /// Switch for the kept placements, for tests that compare with placing everything.
+    package var keepsPlacements = true
+    /// Set for a pass after `requestFullLayout`.
+    private var placesEverything = false
+    private var placesEverythingRequested = false
+    /// Nesting of content placed whole (`ScrollNode`).
+    package var wholePlacements = 0
+    /// Placements kept in the last pass, for tests and the layout reason.
+    package var keptPlacements = 0
+
     /// Asks for a layout pass that keeps the memoised sizes but re-places everything.
     package func requestFullLayout(file: StaticString = #fileID, line: UInt = #line) {
+        placesEverythingRequested = true
+        fullLayoutRequests &+= 1
         layoutForced = true
         lastForcingRequest = "\(file):\(line)"
         requestLayout(invalidatingSizes: false)
+    }
+
+    /// Asks for a frame for a change that moves no view and resizes none (a caret, a focus ring,
+    /// a text editor's scroll): the tree is placed again with every memoised size kept, where
+    /// `setNeedsDisplay` measures the whole tree again (new-website#216: every keystroke in a
+    /// search field measured a whole app, 12,900 views, because the caret moved). The pass still
+    /// runs, and the semantics the host reads before it (a field's selection and marked text)
+    /// are walked again.
+    package func requestRedraw(file: StaticString = #fileID, line: UInt = #line) {
+        semanticsCacheLayout = .max
+        layoutForced = true
+        lastForcingRequest = "\(file):\(line)"
+        requestLayout(invalidatingSizes: false, file: file, line: line)
     }
 
     /// Asks for a frame that paints the tree as it is laid out (a navigation slide advanced).
@@ -575,8 +622,13 @@ public final class Runtime {
             pendingAnimationCompletions.removeAll()
             if pendingAnimation == nil { fireAnimationCompletions(now: animationClock) }
         }
+        // Actions queued since the last frame and nothing else (an `onGeometryChange` reporting
+        // a scrolled position) run first: one that changes no view leaves the frame a move or a
+        // repaint, where running it inside the pass made every scroll step lay the tree out
+        // (new-website#216). The updates it does cause are applied here, as the pass would.
+        let actionsUpdated = scheduler.hasPendingActionsOnly && scheduler.flush()
         var reason = ""
-        if scheduler.hasPendingWork { reason = "update" }
+        if scheduler.hasPendingWork || actionsUpdated { reason = "update" }
         else if size != layoutSize { reason = "resize" }
         else if pendingAnimation != nil { reason = "animation" }
         else if sizesInvalidated { reason = "invalidated by " + lastInvalidatingRequest }
@@ -584,15 +636,22 @@ public final class Runtime {
         // one in flight only paints, unless a layout parameter tweens (`advanceAnimations`). A
         // pending update lays out but keeps the memos: the nodes it touches forget their own
         // and their ancestors' as they are applied (`ViewNode.clearNeedsUpdate`).
-        let updating = scheduler.hasPendingWork
+        let updating = scheduler.hasPendingWork || actionsUpdated
+        // An update that also invalidated every memoised size says what did: such a frame
+        // measures the whole tree (new-website#216).
+        if updating, sizesInvalidated, size == layoutSize, pendingAnimation == nil { reason += ", sizes invalidated by " + lastInvalidatingRequest }
         if size != layoutSize || pendingAnimation != nil { sizesInvalidated = true }
         // A frame that only scrolled moves the scrolled content and keeps every frame else.
         if !updating, !sizesInvalidated, !layoutForced, presentations.isEmpty, scrolledNodes.allSatisfy(\.canMoveContentOnly) {
+            let moved = !scrolledNodes.isEmpty
             for node in scrolledNodes { node.moveContent() }
             scrolledNodes.removeAll()
             layoutRequested = false
             updateAnimation = nil
             lastLayoutReason = "moved"; lastLayoutMeasures = 0; lastLayoutComputes = 0
+            // Moved content changed positions without a pass: `onGeometryChange` hears of it
+            // (its action runs at the start of the next frame).
+            if moved { deliverGeometryChanges() }
             return
         }
         // A frame that only repaints keeps every frame and size.
@@ -612,7 +671,7 @@ public final class Runtime {
         measureCount = 0; computeCount = 0
         if profileLayout { computeHistogram.removeAll(); proposalCounts.removeAll(); proposalLog.removeAll(); profiledNodes.removeAll(); shareProbes.removeAll() }
         defer {
-            lastLayoutReason = reason; lastLayoutMeasures = measureCount; lastLayoutComputes = computeCount
+            lastLayoutReason = reason + (keptPlacements > 0 ? ", kept \(keptPlacements) placements" : ""); lastLayoutMeasures = measureCount; lastLayoutComputes = computeCount
             if profileLayout {
                 lastComputeHistogram = computeHistogram
                 var proposals: [String: Int] = [:]
@@ -637,10 +696,16 @@ public final class Runtime {
         }
         repaintOnly = false
         layoutForced = false
+        placesEverything = placesEverythingRequested || size != layoutSize
+        placesEverythingRequested = false
+        keptPlacements = 0
         scrolledNodes.removeAll()
         fullLayoutCount += 1
         inLayoutPass = true
+        let invalidatedBefore = sizesInvalidated
         flush()
+        if let shallowest = scheduler.lastFlushShallowest, reason.hasPrefix("update") { reason += ", from " + shallowest }
+        if sizesInvalidated, !invalidatedBefore { reason += ", sizes invalidated during the update by " + lastInvalidatingRequest }
         applyColorScheme()
         layoutRequested = false
         // The generation keys every node's size memo: a frame that only scrolled keeps it.
@@ -699,6 +764,14 @@ public final class Runtime {
     }
 
     private var environmentIsIOS: Bool { rootEnvironment.platformProfile.isIOS }
+
+    /// Re-reads the observers of geometry alone (`onGeometryChange`) after scrolled content moved.
+    package func deliverGeometryChanges() {
+        preferenceObservers.removeAll { $0.node == nil || $0.node?.isMounted == false }
+        for observer in preferenceObservers where observer.node?.observesGeometry == true {
+            observer.node?.evaluatePreference()
+        }
+    }
 
     /// Runs every live `onPreferenceChange` action whose value changed in this pass.
     package func deliverPreferences() {
@@ -788,6 +861,8 @@ package final class UpdateScheduler {
     package private(set) var flushCount = 0
 
     package var hasPendingWork: Bool { !dirty.isEmpty || !actions.isEmpty }
+    /// Whether only actions wait: no node is invalidated.
+    package var hasPendingActionsOnly: Bool { dirty.isEmpty && !actions.isEmpty }
 
     package init() {}
 
@@ -804,14 +879,28 @@ package final class UpdateScheduler {
         if wasIdle { onNeedsFlush?() }
     }
 
-    package func flush() {
-        guard hasPendingWork else { return }
+    /// The shallowest node the last flush updated, with its depth: a change high in the tree
+    /// re-evaluates everything under it (the layout reason names it).
+    package private(set) var lastFlushShallowest: String?
+
+    /// Returns whether any node was updated.
+    @discardableResult
+    package func flush() -> Bool {
+        guard hasPendingWork else { return false }
         flushCount += 1
+        lastFlushShallowest = nil
+        var shallowestDepth = Int.max
+        var updated = false
         var passes = 0
         while hasPendingWork {
             passes += 1
             precondition(passes < 1000, "UpdateScheduler: updates keep invalidating nodes; giving up")
             let batch = dirty.values.sorted { $0.depth < $1.depth }
+            if let first = batch.first, first.depth < shallowestDepth {
+                shallowestDepth = first.depth
+                lastFlushShallowest = "\(first.nodeDescription.prefix(80)) at depth \(first.depth) (\(batch.count) nodes)"
+            }
+            if !batch.isEmpty { updated = true }
             dirty.removeAll(keepingCapacity: true)
             for node in batch {
                 node.updateIfNeeded()
@@ -819,6 +908,98 @@ package final class UpdateScheduler {
             let pending = actions
             actions.removeAll()
             for action in pending { action() }
+        }
+        return updated
+    }
+}
+
+/// The start of the wheel clock.
+private let _wheelClockOrigin = ContinuousClock.now
+
+/// A trackpad gesture seen as wheel events (`Runtime.wheelGestureEvent`).
+package struct WheelGesture {
+    package var axis: Axis
+    package var nodes: [ViewNode & _Scrollable]
+    package var lastTime: Double
+    package var lastMagnitude: CGFloat
+    /// Speeds along the axis (points per second) of the recent events, newest last.
+    package var speeds: [CGFloat] = []
+    /// The fastest slice of the gesture so far.
+    package var peakSpeed: CGFloat = 0
+    /// Whether the speed held or rose from one slice to the next at least once (a swipe's start).
+    package var speededUp = false
+    /// The finger's speed when the tail began (the largest of the speeds just before it).
+    package var liftSpeed: CGFloat = 0
+    /// How far the gesture moved along its axis, signed.
+    package var displacement: CGFloat = 0
+    /// Set once the speeds fall like the OS's momentum.
+    package var inMomentum = false
+    /// The first scroll view the gesture moved.
+    package var mover: (ViewNode & _Scrollable)?
+    /// Set once the mover settled: the rest of the gesture is its momentum.
+    package var settled = false
+
+    /// The last few events' sizes, newest last (a new push is judged against them).
+    package var recentMagnitudes: [CGFloat] = []
+    /// The events of the current 16 ms slice of event time: their summed size and start.
+    package var sliceStart: Double?
+    package var sliceSum: CGFloat = 0
+
+    /// Whether an event of `delta` at `now` still belongs to this gesture. Read from a real
+    /// trackpad's events in Safari (new-website#216): a tail never turns back, and a new swipe
+    /// often starts within a tenth of a second of the last one, or the other way.
+    package func continues(with delta: CGSize, magnitude: CGFloat, at now: Double) -> Bool {
+        let gap = now - lastTime
+        // A tail's events come 8 to 17 ms apart and only thin out to 33, 66 and 100 ms at its
+        // very end, 1 pt each; a new swipe often starts about 100 ms after that. A pause of
+        // 60 ms starts a gesture: a straggler at a tail's end becomes a 1 pt gesture that
+        // settles back on its page.
+        if gap >= 0.06 { return false }
+        let along = axis == .horizontal ? delta.width : delta.height
+        // A gesture never turns back along its axis, nor turns a right angle.
+        if along != 0, displacement != 0, (along > 0) != (displacement > 0) { return false }
+        if along == 0, (axis == .horizontal ? delta.height : delta.width) != 0 { return false }
+        if inMomentum || settled {
+            // A clear new push: larger than three times the last few events (the tail comes
+            // in uneven pairs, 8, 19, 12, 18 pt, so the largest of them is the measure).
+            let recent = recentMagnitudes.max() ?? lastMagnitude
+            if magnitude > max(4, 3 * recent) { return false }
+        }
+        return true
+    }
+
+    package mutating func record(_ delta: CGSize, magnitude: CGFloat, at now: Double) {
+        let along = axis == .horizontal ? delta.width : delta.height
+        displacement += along
+        recentMagnitudes.append(magnitude)
+        if recentMagnitudes.count > 3 { recentMagnitudes.removeFirst() }
+        lastTime = now
+        lastMagnitude = magnitude
+        // Speeds are taken over 16 ms slices of the events' own time: events come in uneven
+        // pairs and in whole points, which made every event-to-event ratio noise.
+        let start = sliceStart ?? now
+        sliceStart = start
+        sliceSum += abs(along)
+        guard now - start >= 0.016 else { return }
+        speeds.append(sliceSum / CGFloat(now - start))
+        sliceStart = now
+        sliceSum = 0
+        if speeds.count > 8 { speeds.removeFirst(speeds.count - 8) }
+        if speeds.count >= 2, speeds[speeds.count - 1] >= speeds[speeds.count - 2] * 0.98 { speededUp = true }
+        peakSpeed = max(peakSpeed, speeds.last ?? 0)
+        guard !inMomentum, speeds.count >= 5 else { return }
+        // The finger has lifted once the speed has not risen for four slices running and has
+        // fallen to three quarters of the swipe's peak. A trackpad's deltas are whole points
+        // (10, 10, 9, 8, 8, 8, 7…), so the speed stays flat for a slice or two inside a tail
+        // and a "falls every slice" rule missed real tails: the card crept along them for a
+        // second (new-website#216). iOS settles a paging view as the finger lifts.
+        let recentSpeeds = Array(speeds.suffix(5))
+        let notRising = zip(recentSpeeds.dropFirst(), recentSpeeds).allSatisfy { new, old in new <= old * 1.02 }
+        if notRising, let current = recentSpeeds.last, current <= peakSpeed * 0.75 {
+            inMomentum = true
+            // A swipe's speed holds or rises for a slice before it falls; a piece of tail cut off
+            // by a pause falls from its first slice, and must not flick the page on.
+            liftSpeed = speededUp ? (recentSpeeds.first ?? 0) : 0
         }
     }
 }

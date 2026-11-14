@@ -607,6 +607,7 @@ extension PlatformMetrics {
     package static var scrollerHoldSeconds: Double { current.scrollerHoldSeconds }
     package static var scrollerFadeSeconds: Double { current.scrollerFadeSeconds }
     package static var scrollTargetSettleSeconds: Double { current.scrollTargetSettleSeconds }
+    package static var scrollTargetSpring: Double { current.scrollTargetSpring }
     package static var scrollWheelIdleSeconds: Double { current.scrollWheelIdleSeconds }
     package static var scrollDecelerationRate: Double { current.scrollDecelerationRate }
     package static var scrollVelocityFloor: CGFloat { current.scrollVelocityFloor }

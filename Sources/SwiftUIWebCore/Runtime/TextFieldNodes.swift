@@ -334,13 +334,13 @@ package final class TextFieldNode: LeafNode<_TextFieldCore>, _Interactive {
         let range = min(start, end)..<max(start, end)
         guard selection != range else { return }
         selection = range
-        runtime.setNeedsDisplay()
+        runtime.requestRedraw()
     }
 
     package func setMarkedRange(_ range: Range<Int>?) {
         guard markedRange != range else { return }
         markedRange = range
-        runtime.setNeedsDisplay()
+        runtime.requestRedraw()
     }
 
     private func commitEdit() {

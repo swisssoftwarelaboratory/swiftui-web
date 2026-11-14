@@ -1,6 +1,6 @@
 // Scroll frames that only moved content: the size memo survives (no layout generation), the
 // scrolled content is moved rather than laid out, and content that reads its own geometry
-// (GeometryReader) still gets a full layout so its readings follow the scroll.
+// (a GeometryReader asking where it is) still gets a full layout so its readings follow the scroll.
 import Testing
 import SwiftUI
 import SwiftUIWebCore
@@ -49,14 +49,18 @@ private struct ReadingRows: View {
         #expect(runtime.layoutGeneration == generation + 1)
     }
 
-    /// A geometry reader in a background layer (a probe) forbids the fast path as one in the
-    /// content does: the gallery's probe frames follow a wheel over ios/representable/wheel.
+    /// A geometry reader that reads its position in a background layer (a probe) forbids the
+    /// fast path as one in the content does: the gallery's probe frames follow a wheel over
+    /// ios/representable/wheel. (A reader of its size alone does not: LayoutOnlyWhatChangedTests.)
     @Test func geometryReadersInLayersForceLayout() {
         let runtime = Runtime()
         runtime.mount(ScrollView {
             VStack(spacing: 0) {
                 ForEach(0..<8, id: \.self) { _ in
-                    Color.red.frame(height: 60).background(GeometryReader { _ in Color.clear })
+                    Color.red.frame(height: 60).background(GeometryReader { proxy in
+                        let _ = proxy.frame(in: .global)
+                        Color.clear
+                    })
                 }
             }
         })

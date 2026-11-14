@@ -209,7 +209,7 @@ extension View {
 
     /// Removes the symbol effects inherited by this view.
     nonisolated public func symbolEffectsRemoved(_ isEnabled: Bool = true) -> some View {
-        transformEnvironment(\._symbolEffects) { if isEnabled { $0 = [] } }
+        _transformEnvironment("symbolEffectsRemoved", key: isEnabled) { if isEnabled { $0._symbolEffects = [] } }
     }
 }
 

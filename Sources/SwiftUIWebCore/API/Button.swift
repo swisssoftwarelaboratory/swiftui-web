@@ -474,13 +474,18 @@ extension View {
     /// Sets the style for buttons within this view to a button style with a custom appearance
     /// and standard interaction behavior.
     nonisolated public func buttonStyle<S: ButtonStyle>(_ style: S) -> some View {
-        environment(\.buttonStyle, style).environment(\._primitiveButtonStyle, nil)
+        // Keyed by the style, so a body evaluated again with the same style keeps the labels'
+        // sizes (new-website#216: every row of a search under `.buttonStyle(PressStyle())`).
+        _transformEnvironment("buttonStyle", key: _equalityKey(style)) { environment in
+            environment.buttonStyle = style
+            environment._primitiveButtonStyle = nil
+        }
     }
 
     /// Sets the style for buttons within this view to a primitive style, which owns the
     /// interaction as well as the look.
     nonisolated public func buttonStyle<S: PrimitiveButtonStyle>(_ style: S) -> some View {
-        environment(\._primitiveButtonStyle, style)
+        _transformEnvironment("primitiveButtonStyle", key: _equalityKey(style)) { $0._primitiveButtonStyle = style }
     }
 }
 

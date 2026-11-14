@@ -94,7 +94,9 @@ extension View {
     /// Makes symbols within the view show a particular variant, added to any set by ancestors;
     /// `.none` resets them.
     nonisolated public func symbolVariant(_ variant: SymbolVariants) -> some View {
-        transformEnvironment(\.symbolVariants) { current in
+        _transformEnvironment("symbolVariant", key: variant) { environment in
+            var current = environment.symbolVariants
+            defer { environment.symbolVariants = current }
             current = variant == .none ? .none : current.union(variant)
         }
     }

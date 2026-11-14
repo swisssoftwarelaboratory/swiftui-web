@@ -130,30 +130,66 @@ extension View {
     /// the inherited style; a hierarchical style keeps it (`.primary`) or fades it; other styles
     /// (`.foreground`) leave it.
     nonisolated public func foregroundStyle<S: ShapeStyle>(_ style: S) -> some View {
-        transformEnvironment(\.self) { environment in
-            if let color = style as? Color {
-                environment.foregroundColor = color
-                environment.foregroundGradient = nil
-            } else if let level = style as? HierarchicalShapeStyle {
-                if level.level > 0 {
-                    // Fading a gradient is not supported: the level applies to the colour.
-                    environment.foregroundColor = level.color(foreground: environment.foregroundColor, isIOS: environment.platformProfile.isIOS)
-                    environment.foregroundGradient = nil
-                }
-            } else {
-                // Gradient conformances are main-actor isolated; the cast must run there.
-                let gradient: (any _GradientStyle)? = MainActor.assumeIsolated { style as? any _GradientStyle }
-                if let gradient { environment.foregroundGradient = gradient }
-            }
-        }
+        modifier(_ForegroundStyleModifier(style: style))
     }
 
     /// Sets the color of the foreground elements displayed by this view.
     nonisolated public func foregroundColor(_ color: Color?) -> some View {
-        transformEnvironment(\.self) { environment in
+        modifier(_ForegroundColorModifier(color: color))
+    }
+}
+
+/// `foregroundStyle`: a modifier of its own rather than a closure over the environment, so a
+/// body evaluated again with the same style compares equal and hands its content the same
+/// environment generation (new-website#216: every keystroke re-measured each styled row).
+public struct _ForegroundStyleModifier<S: ShapeStyle> {
+    package var style: S
+}
+
+extension _ForegroundStyleModifier: Equatable where S: Equatable {}
+
+extension _ForegroundStyleModifier: ViewModifier, _EnvironmentModifier {
+    public typealias Body = Never
+
+    package func modifyEnvironment(_ environment: inout EnvironmentValues) {
+        if let color = style as? Color {
             environment.foregroundColor = color
             environment.foregroundGradient = nil
+        } else if let level = style as? HierarchicalShapeStyle {
+            if level.level > 0 {
+                // Fading a gradient is not supported: the level applies to the colour.
+                environment.foregroundColor = level.color(foreground: environment.foregroundColor, isIOS: environment.platformProfile.isIOS)
+                environment.foregroundGradient = nil
+            }
+        } else {
+            // Gradient conformances are main-actor isolated; the cast must run there.
+            let gradient: (any _GradientStyle)? = MainActor.assumeIsolated { style as? any _GradientStyle }
+            if let gradient { environment.foregroundGradient = gradient }
         }
+    }
+
+    @MainActor
+    public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
+        EnvironmentModifierNode(context)
+    }
+}
+
+/// `foregroundColor`: equal when the colour is (see `_ForegroundStyleModifier`).
+public struct _ForegroundColorModifier: Equatable {
+    package var color: Color?
+}
+
+extension _ForegroundColorModifier: ViewModifier, _EnvironmentModifier {
+    public typealias Body = Never
+
+    package func modifyEnvironment(_ environment: inout EnvironmentValues) {
+        environment.foregroundColor = color
+        environment.foregroundGradient = nil
+    }
+
+    @MainActor
+    public static func _makeNode<Content: View>(_ context: _NodeContext<ModifiedContent<Content, Self>>) -> TypedNode<ModifiedContent<Content, Self>> {
+        EnvironmentModifierNode(context)
     }
 }
 

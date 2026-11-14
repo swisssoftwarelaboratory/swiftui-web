@@ -178,7 +178,7 @@ extension EnvironmentValues {
 extension View {
     /// Sets the visibility of scroll indicators within this view.
     nonisolated public func scrollIndicators(_ visibility: ScrollIndicatorVisibility, axes: Axis.Set = [.vertical, .horizontal]) -> some View {
-        transformEnvironment(\.self) { environment in
+        _transformEnvironment("scrollIndicators", key: [AnyHashable(visibility), AnyHashable(axes.rawValue)]) { environment in
             if axes.contains(.horizontal) { environment.horizontalScrollIndicatorVisibility = visibility }
             if axes.contains(.vertical) { environment.verticalScrollIndicatorVisibility = visibility }
         }
@@ -191,7 +191,7 @@ extension View {
 
     /// Configures the bounce behavior of scrollable views along the specified axis.
     nonisolated public func scrollBounceBehavior(_ behavior: ScrollBounceBehavior, axes: Axis.Set = [.vertical]) -> some View {
-        transformEnvironment(\.self) { environment in
+        _transformEnvironment("scrollBounceBehavior", key: [AnyHashable(behavior), AnyHashable(axes.rawValue)]) { environment in
             if axes.contains(.horizontal) { environment.horizontalScrollBounceBehavior = behavior }
             if axes.contains(.vertical) { environment.verticalScrollBounceBehavior = behavior }
         }

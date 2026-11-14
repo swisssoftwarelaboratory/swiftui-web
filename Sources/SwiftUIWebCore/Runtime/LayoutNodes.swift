@@ -42,6 +42,12 @@ package final class LayoutContainerNode<V: View, L: Layout, Content: View>: Layo
                                                environment: context.environment))
     }
 
+    /// The layout's own parameters (spacing, alignment); the subviews' changes reach the sizes
+    /// through `child`.
+    override package func newValueChangesSizes(from old: V, to new: V) -> Bool {
+        _valuesDiffer(old[keyPath: layoutPath], new[keyPath: layoutPath])
+    }
+
     /// The layout to size and place with: the view's, its animatable data interpolated while a
     /// tween of the layout's parameters runs (`Layout: Animatable`, sw-custom-layout).
     package var layout: L {
@@ -192,6 +198,11 @@ open class UnaryLayoutModifierNode<Content: View, Modifier: ViewModifier>:
     }
 
     package var modifier: Modifier { view.modifier }
+
+    /// The modifier's own parameters; the content's changes reach the sizes through `child`.
+    override package func newValueChangesSizes(from old: ModifiedContent<Content, Modifier>, to new: ModifiedContent<Content, Modifier>) -> Bool {
+        _valuesDiffer(old.modifier, new.modifier)
+    }
 
     override package func update(view: ModifiedContent<Content, Modifier>, environment: EnvironmentValues, force: Bool) {
         self.view = view
