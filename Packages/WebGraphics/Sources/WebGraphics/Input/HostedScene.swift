@@ -83,6 +83,10 @@ public protocol HostedScene: AnyObject {
     /// Advances the scene's clocks by `elapsed` seconds before a frame; returns whether an
     /// animation is still running.
     func advanceFrame(elapsed: Double) -> Bool
+    /// The frame is on screen `lateness` seconds after its `advanceFrame`: animations the frame
+    /// began start from now, as Core Animation begins them when their commit is shown, so a
+    /// slow frame doesn't make them jump ahead on the next one.
+    func commitAnimations(lateness: Double)
     /// Lays the scene out into `size` (points).
     func layout(in size: CGSize)
     /// Paints the laid-out scene into a display list at `scale` pixels per point.
@@ -310,6 +314,7 @@ public struct ColorPanelRequest: Equatable, Sendable {
 }
 
 extension HostedScene {
+    public func commitAnimations(lateness: Double) {}
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double) { scrollWheel(by: delta, at: point) }
     public func hostElements() -> [HostElement] { [] }
     public func colorPanel(_ identifier: Int, didPick color: RGBA) {}

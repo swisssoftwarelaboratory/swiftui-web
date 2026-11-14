@@ -211,6 +211,7 @@ public final class NativeSceneHost: NSObject, NSApplicationDelegate {
     // MARK: Frames
 
     private var lastFrameTime: TimeInterval?
+    private var lastPaintTime: TimeInterval?
     private var frameScheduled = false
 
     /// Lays out and paints one frame into `ctx` (the view's flipped context), then keeps frames
@@ -218,11 +219,14 @@ public final class NativeSceneHost: NSObject, NSApplicationDelegate {
     fileprivate func paintFrame(into ctx: CGContext, size: CGSize, title: (String) -> Void) {
         let time = ProcessInfo.processInfo.systemUptime
         let elapsed = lastFrameTime.map { min(0.1, time - $0) } ?? 0
+        // Animations the last frame began start from when it was painted (`commitAnimations`).
+        if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }
         lastFrameTime = time
         let animating = scene.advanceFrame(elapsed: elapsed)
         scene.layout(in: size)
         let scale = window?.backingScaleFactor ?? 2
         painter.paint(scene.render(scale: scale), into: ctx)
+        lastPaintTime = ProcessInfo.processInfo.systemUptime
         if let windowTitle = scene.windowTitle { title(windowTitle) }
         onFrame?()
         if animating || scene.isAnimating || scene.needsFrame { scheduleFrame() }

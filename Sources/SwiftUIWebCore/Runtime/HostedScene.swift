@@ -21,6 +21,9 @@ extension Runtime: HostedScene {
         return animating
     }
 
+    /// Animations begun in this frame start when it is shown (`HostedScene`).
+    public func commitAnimations(lateness: Double) { beginAnimationsOnScreen(lateness: lateness) }
+
     /// The device's safe area as the host reports it (top, leading, bottom, trailing).
     public var hostSafeAreaInsets: [CGFloat] {
         get { [safeAreaInsets.top, safeAreaInsets.leading, safeAreaInsets.bottom, safeAreaInsets.trailing] }

@@ -328,6 +328,39 @@ public struct Spring: Hashable, Sendable {
     package var animation: Animation { .spring(duration: duration, bounce: bounce) }
     /// How long the spring takes to settle.
     public var settlingDuration: Double { animation.duration }
+
+    /// The physics behind it (`SpringModel`, one for every motion).
+    package var model: SpringModel { SpringModel(duration: duration, bounce: bounce) }
+
+    /// A spring with the given response and damping ratio.
+    public init(response: Double, dampingRatio: Double) {
+        self.init(duration: response, bounce: SpringModel(response: response, dampingFraction: dampingRatio).bounce)
+    }
+
+    /// A spring with the given mass, stiffness and damping (as a unit-mass spring of the same
+    /// motion).
+    public init(mass: Double = 1, stiffness: Double, damping: Double, allowOverDamping: Bool = false) {
+        let model = SpringModel(mass: mass, stiffness: stiffness, damping: damping, allowsOverdamping: allowOverDamping)
+        self.init(duration: model.response, bounce: model.bounce)
+    }
+
+    public var response: Double { duration }
+    public var dampingRatio: Double { model.zeta }
+    public var mass: Double { 1 }
+    public var stiffness: Double { model.stiffness() }
+    public var damping: Double { model.damping() }
+
+    /// The value `time` seconds into a change of `target` from zero, leaving at `initialVelocity`.
+    public func value<V: VectorArithmetic>(target: V, initialVelocity: V = .zero, time: Double) -> V {
+        let fromStart = model.state(displacement: 1, velocity: 0, at: time), fromKick = model.state(displacement: 0, velocity: 1, at: time)
+        return target - target.scaled(by: fromStart.displacement) + initialVelocity.scaled(by: fromKick.displacement)
+    }
+
+    /// The velocity `time` seconds into a change of `target` from zero, leaving at `initialVelocity`.
+    public func velocity<V: VectorArithmetic>(target: V, initialVelocity: V = .zero, time: Double) -> V {
+        let fromStart = model.state(displacement: 1, velocity: 0, at: time), fromKick = model.state(displacement: 0, velocity: 1, at: time)
+        return initialVelocity.scaled(by: fromKick.velocity) - target.scaled(by: fromStart.velocity)
+    }
 }
 
 /// A timing curve over the unit interval.

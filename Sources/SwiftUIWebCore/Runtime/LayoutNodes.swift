@@ -506,7 +506,7 @@ package final class ColorNode: LeafNode<Color> {
         if let animation = runtime.effectiveUpdateAnimation(for: self) {
             let presentation = self.presentation ?? NodePresentation()
             presentation.color = Tween(from: [old.red, old.green, old.blue, old.alpha], to: [new.red, new.green, new.blue, new.alpha],
-                                       animation: animation, start: runtime.animationClock)
+                                       animation: animation, start: runtime.animationClock, continuing: presentation.color)
             self.presentation = presentation
             runtime.register(animating: self)
         } else {

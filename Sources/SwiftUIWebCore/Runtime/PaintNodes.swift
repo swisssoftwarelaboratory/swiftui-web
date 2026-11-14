@@ -144,7 +144,7 @@ package final class OpacityNode<Content: View>: UnaryLayoutModifierNode<Content,
         if changed {
             if let animation = runtime.effectiveUpdateAnimation(for: self) {
                 let presentation = self.presentation ?? NodePresentation()
-                presentation.opacity = Tween(from: [old], to: [view.modifier.opacity], animation: animation, start: runtime.animationClock)
+                presentation.opacity = Tween(from: [old], to: [view.modifier.opacity], animation: animation, start: runtime.animationClock, continuing: presentation.opacity)
                 self.presentation = presentation
                 runtime.register(animating: self)
             } else {
@@ -218,7 +218,7 @@ extension ViewNode {
         }
         if let animation = runtime.effectiveUpdateAnimation(for: self) {
             let presentation = self.presentation ?? NodePresentation()
-            presentation.effect = Tween(from: old, to: new, animation: animation, start: runtime.animationClock)
+            presentation.effect = Tween(from: old, to: new, animation: animation, start: runtime.animationClock, continuing: presentation.effect)
             self.presentation = presentation
             runtime.register(animating: self)
         } else {

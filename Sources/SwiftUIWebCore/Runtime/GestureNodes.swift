@@ -210,6 +210,8 @@ final class DragRecognizer: _GestureRecognizer<DragGesture.Value> {
     private var start: GestureEvent?
     private var last: GestureEvent?
     private var velocity: CGSize = .zero
+    /// The finger's path, for its speed (`VelocityTracker`, as a scroll view reads it).
+    private var tracker = VelocityTracker()
 
     init(minimumDistance: CGFloat, global: Bool) {
         self.minimumDistance = minimumDistance
@@ -228,15 +230,15 @@ final class DragRecognizer: _GestureRecognizer<DragGesture.Value> {
         start = event
         last = event
         velocity = .zero
+        tracker.reset()
+        tracker.add(event.location, at: event.time)
         phase = .possible
     }
 
     override func moved(_ event: GestureEvent) {
         guard let start else { return }
-        if let last, event.time > last.time {
-            let dt = event.time - last.time
-            velocity = CGSize(width: (event.location.x - last.location.x) / dt, height: (event.location.y - last.location.y) / dt)
-        }
+        tracker.add(event.location, at: event.time)
+        velocity = tracker.recentVelocity ?? velocity
         last = event
         let dx = event.location.x - start.location.x, dy = event.location.y - start.location.y
         if phase != .active, (dx * dx + dy * dy).squareRoot() < minimumDistance { return }
@@ -245,10 +247,17 @@ final class DragRecognizer: _GestureRecognizer<DragGesture.Value> {
 
     override func ended(_ event: GestureEvent, inside: Bool) {
         if phase == .active, let start {
+            // A finger that rested before lifting leaves with no speed (UIKit's rule).
+            velocity = tracker.velocity(at: event.time)
+            if velocity != .zero, let last, event.location != last.location {
+                tracker.add(event.location, at: event.time)
+                velocity = tracker.recentVelocity ?? velocity
+            }
             emitEnded(value(event, start: start))
         }
         start = nil
         last = nil
+        tracker.reset()
         phase = .possible
     }
 }
