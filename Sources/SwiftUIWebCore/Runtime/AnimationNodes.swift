@@ -3,19 +3,84 @@
 // tween and paint the interpolated value; inserted and removed subtrees get transitions, removed
 // ones lingering as exiting ghosts until theirs ends (Docs/elements/Animation.md).
 
-/// An interpolation of a vector of values over an animation.
+/// An interpolation of a vector of values over an animation. A spring runs each value on the
+/// physics (`SpringModel`) from its own velocity: a tween that replaces one in flight inherits
+/// the speed the old one had at that moment, so a retargeted spring carries on instead of
+/// starting from rest (WWDC 2023, "Animate with springs"; new-website#263).
 package struct Tween {
     package let from: [Double]
     package let to: [Double]
     package let animation: Animation
-    package let start: Double
+    package var start: Double
+    /// Units per second per value at the start, for a spring; nil runs the animation's curve.
+    package let velocity: [Double]?
+    /// Seconds of animation time (before speed) after which a velocity-carrying spring rests.
+    private let settling: Double
+
+    package init(from: [Double], to: [Double], animation: Animation, start: Double, continuing previous: Tween? = nil) {
+        self.from = from
+        self.to = to
+        self.animation = animation
+        self.start = start
+        var velocity: [Double]? = nil
+        if animation.carriesVelocity, let previous, previous.from.count == from.count, !previous.isFinished(at: start) {
+            let carried = previous.velocity(at: start)
+            if carried.contains(where: { $0 != 0 }) { velocity = carried.map { $0 / animation.speed } }
+        }
+        self.velocity = velocity
+        if let velocity, let spring = animation.springModel {
+            // The longest of the values' settling times, to the animation's own precision.
+            var longest = 0.0
+            for i in from.indices {
+                let travel = max(abs(to[i] - from[i]), 1e-9)
+                let epsilon = max(travel, abs(velocity[i]) * 0.05) * 0.0005
+                longest = max(longest, spring.settlingTime(displacement: from[i] - to[i], velocity: velocity[i], epsilon: epsilon))
+            }
+            settling = max(longest, animation.duration)
+        } else {
+            settling = animation.duration
+        }
+    }
+
+    /// Seconds into the curve at clock `time` (delay and speed applied).
+    private func local(_ time: Double) -> Double { (time - start - animation.delay) * animation.speed }
 
     package func value(at time: Double) -> [Double] {
+        if let velocity, let spring = animation.springModel {
+            let t = local(time)
+            if t >= settling { return to }
+            return from.indices.map { i in to[i] + spring.state(displacement: from[i] - to[i], velocity: velocity[i], at: max(0, t)).displacement }
+        }
         let t = animation.value(at: time - start)
         return zip(from, to).map { $0 + ($1 - $0) * t }
     }
 
-    package func isFinished(at time: Double) -> Bool { animation.isFinished(at: time - start) }
+    /// Units per second per value at clock `time`.
+    package func velocity(at time: Double) -> [Double] {
+        if isFinished(at: time) { return from.map { _ in 0 } }
+        if let spring = animation.springModel, animation.carriesVelocity {
+            let t = local(time)
+            guard t > 0 else { return velocity ?? from.map { _ in 0 } }
+            let carried = velocity ?? from.indices.map { i in -(to[i] - from[i]) * Self.unitVelocity(animation) }
+            return from.indices.map { i in spring.state(displacement: from[i] - to[i], velocity: carried[i], at: t).velocity * animation.speed }
+        }
+        // Any other curve: the slope over the last 1/240 s.
+        let h = 1.0 / 240
+        let now = value(at: time), before = value(at: time - h)
+        return zip(now, before).map { ($0 - $1) / h }
+    }
+
+    /// `interpolatingSpring(initialVelocity:)` in travel per second, as the displacement's
+    /// velocity is the negative of the progress's.
+    private static func unitVelocity(_ animation: Animation) -> Double {
+        if case .spring(_, _, let v) = animation.curve { return -v }
+        return 0
+    }
+
+    package func isFinished(at time: Double) -> Bool {
+        if velocity != nil { return local(time) >= settling }
+        return animation.isFinished(at: time - start)
+    }
 }
 
 /// A transition in flight on a node: the effects at the removed end, whether the node is
@@ -24,7 +89,7 @@ package struct TransitionState {
     package let effects: AnyTransition.Effects
     package let insertion: Bool
     package let animation: Animation
-    package let start: Double
+    package var start: Double
     package var onFinish: (@MainActor () -> Void)?
 
     /// How much of the removed-end effects applies now (1 = fully removed look).
@@ -117,6 +182,26 @@ extension Runtime {
             return done
         }
         for entry in due { entry.completion() }
+    }
+
+    /// Starts the animations begun since the clock last ticked `lateness` seconds later: the
+    /// moment their first frame reaches the screen. The time a slow update, layout and paint
+    /// took is not part of the motion (new-website#262: a chat opening 68 % of the way in its
+    /// first frame after a slow one).
+    package func beginAnimationsOnScreen(lateness: Double) {
+        guard lateness > 0 else { return }
+        let now = animationClock
+        for entry in animatingNodes {
+            guard let presentation = entry.node?.presentation else { continue }
+            if presentation.frame?.start == now { presentation.frame?.start += lateness }
+            if presentation.opacity?.start == now { presentation.opacity?.start += lateness }
+            if presentation.color?.start == now { presentation.color?.start += lateness }
+            if presentation.effect?.start == now { presentation.effect?.start += lateness }
+            if presentation.transition?.start == now { presentation.transition?.start += lateness }
+        }
+        for index in activeAnimationCompletions.indices where activeAnimationCompletions[index].start == now {
+            activeAnimationCompletions[index].start += lateness
+        }
     }
 
     package func register(animating node: ViewNode) {
@@ -323,7 +408,7 @@ extension ViewNode {
     package func beginFrameTween(from: CGRect, animation: Animation) {
         let presentation = self.presentation ?? NodePresentation()
         presentation.frame = Tween(from: [from.minX, from.minY, from.width, from.height], to: [frame.minX, frame.minY, frame.width, frame.height],
-                                   animation: animation, start: runtime.animationClock)
+                                   animation: animation, start: runtime.animationClock, continuing: presentation.frame)
         self.presentation = presentation
         runtime.register(animating: self)
     }

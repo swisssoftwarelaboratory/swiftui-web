@@ -12,7 +12,7 @@ Apple docs: [Animation](https://developer.apple.com/documentation/swiftui/animat
 | API | Notes |
 |---|---|
 | `Animation`: `.default`, `linear`, `easeIn`, `easeOut`, `easeInOut` (with and without `duration:`), `timingCurve` | implemented (cubic Bézier solved by bisection) |
-| `spring(response:dampingFraction:blendDuration:)`, `interactiveSpring`, `interpolatingSpring(mass:stiffness:damping:initialVelocity:)`, `spring(duration:bounce:)`, `smooth`, `snappy`, `bouncy` | implemented as damped springs; `initialVelocity` starts the step response moving (2026-10-04); `blendDuration` is accepted (a retargeted animation already starts from the value presented at that moment, which is the blend's effect); a spring's duration is its settling time |
+| `spring(response:dampingFraction:blendDuration:)`, `interactiveSpring`, `interpolatingSpring(mass:stiffness:damping:initialVelocity:)`, `spring(duration:bounce:)`, `smooth`, `snappy`, `bouncy` | implemented as damped springs; `initialVelocity` starts the step response moving (2026-10-04); `blendDuration` is accepted (a retargeted animation already starts from the value presented at that moment, at the velocity it had, which is the blend's effect); a spring's duration is its settling time; all run on `SpringModel` ([Physics](Physics.md)) |
 | `delay`, `speed`, `repeatCount(_:autoreverses:)`, `repeatForever(autoreverses:)` | implemented |
 | `withAnimation(_:_:)`, `Transaction.animation`, `withTransaction` | implemented |
 | `withAnimation(_:completionCriteria:_:completion:)`, `Transaction.addAnimationCompletion(criteria:_:)`, `AnimationCompletionCriteria` | implemented (2026-10-04): the runtime of the first node invalidated under the transaction claims the completion and runs it when its animation's duration has passed (`logicallyComplete`) or it has ended entirely (`removed`: never for `repeatForever`); without an animation it runs at the next layout, and when nothing was invalidated on the next turn |
@@ -30,7 +30,8 @@ Apple docs: [Animation](https://developer.apple.com/documentation/swiftui/animat
 makes it the update animation for the flush (transitions, opacity and colour changes look it up
 through `effectiveUpdateAnimation`, scopes first) and the layout animation for the placement
 pass. `place` compares the new frame with the old target: a change under an animation starts a
-`Tween` from the currently presented frame (so retargeting mid-flight is smooth), a change
+`Tween` from the currently presented frame (so retargeting mid-flight is smooth; a spring also
+carries the velocity the replaced tween had, per value, see [Physics](Physics.md)), a change
 without one clears any tween. Painting uses `presentedFrame` everywhere (the tween's frame plus a
 transition's offset) and `absoluteBounds` the presented size; `OpacityNode` and `ColorNode` tween
 their values. Structural nodes (`_ConditionalContent`, `Optional`, `ForEach`) call `noteInserted`

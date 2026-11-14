@@ -53,7 +53,7 @@ public struct Animation: Equatable, Sendable {
     /// damping 1, response 0.5), so this one is disfavoured.
     @_disfavoredOverload
     public static func spring(response: Double = 0.5, dampingFraction: Double = 0.825, blendDuration: Double = 0) -> Animation {
-        let omega = 2 * Double.pi / max(response, 0.001)
+        let omega = SpringModel(response: max(response, 0.001), dampingFraction: dampingFraction).omega
         // `blendDuration` is accepted: a retargeted animation already starts from the value
         // presented at that moment, which is the blend's effect. (Not stored: a further stored
         // property on `Animation` crashes the wasm build's list/outline page.)
@@ -70,15 +70,15 @@ public struct Animation: Equatable, Sendable {
 
     /// A spring with the given mass, stiffness and damping.
     public static func interpolatingSpring(mass: Double = 1, stiffness: Double, damping: Double, initialVelocity: Double = 0) -> Animation {
-        let omega = (stiffness / max(mass, 0.001)).squareRoot()
-        let zeta = damping / (2 * (stiffness * max(mass, 0.001)).squareRoot())
+        let model = SpringModel(mass: max(mass, 0.001), stiffness: stiffness, damping: damping)
+        let omega = model.omega, zeta = model.zeta
         return Animation(curve: .spring(omega: omega, zeta: zeta, velocity: initialVelocity), duration: settlingTime(omega: omega, zeta: zeta))
     }
 
     /// A spring described by its perceptual duration and bounce (0 = no bounce).
     public static func spring(duration: Double = 0.5, bounce: Double = 0, blendDuration: Double = 0) -> Animation {
-        let zeta = bounce >= 0 ? 1 - bounce : 1 / (1 + bounce)
-        let omega = 2 * Double.pi / max(duration, 0.001)
+        let model = SpringModel(duration: max(duration, 0.001), bounce: bounce)
+        let omega = model.omega, zeta = model.zeta
         return Animation(curve: .spring(omega: omega, zeta: max(zeta, 0), velocity: 0), duration: settlingTime(omega: omega, zeta: zeta))
     }
 
@@ -169,22 +169,20 @@ public struct Animation: Equatable, Sendable {
     }
 
     /// Unit-step response of a damped spring starting at `velocity` (units of the travel per
-    /// second; `interpolatingSpring(initialVelocity:)`), `t` seconds in.
+    /// second; `interpolatingSpring(initialVelocity:)`), `t` seconds in (`SpringModel`).
     package static func spring(at t: Double, omega: Double, zeta: Double, velocity: Double = 0) -> Double {
         if t <= 0 { return 0 }
-        if zeta < 1 {
-            let wd = omega * (1 - zeta * zeta).squareRoot()
-            let envelope = _exp(-zeta * omega * t)
-            return 1 - envelope * (_cos(wd * t) + ((zeta * omega - velocity) / wd) * _sin(wd * t))
-        }
-        if zeta == 1 {
-            return 1 - _exp(-omega * t) * (1 + (omega - velocity) * t)
-        }
-        let s = (zeta * zeta - 1).squareRoot()
-        let r1 = -omega * (zeta - s), r2 = -omega * (zeta + s)
-        let b = (velocity + r1) / (r2 - r1), a = -1 - b
-        return 1 + a * _exp(r1 * t) + b * _exp(r2 * t)
+        return 1 - SpringModel(omega: omega, zeta: zeta).state(displacement: 1, velocity: -velocity, at: t).displacement
     }
+
+    /// The spring this animation runs on, when it is one.
+    package var springModel: SpringModel? {
+        if case .spring(let omega, let zeta, _) = curve { return SpringModel(omega: omega, zeta: zeta) }
+        return nil
+    }
+
+    /// Whether a value animated by this can keep its own velocity (a single, unrepeated spring).
+    package var carriesVelocity: Bool { springModel != nil && repeatCount == 1 && !autoreverses }
 }
 
 // MARK: - Implicit animation and transaction modifiers

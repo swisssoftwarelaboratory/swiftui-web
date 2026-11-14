@@ -830,6 +830,10 @@ public final class CanvasSceneHost {
         frameGapMillis = lastFrameTime.map { (time - $0) * 1000 } ?? 0
         let elapsed = lastFrameTime.map { min(0.1, time - $0) } ?? 0
         advanceScriptedDrag(time: time)
+        // Animations the last frame began start from when it was painted: the clock is about
+        // to move by the whole gap, and the work before the paint is not part of the motion.
+        if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }
+        lastPaintTime = nil
         let animating = scene.advanceFrame(elapsed: elapsed)
         lastFrameTime = time
         guard needsLayout || scene.needsFrame else {
@@ -848,6 +852,7 @@ public final class CanvasSceneHost {
         mark("paint")
         let jsPaintMillis = paint(list)
         let painted = now
+        lastPaintTime = painted
         mark("overlay")
         overlayStart = painted
         updateOverlay()
@@ -871,6 +876,8 @@ public final class CanvasSceneHost {
 
     /// Time of the previous frame while frames run back to back (scroll animations).
     private var lastFrameTime: Double?
+    /// When the previous frame finished painting, for the animations it began.
+    private var lastPaintTime: Double?
 
     /// A finger drag the debug bridge scripted (`__swiftuiwebDebug.drag`): one touch moving
     /// from `start` by `delta` over `duration` seconds, one step per frame, released at the
