@@ -62,6 +62,39 @@ import SwiftUIWebHeadless
         }
     }
 
+
+    /// The app's real layering: the sheet host is a stack of its own with nothing behind the
+    /// sheet, inside a bottom-aligned stack over the screen. Once the sheet and dim are removed
+    /// the host shrinks to a point at the bottom centre; the leaving sheet and dim must stay
+    /// where they were, not drift right and down with it (new-website#264).
+    struct ShellHost: View {
+        let model: Model
+        var body: some View {
+            ZStack(alignment: .bottom) {
+                Color.white
+                ShellSheetHost(model: model)
+            }
+        }
+    }
+    struct ShellSheetHost: View {
+        let model: Model
+        var body: some View {
+            ZStack(alignment: .bottom) {
+                if model.sheet != nil {
+                    Color.black.opacity(0.3).ignoresSafeArea().transition(.opacity)
+                }
+                if let sheet = model.sheet {
+                    Group { Color.red.frame(height: 300) }
+                        .padding(.bottom, 8)
+                        .offset(y: max(0, model.drag))
+                        .transition(.move(edge: .bottom))
+                        .id(sheet)
+                }
+            }
+            .ignoresSafeArea(.container, edges: .bottom)
+        }
+    }
+
     private let size = CGSize(width: 393, height: 852)
 
     /// Where the red card is drawn: its rect's top plus the translation it is drawn under.
@@ -137,6 +170,48 @@ import SwiftUIWebHeadless
         #expect(lastDrawn > 840, "\(tops)")
         #expect(tops.prefix(6).allSatisfy { $0 != nil }, "\(tops)")
         #expect((tops[3] ?? 0) > 744, "\(tops)")
+    }
+
+    /// The red card's left edge and top, and the dim's origin, from the drawing list.
+    private func origins(_ r: Runtime) -> (red: CGPoint?, dim: CGPoint?) {
+        var shift = CGPoint.zero, red: CGPoint?, dim: CGPoint?
+        for command in r.render(scale: 1).commands.map(\.description) {
+            if command.hasPrefix("concat(") {
+                let parts = command.dropFirst(7).dropLast().split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                if parts.count == 6 { shift.x += parts[4]; shift.y += parts[5] }
+            } else if command == "restore" {
+                shift = .zero
+            } else if command.hasPrefix("fillRect(") {
+                let parts = command.dropFirst(9).split(separator: ",").prefix(2).compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                guard parts.count == 2 else { continue }
+                let p = CGPoint(x: parts[0] + shift.x, y: parts[1] + shift.y)
+                if command.contains("#FF383C") { red = p } else if command.contains("#000000") { dim = p }
+            }
+        }
+        return (red, dim)
+    }
+
+    @Test func aSheetLeavingAnEmptyHostStaysInPlace() {
+        let model = Model()
+        model.sheet = 1
+        var environment = EnvironmentValues()
+        environment.platformProfile = .iOS
+        let r = Runtime(environment: environment)
+        r.mount(ShellHost(model: model))
+        r.layout(in: size)
+        let start = origins(r)
+        #expect(start.red?.x == 0 && start.dim == CGPoint(x: 0, y: 0), "\(start)")
+        withAnimation(.smooth(duration: 0.3)) { model.sheet = nil }
+        r.layout(in: size)
+        var seen: [(red: CGPoint?, dim: CGPoint?)] = []
+        for _ in 0..<12 { r.advanceAnimations(elapsed: 1.0 / 60); r.layout(in: size); seen.append(origins(r)) }
+        // Still on screen mid-slide, and straight below where it was: no sideways drift.
+        #expect(seen[5].red != nil, "\(seen)")
+        for frame in seen {
+            if let red = frame.red { #expect(abs(red.x) < 0.01, "\(seen)") }
+            if let dim = frame.dim { #expect(abs(dim.x) < 0.01 && abs(dim.y) < 0.01, "\(seen)") }
+        }
+        #expect((seen[5].red?.y ?? 0) > (start.red?.y ?? .infinity), "\(seen)")
     }
 }
 #endif
