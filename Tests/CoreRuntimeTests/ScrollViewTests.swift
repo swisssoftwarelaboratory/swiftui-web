@@ -263,6 +263,44 @@ private struct Changing: View {
         #expect(runtime.probeFrames["content"]!.minY >= -800)
     }
 
+    /// A vertical flick that starts on a sideways pager coasts the page around it, as on iOS,
+    /// where the pager's pan fails for a vertical finger and the page owns the touch
+    /// (new-website#265: Home's flick from its Progress pager stopped where the finger lifted).
+    @Test func verticalFlickOnASidewaysPagerCoastsThePage() {
+        let runtime = Runtime()
+        runtime.mount(ScrollView {
+            VStack(spacing: 0) {
+                rows(5)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(0..<3, id: \.self) { _ in Color.green.frame(width: 300, height: 100) }
+                    }
+                    ._probe("pages")
+                }
+                .scrollTargetBehavior(.paging)
+                ._probe("pager")
+                ForEach(0..<40, id: \.self) { _ in Color.blue.frame(width: 300, height: 20) }
+            }
+            ._probe("page")
+        })
+        let size = CGSize(width: 300, height: 200)
+        runtime.layout(in: size)
+        #expect(runtime.probeFrames["pager"]?.minY == 100)
+        // On the pager: 60 pt up in 40 ms, lifted at speed.
+        runtime.pointerDown(at: CGPoint(x: 150, y: 160), type: .touch, time: 0)
+        runtime.pointerMoved(to: CGPoint(x: 150, y: 130), time: 0.02)
+        runtime.pointerMoved(to: CGPoint(x: 150, y: 100), time: 0.04)
+        runtime.layout(in: size)
+        #expect(runtime.probeFrames["page"]?.minY == -50)
+        runtime.pointerUp(at: CGPoint(x: 150, y: 100), time: 0.04)
+        var frames = 0
+        while runtime.advanceScrollAnimations(elapsed: 0.016) { frames += 1; #expect(frames < 1000) }
+        runtime.layout(in: size)
+        // The page carried on well past the finger's 50 pt; the pager stayed on its page.
+        #expect(runtime.probeFrames["page"]!.minY < -300)
+        #expect(runtime.probeFrames["pages"]!.minX == 0)
+    }
+
     @Test func touchDuringDecelerationStopsItAndOwnsTheTouch() {
         let counter = Counter()
         let runtime = Runtime()
