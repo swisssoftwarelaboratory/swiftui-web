@@ -1010,6 +1010,10 @@ package struct PanState {
     package var lastTime: Double
     package var velocity: CGSize = .zero
     package var active = false
+    /// An iOS sheet under the finger: it takes what a downward drag leaves over (all of it
+    /// without a scroll view, what is past the top with one) and follows the finger down.
+    package var sheet: PresentationNode?
+    package var sheetDragged = false
     /// The finger's recent path, for its speed at the lift.
     package var tracker = VelocityTracker()
 
@@ -1033,6 +1037,22 @@ extension Runtime {
                 return
             }
         }
+        // The topmost presentation's scroll views under its panel (where it is drawn); nothing
+        // under a modal one.
+        if let top = presentations.last {
+            var inPanel = point
+            if top.slides { inPanel.y -= CGFloat(top.slide.position) }
+            if top.panel.contains(inPanel) {
+                for node in top.semanticsRoots.reversed() {
+                    let local = CGPoint(x: inPanel.x - node.frame.minX, y: inPanel.y - node.frame.minY)
+                    guard node.contains(local) else { continue }
+                    visit(node, local)
+                    break
+                }
+                return result.reversed()
+            }
+            if top.isModal { return [] }
+        }
         for node in root.layoutChildren.reversed() {
             let local = CGPoint(x: point.x - node.frame.minX, y: point.y - node.frame.minY)
             guard node.contains(local) else { continue }
@@ -1040,6 +1060,14 @@ extension Runtime {
             break
         }
         return result.reversed()
+    }
+
+    /// The iOS sheet a touch at `point` can drag down: the topmost presentation, when it is one
+    /// and the touch is on it.
+    package func draggableSheet(at point: CGPoint) -> PresentationNode? {
+        guard let top = presentations.last, top.dragsToDismiss else { return nil }
+        let inPanel = CGPoint(x: point.x, y: point.y - CGFloat(top.slide.position))
+        return top.panel.contains(inPanel) ? top : nil
     }
 
     /// Applies a scroll delta (points; positive moves the content up and left) to the scroll
@@ -1172,8 +1200,10 @@ extension Runtime {
     /// Starts tracking a touch that may become a pan of the scroll views under `point`.
     package func beginPan(at point: CGPoint, time: Double) {
         let nodes = scrollableNodes(at: point)
-        guard !nodes.isEmpty else { return }
+        let sheet = draggableSheet(at: point)
+        guard !nodes.isEmpty || sheet != nil else { return }
         var state = PanState(nodes: nodes, start: point, startTime: time, last: point, lastTime: time)
+        state.sheet = sheet
         // A finger landing on decelerating content stops it where it is and owns the touch:
         // the content follows it at once and lifting delivers no press (iOS behaviour).
         let decelerating = nodes.filter(\.isDecelerating)
@@ -1226,10 +1256,22 @@ extension Runtime {
         // whose settle then pulled a paged view back to its page while the finger still dragged
         // it (new-website#216: the card followed for a sixth of a second, then slid back).
         pan = state
-        let delta = CGSize(width: state.last.x - point.x, height: state.last.y - point.y)
+        var delta = CGSize(width: state.last.x - point.x, height: state.last.y - point.y)
+        // A finger going back up over a sheet it pulled down raises the sheet first.
+        if let sheet = state.sheet, sheet.dragsToDismiss, delta.height > 0, sheet.slide.position > 0 {
+            let take = min(Double(delta.height), sheet.slide.position)
+            sheet.dragSlide(to: sheet.slide.position - take, velocity: 0)
+            delta.height -= CGFloat(take)
+        }
         let remaining = scroll(by: delta, through: state.nodes)
-        // A finger past the top of a refreshable scroll view pulls it (iOS).
-        if remaining.height < 0, let first = state.nodes.first, first.pull(by: -remaining.height) { }
+        if remaining.height < 0, let sheet = state.sheet, sheet.dragsToDismiss {
+            // What the scroll views leave of a downward drag (all of it on a sheet's plain
+            // content, what is past the top of a scroll view) pulls the sheet down.
+            sheet.dragSlide(to: sheet.slide.position - Double(remaining.height), velocity: 0)
+            state.sheetDragged = true
+        } else if remaining.height < 0, let first = state.nodes.first, first.pull(by: -remaining.height) {
+            // A finger past the top of a refreshable scroll view pulls it (iOS).
+        }
         let dt = time - state.lastTime
         if dt > 0 {
             let sample = CGSize(width: delta.width / dt, height: delta.height / dt)
@@ -1254,15 +1296,24 @@ extension Runtime {
         state.nodes.first?.endPull()
         // A finger that stopped before lifting leaves no momentum.
         let velocity = time - state.lastTime < PlatformMetrics.panRestInterval ? (state.recentVelocity ?? state.velocity) : .zero
+        if state.sheetDragged, let sheet = state.sheet, sheet.dragsToDismiss {
+            // The sheet takes the finger's speed down (content velocity runs against the finger).
+            state.nodes.first?.endTracking(velocity: .zero)
+            sheet.endDragSlide(velocity: -Double(velocity.height))
+            return true
+        }
         state.nodes.first?.endTracking(velocity: velocity)
         return true
     }
 }
 
 extension Runtime {
-    /// Every scroll view's frame in the window and its content offset (`HostedScene`).
+    /// Every scroll view's frame in the window and its content offset (`HostedScene`), the
+    /// presentations' last.
     public var debugScrollViews: [[Double]] {
-        root.descendants(where: { $0 is any _Scrollable }).compactMap { node in
+        // The window's, then those in its presentations (a sheet's, drawn where it slides).
+        let nodes = root.descendants(where: { $0 is any _Scrollable }) + presentations.flatMap { $0.descendants(where: { $0 is any _Scrollable }) }
+        return nodes.compactMap { node in
             guard let scroll = node as? (ViewNode & _Scrollable), node.isMounted else { return nil }
             let f = node.frameInRoot
             return [f.minX, f.minY, f.width, f.height, scroll.contentOffset.x, scroll.contentOffset.y].map { Double($0) }
