@@ -1,0 +1,76 @@
+<!doctype html>
+<html data-wasm-bytes="12797241" data-commit="98386ba">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SwiftUIWeb progress — what works and what is next</title>
+<style>
+html,body{margin:0;height:100%;background:#fff;overflow:hidden;overscroll-behavior:none}
+#app{position:relative;width:100%;height:100%}
+/* The loading screen: shown until the app has painted its first frame (`swiftuiwebready`). */
+#loading{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;color:#1a1a1f;font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;transition:opacity .3s ease}
+#loading.done{opacity:0;pointer-events:none}
+#loading .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+#loading .bar{position:relative;width:min(240px,60vw);height:4px;border-radius:2px;background:rgba(0,0,0,.08);overflow:hidden}
+#loading .fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:2px;background:linear-gradient(90deg,#fa5c38,#9e33d9);transition:width .15s linear}
+#loading .fill.indeterminate{width:40%;animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{from{left:-40%}to{left:100%}}
+#loading .status{font-size:13px;color:#6e6e73;font-variant-numeric:tabular-nums;min-height:1.4em}
+#loading.failed .fill{background:#d0342c}
+@media (prefers-color-scheme: dark){html,body{background:#17171c}#loading{background:#17171c;color:#f2f2f5}#loading .bar{background:rgba(255,255,255,.12)}#loading .status{color:#9a9aa3}}
+</style></head>
+<body><div id="app"></div>
+<div id="loading" role="status" aria-live="polite"><div class="name">SwiftUIWeb progress</div><div class="bar"><div class="fill indeterminate"></div></div><div class="status">Loading…</div></div>
+<!-- The bundle's asset manifest: where the host finds assets/ (the SF Symbol metrics table among them). -->
+<script src="./bundle-98386ba-202611141903/assets/manifest.js"></script>
+<script type="module">
+  import { init } from "./bundle-98386ba-202611141903/index.js";
+  const wasm = new URL("./bundle-98386ba-202611141903/Progress.wasm", import.meta.url);
+  const screen = document.getElementById("loading");
+  const fill = screen.querySelector(".fill"), status = screen.querySelector(".status");
+  const phase = (text) => { status.textContent = text; fill.classList.add("indeterminate"); fill.style.width = ""; };
+  // The first painted frame takes the loading screen down (the host dispatches the event).
+  let hidden = false;
+  const hide = () => {
+    if (hidden) return;
+    hidden = true;
+    screen.classList.add("done");
+    screen.addEventListener("transitionend", () => screen.remove(), { once: true });
+  };
+  document.addEventListener("swiftuiwebready", hide, { once: true });
+  try {
+    // The download is watched here so the bar can move: the bytes are counted after the
+    // browser's own decompression, against the size the build wrote into <html>.
+    const response = await fetch(wasm);
+    if (!response.ok) throw new Error("HTTP " + response.status + " for " + wasm.pathname.split("/").pop());
+    const declared = Number(document.documentElement.dataset.wasmBytes) || 0;
+    const total = response.headers.get("content-encoding") ? declared : (Number(response.headers.get("content-length")) || declared);
+    let received = 0;
+    const megabytes = (n) => (n / 1048576).toFixed(1) + " MB";
+    const progress = () => {
+      if (total > 0) {
+        const fraction = Math.min(1, received / total);
+        fill.classList.remove("indeterminate");
+        fill.style.width = (fraction * 100).toFixed(1) + "%";
+        status.textContent = "Downloading " + Math.round(fraction * 100) + "%";
+      } else {
+        status.textContent = "Downloading " + megabytes(received);
+      }
+    };
+    const watched = response.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) { received += chunk.byteLength; progress(); controller.enqueue(chunk); },
+      flush() { phase("Compiling…"); },
+    }));
+    const module = new Response(watched, { headers: { "Content-Type": "application/wasm" } });
+    await init({ module });
+    phase("Starting…");
+    // A bundle whose host does not announce its first frame: give it a moment, then show it.
+    setTimeout(hide, 2000);
+  } catch (error) {
+    screen.classList.add("failed");
+    fill.classList.remove("indeterminate");
+    fill.style.width = "100%";
+    status.textContent = "Could not load: " + (error && error.message ? error.message : error);
+    throw error;
+  }
+</script>
+</body>
+</html>

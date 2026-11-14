@@ -1,0 +1,130 @@
+<!doctype html>
+<html data-wasm-bytes="16247448">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SwiftUIWeb gallery</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
+<style>
+:root{--line:18px}
+html,body{margin:0;height:100%;background:#fff;color:#1d1d1f;font:13px -apple-system,system-ui,sans-serif}
+body{display:flex}
+#sidebar{flex:0 0 220px;display:flex;flex-direction:column;border-right:1px solid #e5e5ea;background:#f5f5f7}
+#sidebar header{padding:12px 12px 8px}
+#sidebar h1{margin:0 0 8px;font-size:14px}
+#filter{width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #d2d2d7;border-radius:6px;font:inherit}
+#list{flex:1;overflow:auto;padding:0 8px 12px}
+#list h2{margin:12px 4px 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6e6e73}
+#list ul{list-style:none;margin:0;padding:0}
+#list a{display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:5px;color:inherit;text-decoration:none}
+#list a:hover{background:#e8e8ed}
+#list a.selected{background:#0071e3;color:#fff}
+#list .badge{font-size:10px;padding:0 5px;border-radius:8px;background:#d2d2d7;color:#1d1d1f}
+#list a.selected .badge{background:rgba(255,255,255,.3);color:#fff}
+#detail{flex:1;min-width:0;display:flex;flex-direction:column}
+#detail>header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e5ea}
+#title{font-weight:600}
+#steps{display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;padding:3px 10px;border:1px solid #d2d2d7;border-radius:6px;background:#fff;cursor:pointer;color:inherit}
+button:hover{background:#f5f5f7}
+#panes{flex:1;min-height:0;display:flex}
+#codecol{flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid #e5e5ea}
+#codecol>header,#previewcol>header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 12px;border-bottom:1px solid #e5e5ea;background:#fafafa;color:#6e6e73;font-size:12px}
+#codefile{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modes{display:flex;flex-shrink:0}
+#modes button{padding:2px 8px;border-radius:0;font-size:12px}
+#modes button:first-child{border-radius:5px 0 0 5px}
+#modes button:last-child{border-radius:0 5px 5px 0;border-left:0}
+#modes button.selected{background:#e8e8ed;font-weight:600}
+#codepane{flex:1;overflow:auto;position:relative}
+#codegrid{display:flex;min-width:max-content;position:relative}
+.codewrap{margin:0;padding:0}
+#gutter,#code{display:block;margin:0;padding:12px 0;font:12px/var(--line) ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:4}
+#gutter{display:flex;flex-direction:column;padding-left:12px;padding-right:12px;text-align:right;color:#a1a1a6;user-select:none;position:sticky;left:0;background:#fff;border-right:1px solid #f0f0f2}
+#gutter .mark{color:#1d1d1f;font-weight:600}
+#code{padding-left:14px;padding-right:24px;white-space:pre;background:transparent}
+#band{position:absolute;left:0;right:0;margin-top:12px;background:rgba(0,113,227,.08);border-left:3px solid #0071e3;pointer-events:none}
+#previewcol{flex:0 0 auto;max-width:60%;min-width:min-content;display:flex;flex-direction:column}
+#stage{flex:1;overflow:auto;padding:16px}
+#app{position:relative;background:#fff;outline:1px dashed #c7c7cc}
+#sidebar header a.back{display:inline-block;margin-bottom:6px;font-size:12px;color:#0071e3;text-decoration:none}
+#sidebar header a.back:hover{text-decoration:underline}
+/* The loading screen: shown until the first fixture has painted (`swiftuiwebready`), as on the landing page. */
+#loading{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;color:#1a1a1f;font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;transition:opacity .3s ease}
+#loading.done{opacity:0;pointer-events:none}
+#loading .name{font-size:22px;font-weight:600;letter-spacing:-.01em}
+#loading .bar{position:relative;width:min(240px,60vw);height:4px;border-radius:2px;background:rgba(0,0,0,.08);overflow:hidden}
+#loading .fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:2px;background:linear-gradient(90deg,#fa5c38,#9e33d9);transition:width .15s linear}
+#loading .fill.indeterminate{width:40%;animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{from{left:-40%}to{left:100%}}
+#loading .status{font-size:13px;color:#6e6e73;font-variant-numeric:tabular-nums;min-height:1.4em}
+#loading.failed .fill{background:#d0342c}
+</style></head>
+<body>
+<aside id="sidebar">
+  <header><a class="back" href="../">← SwiftUIWeb</a><h1>SwiftUIWeb fixtures</h1><input id="filter" type="search" placeholder="Filter (or ?filter=prefix)" autocomplete="off"></header>
+  <nav id="list"></nav>
+</aside>
+<main id="detail">
+  <header><span id="title">Loading…</span><span id="steps"></span></header>
+  <div id="panes">
+    <section id="codecol">
+      <header><span id="codefile"></span><span id="modes"><button type="button" data-mode="declaration" class="selected">Declaration</button><button type="button" data-mode="file">File</button></span></header>
+      <div id="codepane"><div id="codegrid"><div id="band" hidden></div><pre id="gutter"></pre><pre class="codewrap"><code id="code" class="hljs language-swift"></code></pre></div></div>
+    </section>
+    <section id="previewcol">
+      <header><span>Preview</span></header>
+      <div id="stage"><div id="app"></div></div>
+    </section>
+  </div>
+</main>
+<div id="loading" role="status" aria-live="polite"><div class="name">SwiftUIWeb gallery</div><div class="bar"><div class="fill indeterminate"></div></div><div class="status">Loading…</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script src="./bundle-98386ba-202611141857/assets/manifest.js"></script>
+<script type="module">
+  import { init } from "./bundle-98386ba-202611141857/index.js";
+  const wasm = new URL("./bundle-98386ba-202611141857/Gallery.wasm", import.meta.url);
+  const screen = document.getElementById("loading");
+  const fill = screen.querySelector(".fill"), status = screen.querySelector(".status");
+  const phase = (text) => { status.textContent = text; fill.classList.add("indeterminate"); fill.style.width = ""; };
+  // The first painted fixture takes the loading screen down (the host dispatches the event).
+  let hidden = false;
+  const hide = () => {
+    if (hidden) return;
+    hidden = true;
+    screen.classList.add("done");
+    screen.addEventListener("transitionend", () => screen.remove(), { once: true });
+  };
+  document.addEventListener("swiftuiwebready", hide, { once: true });
+  try {
+    const response = await fetch(wasm);
+    if (!response.ok) throw new Error("HTTP " + response.status + " for " + wasm.pathname.split("/").pop());
+    const declared = Number(document.documentElement.dataset.wasmBytes) || 0;
+    const total = response.headers.get("content-encoding") ? declared : (Number(response.headers.get("content-length")) || declared);
+    let received = 0;
+    const megabytes = (n) => (n / 1048576).toFixed(1) + " MB";
+    const progress = () => {
+      if (total > 0) {
+        const fraction = Math.min(1, received / total);
+        fill.classList.remove("indeterminate");
+        fill.style.width = (fraction * 100).toFixed(1) + "%";
+        status.textContent = "Downloading " + Math.round(fraction * 100) + "%";
+      } else {
+        status.textContent = "Downloading " + megabytes(received);
+      }
+    };
+    const watched = response.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) { received += chunk.byteLength; progress(); controller.enqueue(chunk); },
+      flush() { phase("Compiling…"); },
+    }));
+    const module = new Response(watched, { headers: { "Content-Type": "application/wasm" } });
+    await init({ module });
+    phase("Starting…");
+    setTimeout(hide, 2000);
+  } catch (error) {
+    screen.classList.add("failed");
+    fill.classList.remove("indeterminate");
+    fill.style.width = "100%";
+    status.textContent = "Could not load: " + (error && error.message ? error.message : error);
+    throw error;
+  }
+</script>
+</body>
+</html>
