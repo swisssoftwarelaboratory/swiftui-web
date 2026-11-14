@@ -1009,6 +1009,10 @@ package struct PanState {
     package var lastTime: Double
     package var velocity: CGSize = .zero
     package var active = false
+    /// The scroll view that owns the pan: the innermost one under the finger that scrolls along
+    /// the way the finger set off (iOS: a sideways pager's pan fails for a vertical finger, so
+    /// the page around it takes the touch, its pull and its momentum). Set on the first move.
+    package var owner: (ViewNode & _Scrollable)?
     /// The finger's recent path, (time, point), for its speed at the lift.
     package var samples: [(Double, CGPoint)] = []
 
@@ -1229,6 +1233,14 @@ extension Runtime {
             // iOS: scrolling dismisses the keyboard (`scrollDismissesKeyboard`).
             if let first = state.nodes.first, first.dismissesKeyboardOnScroll { focusTextField(nil) }
         }
+        // The way the finger set off picks the scroll view that owns the pan (`PanState.owner`).
+        if state.owner == nil, point != state.start {
+            let dx = point.x - state.start.x, dy = point.y - state.start.y
+            let axis: Axis.Set = abs(dx) >= abs(dy) ? .horizontal : .vertical
+            let owner = state.nodes.first(where: { $0.scrollAxes.contains(axis) }) ?? state.nodes.first
+            if let owner, let first = state.nodes.first, owner !== first { owner.beginTracking() }
+            state.owner = owner
+        }
         // The pan is active before it moves anything: the scroll views tell a finger's move from
         // a wheel's by it, and a first move read as a wheel's started the wheel's quiet period,
         // whose settle then pulled a paged view back to its page while the finger still dragged
@@ -1237,7 +1249,7 @@ extension Runtime {
         let delta = CGSize(width: state.last.x - point.x, height: state.last.y - point.y)
         let remaining = scroll(by: delta, through: state.nodes)
         // A finger past the top of a refreshable scroll view pulls it (iOS).
-        if remaining.height < 0, let first = state.nodes.first, first.pull(by: -remaining.height) { }
+        if remaining.height < 0, let owner = state.owner ?? state.nodes.first, owner.pull(by: -remaining.height) { }
         let dt = time - state.lastTime
         if dt > 0 {
             let sample = CGSize(width: delta.width / dt, height: delta.height / dt)
@@ -1249,8 +1261,10 @@ extension Runtime {
         pan = state
     }
 
-    /// Ends the pan; an active one hands its velocity to the innermost scroll view. Returns
-    /// whether a pan consumed the touch (so no press should be delivered).
+    /// Ends the pan; an active one hands its velocity to the scroll view that owns it (the
+    /// innermost one along the finger's way, `PanState.owner`); the innermost one, which began
+    /// tracking at the touch, ends without. Returns whether a pan consumed the touch (so no
+    /// press should be delivered).
     @discardableResult
     package func endPan(time: Double) -> Bool {
         guard let state = pan else { return false }
@@ -1259,10 +1273,12 @@ extension Runtime {
             state.nodes.first?.endTracking(velocity: .zero)
             return false
         }
-        state.nodes.first?.endPull()
+        let owner = state.owner ?? state.nodes.first
+        owner?.endPull()
         // A finger that stopped before lifting leaves no momentum.
         let velocity = time - state.lastTime < PlatformMetrics.panRestInterval ? (state.recentVelocity ?? state.velocity) : .zero
-        state.nodes.first?.endTracking(velocity: velocity)
+        owner?.endTracking(velocity: velocity)
+        if let first = state.nodes.first, let owner, first !== owner { first.endTracking(velocity: .zero) }
         return true
     }
 }
