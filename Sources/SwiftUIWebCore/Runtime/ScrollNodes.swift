@@ -1333,7 +1333,18 @@ extension Runtime {
         return nodes.compactMap { node in
             guard let scroll = node as? (ViewNode & _Scrollable), node.isMounted else { return nil }
             let f = node.frameInRoot
-            return [f.minX, f.minY, f.width, f.height, scroll.contentOffset.x, scroll.contentOffset.y].map { Double($0) }
+            // PROTOTYPE (new-website#280): the furthest offset, for a native scroller driving it.
+            let maximum = (node as? any _PrototypeMaximumOffset)?.prototypeMaximumOffset ?? CGPoint(x: -1, y: -1)
+            // ... and whether a pointer at its centre reaches it (a hidden tab's does not).
+            let reached = scrollableNodes(at: CGPoint(x: f.midX, y: f.midY)).contains { $0 === node }
+            return [f.minX, f.minY, f.width, f.height, scroll.contentOffset.x, scroll.contentOffset.y, maximum.x, maximum.y, reached ? 1 : 0].map { Double($0) }
         }
     }
+}
+
+/// PROTOTYPE (new-website#280): a scroll view's furthest offset, read by the debug bridge.
+@MainActor
+package protocol _PrototypeMaximumOffset { var prototypeMaximumOffset: CGPoint { get } }
+extension ScrollNode: _PrototypeMaximumOffset {
+    package var prototypeMaximumOffset: CGPoint { maximumOffset }
 }
