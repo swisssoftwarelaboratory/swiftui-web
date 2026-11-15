@@ -1,7 +1,7 @@
 // Wheel input once per display frame (new-website#279): a real trackpad's events, in whole
 // points and uneven pairs, moved the content by an uneven step every frame.
 import Testing
-import Foundation
+import SwiftUI
 import WebGraphics
 
 @Suite struct WheelResamplerTests {
@@ -22,7 +22,8 @@ import WebGraphics
                 next += 1
             }
             if resampler != nil, let input = resampler!.take(at: frame) { moved = input.delta }
-            steps.append(Double((moved.width * moved.width + moved.height * moved.height).squareRoot()))
+            let x = Double(moved.width), y = Double(moved.height)
+            steps.append((x * x + y * y).squareRoot())
             frame += 1.0 / 60
         }
         return steps
