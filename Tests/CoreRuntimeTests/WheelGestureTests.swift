@@ -4,6 +4,7 @@ import Testing
 import SwiftUI
 import SwiftUIWebCore
 import SwiftUIWebHeadless
+import WebGraphics
 
 #if !os(WASI)
 
@@ -299,6 +300,42 @@ private struct PagedCard: View {
         turns.append(model.index - startIndex)
         // The sideways swipes in the recording, in order: right, right, left, right, right,
         // then a few small sideways nudges inside a scroll down.
+        #expect(Array(turns.filter { $0 != 0 }.prefix(5)) == [1, 1, -1, 1, 1], "\(turns)")
+        #expect(pages(r).count == 1, "the card rests between pages: \(pages(r))")
+    }
+
+    /// The same minute as a page's canvas applies it: once per frame, where the input was a
+    /// frame ago (`WheelResampler`, new-website#279). Every swipe still turns one page.
+    @Test func recordedSwipesTurnOnePageEachOncePerFrame() {
+        let model = PagerModel()
+        let r = runtime(model)
+        let point = CGPoint(x: 150, y: 140)
+        let base = Self.clock.now
+        var input = WheelResampler()
+        var next = 0
+        var startIndex = model.index
+        var turns: [Int] = []
+        var gestureCount = 0
+        let end = recordedTrackpadSwipes[recordedTrackpadSwipes.count - 1][0] + 1.5
+        while Self.clock.now - base < end {
+            frame(r)
+            let now = Self.clock.now - base
+            while next < recordedTrackpadSwipes.count, recordedTrackpadSwipes[next][0] <= now {
+                let event = recordedTrackpadSwipes[next]
+                input.add(CGSize(width: event[1], height: event[2]), at: point, time: base + event[0])
+                next += 1
+            }
+            guard let frameInput = input.take(at: Self.clock.now) else { continue }
+            let previous = r.wheelGesture
+            r.scrollWheel(by: frameInput.delta, at: frameInput.point, time: frameInput.time)
+            if let g = r.wheelGesture, previous == nil || g.lastTime != previous!.lastTime, g.recentMagnitudes.isEmpty {
+                if gestureCount > 0 { turns.append(model.index - startIndex) }
+                startIndex = model.index
+                gestureCount += 1
+            }
+            #expect(abs(model.index - startIndex) <= 1, "a swipe from page \(startIndex) reached \(model.index) at \(now) s")
+        }
+        turns.append(model.index - startIndex)
         #expect(Array(turns.filter { $0 != 0 }.prefix(5)) == [1, 1, -1, 1, 1], "\(turns)")
         #expect(pages(r).count == 1, "the card rests between pages: \(pages(r))")
     }
