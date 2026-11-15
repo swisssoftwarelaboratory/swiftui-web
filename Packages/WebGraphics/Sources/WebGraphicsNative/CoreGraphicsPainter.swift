@@ -220,6 +220,9 @@ public final class CoreGraphicsPainter {
                 drawImage(draw, in: ctx)
             case .drawBitmap(let bitmap, let rect):
                 if let image = Self.image(bitmap) { draw(image, in: rect, ctx: ctx) }
+            // Segments and cull blocks only mark the commands: this painter draws every frame's
+            // whole list (only a host that keeps segments is sent `reuseSegment`).
+            case .beginSegment, .endSegment, .reuseSegment, .beginCullBlock, .endCullBlock: break
             }
         }
         ctx.restoreGState()

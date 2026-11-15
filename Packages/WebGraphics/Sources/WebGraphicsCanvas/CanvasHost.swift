@@ -847,7 +847,7 @@ public final class CanvasSceneHost {
         scene.layout(in: CGSize(width: width, height: height))
         let laidOut = now
         mark("render")
-        let list = scene.render(scale: dpr)
+        let list = keepsSegments ? scene.renderKeepingSegments(scale: dpr) : scene.render(scale: dpr)
         let rendered = now
         mark("paint")
         let jsPaintMillis = paint(list)
@@ -922,6 +922,12 @@ public final class CanvasSceneHost {
     private lazy var marksEnabled: Bool = {
         let query = (window.location.object?.search.string ?? "").utf8
         return query.indices.contains { query[$0...].starts(with: "perf".utf8) }
+    }()
+    /// Whether scroll views' content is stored as segments the painter keeps (new-website#286);
+    /// `?segments=off` paints every frame's whole list, to compare or to rule segments out.
+    private lazy var keepsSegments: Bool = {
+        let query = (window.location.object?.search.string ?? "").utf8
+        return !query.indices.contains { query[$0...].starts(with: "segments=off".utf8) }
     }()
     private var openMark: String?
     private func mark(_ phase: String?) {
@@ -1231,6 +1237,8 @@ public final class CanvasSceneHost {
     private func paint(_ list: DisplayList) -> Double {
         let encoded = DisplayListEncoder.encode(list, font: DisplayListEncoder.cssFont)
         lastOpCount = list.commands.count
+        // The lists the segments were stored from, for the debug bridge's display list.
+        if !encoded.segments.isEmpty { segmentSources.store(list, defining: encoded.segments, reusing: encoded.reusedSegments) }
         let buffer = JSTypedArray<Double>(encoded.ops)
         let strings = JSObject.global.Array.function!.new()
         for s in encoded.strings { _ = strings.push!(s) }
@@ -1242,9 +1250,10 @@ public final class CanvasSceneHost {
             object.pixels = .object(JSObject.global.Uint8ClampedArray.function!.new(JSTypedArray<UInt8>(bitmap.pixels).jsValue))
             _ = bitmaps.push!(object)
         }
-        return bridge.paint!(context, buffer, strings, dpr, width, height, bitmaps).number ?? 0
+        return bridge.paint!(context, buffer, strings, dpr, width, height, bitmaps, true).number ?? 0
     }
     private var lastOpCount = 0
+    private var segmentSources = SegmentSources()
 
     /// Mirrors the scene's host elements into the elements layer: a clipping wrapper at the
     /// visible frame holding the element at the element's own frame.
@@ -1772,7 +1781,7 @@ public final class CanvasSceneHost {
         let displayList = JSClosure { [weak self] _ in
             guard let self else { return .undefined }
             let array = JSObject.global.Array.function!.new()
-            for command in self.lastDisplayList.commands { _ = array.push!(command.description) }
+            for command in self.segmentSources.resolved(self.lastDisplayList.commands) { _ = array.push!(command.description) }
             return .object(array)
         }
         let frameCount = JSClosure { [weak self] _ in .number(Double(self?.frameCount ?? 0)) }
@@ -1784,6 +1793,7 @@ public final class CanvasSceneHost {
             object.paint = .number(phases[3]); object.semantics = .number(phases[4]); object.overlay = .number(phases[5])
             object.gap = .number(self?.frameGapMillis ?? 0)
             object.ops = .number(Double(self?.lastOpCount ?? 0))
+            object.segmentMisses = self?.bridge.segmentMisses?() ?? .number(0)
             // Why the frame laid out (or "moved"/"repaint"), with the pass's measurements and memo misses.
             object.reason = .string(self?.scene.lastLayoutReason ?? "")
             object.measures = .number(Double(self?.scene.lastLayoutMeasures ?? 0))

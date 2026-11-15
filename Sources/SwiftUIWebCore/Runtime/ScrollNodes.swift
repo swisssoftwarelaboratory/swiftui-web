@@ -64,6 +64,13 @@ extension Axis.Set {
     package init(_ axis: Axis) { self.init(rawValue: 1 << axis.rawValue) }
 }
 
+/// A scroll view that stores its content as a segment (new-website#286).
+@MainActor
+package protocol _SegmentRecording: AnyObject {
+    /// Forgets the stored content: the next frame paints it afresh.
+    func dropSegment()
+}
+
 /// A node that turns a trackpad's sideways scroll into a swipe (a list's rows with actions).
 @MainActor
 package protocol _SwipeWheelReceiving: AnyObject {
@@ -85,7 +92,7 @@ extension _Scrollable {
     package func beginWheelGesture() {}
 }
 
-package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, _ScrollTarget, _Scrollable, _RelativeFrameContainer {
+package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, _ScrollTarget, _Scrollable, _RelativeFrameContainer, _SegmentRecording {
     override package var clipsHitTesting: Bool { true }
     package private(set) var child: TypedNode<VStack<Content>>!
 
@@ -94,7 +101,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         // An iOS navigation bar collapses its large title as the screen's content scrolls.
         didSet {
             if contentOffset.y != oldValue.y { environment._navigationContext?.stack?.scrollDidChange(self) }
-            if contentOffset != oldValue { markPlacementStale() }
+            if contentOffset != oldValue { markPlacementStale(); invalidateEnclosingSegments() }
         }
     }
 
@@ -165,7 +172,9 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     private var lastPositionedID: AnyHashable?
 
     // Animation state, advanced by the host through `Runtime.advanceScrollAnimations`.
-    package private(set) var indicatorOpacity: Double = 0
+    package private(set) var indicatorOpacity: Double = 0 {
+        didSet { if indicatorOpacity != oldValue { invalidateEnclosingSegments() } }
+    }
     private var indicatorHold: Double = 0
     package private(set) var velocity: CGSize = .zero
 
@@ -716,7 +725,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         if offset != contentOffset {
             contentOffset = offset
             runtime.noteScrolled(self)
-            runtime.requestLayout(invalidatingSizes: false)
+            runtime.requestScrollFrame()
             if runtime.pan != nil {
                 phase = .interacting
             } else if velocity == .zero, settle == nil {
@@ -843,7 +852,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
                 contentOffset = CGPoint(x: state.from.x + (state.to.x - state.from.x) * eased, y: state.from.y + (state.to.y - state.from.y) * eased)
             }
             runtime.noteScrolled(self)
-            runtime.requestLayout(invalidatingSizes: false)
+            runtime.requestScrollFrame()
             updatePositionBinding()
             if progress >= 1 {
                 settle = nil
@@ -884,7 +893,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
                 indicatorHold = max(0, indicatorHold - elapsed)
             } else {
                 indicatorOpacity = max(0, indicatorOpacity - elapsed / PlatformMetrics.scrollerFadeSeconds)
-                runtime.requestLayout(invalidatingSizes: false)
+                runtime.requestScrollFrame()
             }
             if indicatorOpacity > 0 { animating = true }
         }
@@ -894,6 +903,72 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     // MARK: Painting and hit testing
 
     override package var paintedChildren: [ViewNode] { [child] }
+
+    // MARK: Stored segments (new-website#286)
+
+    /// This scroll view's segment identifier, handed out at its first recording.
+    private var segmentID = 0
+    /// The content as last stored: the paint epoch and scale it was painted at, the viewport's
+    /// size, where the content's origin was (absolute, unrounded), and the window painted (the
+    /// viewport widened along the scrolling axes; absolute). `epoch` is `.max` when it cannot be
+    /// painted again (it showed host elements, which are placed as they are painted).
+    private var segment: (epoch: UInt64, scale: CGFloat, size: CGSize, origin: CGPoint, window: CGRect)?
+    /// Whether the last recording followed a frame that painted the segment again: a scroll in
+    /// progress, so the next one paints a wider window. One that follows another recording
+    /// (the content changing each frame) paints just the viewport and its margin.
+    private var reusedSinceRecording = true
+    /// The render (`Runtime.segmentFrame`) that last painted the segment.
+    private var segmentFrame: UInt64 = 0
+
+    /// A scroll view inside this one's content moved or changed its indicators: the stored
+    /// content no longer shows it (every enclosing scroll view's segment is dropped).
+    private func invalidateEnclosingSegments() {
+        var node = parent
+        while let current = node {
+            (current as? _SegmentRecording)?.dropSegment()
+            node = current.parent
+        }
+    }
+
+    package func dropSegment() { segment = nil }
+
+    /// Paints the content as a stored segment, or the stored one again moved, when the runtime
+    /// records segments; returns false when it does not (the content is painted as usual).
+    private func paintSegment(into list: inout DisplayList, context: PaintContext, bounds: CGRect) -> Bool {
+        guard runtime.recordingSegments else { return false }
+        let previousFrame = segmentFrame
+        segmentFrame = runtime.segmentFrame
+        let origin = CGPoint(x: context.origin.x + child.presentedFrame.minX, y: context.origin.y + child.presentedFrame.minY)
+        let margin = PlatformMetrics.scrollCullMargin
+        if let stored = segment, previousFrame &+ 1 == runtime.segmentFrame, stored.epoch == runtime.paintEpoch,
+           stored.scale == context.scale, stored.size == bounds.size {
+            // Moved by whole device pixels, as painting it afresh would round every edge.
+            let offset = CGSize(width: context.round(origin.x - stored.origin.x), height: context.round(origin.y - stored.origin.y))
+            let shown = bounds.offsetBy(dx: -offset.width, dy: -offset.height)
+            if stored.window.contains(shown) {
+                list.append(.reuseSegment(segmentID, offset: offset, shown: shown, cull: shown.insetBy(dx: -margin, dy: -margin)))
+                reusedSinceRecording = true
+                return true
+            }
+        }
+        if segmentID == 0 { runtime.segmentCounter += 1; segmentID = runtime.segmentCounter }
+        // The window: the viewport and its cull margin, widened by a viewport along each axis
+        // that scrolls while the content is scrolling, so the next frames find it stored.
+        let axes = scrollAxes
+        let reach = reusedSinceRecording ? CGSize(width: axes.contains(.horizontal) ? bounds.width : 0, height: axes.contains(.vertical) ? bounds.height : 0) : .zero
+        let window = bounds.insetBy(dx: -margin - reach.width, dy: -margin - reach.height)
+        var content = context
+        content.visibleRect = window
+        content.cullBlock = window
+        let hostElements = runtime.hostElementsThisFrame.count
+        list.append(.beginSegment(segmentID, cull: bounds.insetBy(dx: -margin, dy: -margin)))
+        paintChildren(into: &list, context: content)
+        list.append(.endSegment)
+        let paintable = runtime.hostElementsThisFrame.count == hostElements
+        segment = (paintable ? runtime.paintEpoch : .max, context.scale, bounds.size, origin, window)
+        reusedSinceRecording = false
+        return true
+    }
 
     override package func paint(into list: inout DisplayList, context: PaintContext) {
         let clips = !environment.isScrollClipDisabled
@@ -918,8 +993,10 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             // Subtrees entirely outside the viewport (by more than the margin) are not painted.
             context.visibleRect = bounds.insetBy(dx: -PlatformMetrics.scrollCullMargin, dy: -PlatformMetrics.scrollCullMargin)
             context.clipRect = context.clipRect.map { $0.intersection(bounds) } ?? bounds
+            if !paintSegment(into: &list, context: context, bounds: bounds) { paintChildren(into: &list, context: context) }
+        } else {
+            paintChildren(into: &list, context: context)
         }
-        paintChildren(into: &list, context: context)
         if clips { list.append(.restore) }
         paintIndicators(into: &list, context: context)
         if let indicator = refreshIndicator?.layoutChildren.first, refreshOffset > 0 {
@@ -1164,7 +1241,7 @@ extension Runtime {
             // The direction the gesture moved, at the speed the finger left with.
             let speed = gesture.displacement.sign == .minus ? -abs(gesture.liftSpeed) : abs(gesture.liftSpeed)
             mover.endTracking(velocity: gesture.axis == .horizontal ? CGSize(width: speed, height: 0) : CGSize(width: 0, height: speed))
-            requestLayout(invalidatingSizes: false)
+            requestScrollFrame()
         }
     }
 
@@ -1188,7 +1265,7 @@ extension Runtime {
     /// Registers a scroll view whose momentum or indicators need frames.
     package func animate(_ node: ViewNode & _Scrollable) {
         if !animatingScrollNodes.contains(where: { $0 === node }) { animatingScrollNodes.append(node) }
-        requestLayout(invalidatingSizes: false)
+        requestScrollFrame()
     }
 
     /// Advances scroll momentum and indicator fades by `elapsed` seconds. Hosts call this once
@@ -1214,7 +1291,7 @@ extension Runtime {
         if !decelerating.isEmpty {
             for node in decelerating { node.stopMomentum() }
             state.active = true
-            requestLayout(invalidatingSizes: false)
+            requestScrollFrame()
         }
         nodes.first?.beginTracking()
         pan = state

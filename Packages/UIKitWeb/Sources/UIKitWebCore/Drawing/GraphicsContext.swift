@@ -417,69 +417,9 @@ extension UIView {
 }
 
 extension UIView.DrawingCache {
-    /// The commands moved by `offset`: every top-level command's geometry, and the transform of
-    /// a top-level `concat` (what follows it up to its `restore` is in that transform's space
-    /// and stays as recorded).
+    /// The commands moved by `offset` (`DisplayList.translated`).
     static func translated(_ commands: [DisplayCommand], by offset: CGPoint) -> [DisplayCommand] {
-        guard offset != .zero else { return commands }
-        let shift = CGAffineTransform(translationX: offset.x, y: offset.y)
-        var depth = 0
-        var result: [DisplayCommand] = []
-        result.reserveCapacity(commands.count)
-        for command in commands {
-            if depth > 0 {
-                if case .save = command { depth += 1 } else if case .restore = command { depth -= 1 }
-                result.append(command)
-                continue
-            }
-            switch command {
-            case .save, .restore, .beginGroup, .beginShadow, .beginMasked, .endGroup:
-                result.append(command)
-            case .concat(let transform):
-                // Entered by the preceding save: the block runs in this space until its restore.
-                depth = 1
-                result[result.count - 1] = .save
-                result.append(.concat(transform.concatenating(shift)))
-            case .clipRect(let rect): result.append(.clipRect(rect.offsetBy(dx: offset.x, dy: offset.y)))
-            case .clipRRect(let rect, let radius): result.append(.clipRRect(rect.offsetBy(dx: offset.x, dy: offset.y), cornerRadius: radius))
-            case .clipPath(let path, let eo): result.append(.clipPath(path.applying(shift), eoFill: eo))
-            case .beginFilter(let filter, let bounds): result.append(.beginFilter(filter, bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
-            case .beginBlend(let mode, let bounds): result.append(.beginBlend(mode, bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
-            case .beginMask(let bounds): result.append(.beginMask(bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
-            case .backdropBlur(let path, let bounds, let radius, let saturation):
-                result.append(.backdropBlur(path.applying(shift), bounds: bounds.offsetBy(dx: offset.x, dy: offset.y), radius: radius, saturation: saturation))
-            case .fillRect(let rect, let color): result.append(.fillRect(rect.offsetBy(dx: offset.x, dy: offset.y), color))
-            case .fillRRect(let rect, let radius, let color): result.append(.fillRRect(rect.offsetBy(dx: offset.x, dy: offset.y), cornerRadius: radius, color))
-            case .fillPath(let path, let color, let eo): result.append(.fillPath(path.applying(shift), color, eoFill: eo))
-            case .strokePath(let path, let style, let color): result.append(.strokePath(path.applying(shift), style: style, color))
-            case .fillGradient(let path, let gradient, let eo): result.append(.fillGradient(path.applying(shift), gradient.translated(by: offset), eoFill: eo))
-            case .strokeGradient(let path, let style, let gradient): result.append(.strokeGradient(path.applying(shift), style: style, gradient.translated(by: offset)))
-            case .drawText(let text, let font, let origin, let color): result.append(.drawText(text, font, origin: CGPoint(x: origin.x + offset.x, y: origin.y + offset.y), color))
-            case .drawTextGradient(let text, let font, let origin, let gradient):
-                result.append(.drawTextGradient(text, font, origin: CGPoint(x: origin.x + offset.x, y: origin.y + offset.y), gradient.translated(by: offset)))
-            case .drawImage(var draw):
-                draw.rect = draw.rect.offsetBy(dx: offset.x, dy: offset.y)
-                result.append(.drawImage(draw))
-            case .drawBitmap(let bitmap, let rect): result.append(.drawBitmap(bitmap, rect: rect.offsetBy(dx: offset.x, dy: offset.y)))
-            }
-        }
-        return result
+        DisplayList.translated(commands, by: offset)
     }
 }
 
-private extension DisplayGradient {
-    func translated(by offset: CGPoint) -> DisplayGradient {
-        var copy = self
-        func moved(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x + offset.x, y: point.y + offset.y) }
-        switch kind {
-        case .linear(let start, let end): copy.kind = .linear(start: moved(start), end: moved(end))
-        case .radial(let center, let startRadius, let endRadius): copy.kind = .radial(center: moved(center), startRadius: startRadius, endRadius: endRadius)
-        case .focalRadial(let startCenter, let startRadius, let endCenter, let endRadius):
-            copy.kind = .focalRadial(startCenter: moved(startCenter), startRadius: startRadius, endCenter: moved(endCenter), endRadius: endRadius)
-        case .angular(let center, let startAngle): copy.kind = .angular(center: moved(center), startAngle: startAngle)
-        case .elliptical(let center, let startRadius, let endRadius, let aspect):
-            copy.kind = .elliptical(center: moved(center), startRadius: startRadius, endRadius: endRadius, aspect: aspect)
-        }
-        return copy
-    }
-}
