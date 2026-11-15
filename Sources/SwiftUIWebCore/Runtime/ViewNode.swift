@@ -471,6 +471,23 @@ open class ViewNode {
                !frame.offsetBy(dx: context.origin.x, dy: context.origin.y).intersects(visible) {
                 continue
             }
+            // In a stored segment a child that could leave the viewport as it scrolls is a cull
+            // block: painted again from the segment, it is skipped where the culling here would
+            // have skipped it (new-website#286). Only a child clearly smaller than the block
+            // around it gets one (a modifier's node has its content's frame), and none inside a
+            // block thinner than a row; nothing is added for a child that paints nothing.
+            if let enclosing = context.cullBlock, !child.paintsOutsideFrame, frame.width > 0, frame.height > 0,
+               min(enclosing.width, enclosing.height) > PaintContext.cullBlockMinimum,
+               frame.width * frame.height < enclosing.width * enclosing.height * 0.75 {
+                let bounds = frame.offsetBy(dx: context.origin.x, dy: context.origin.y)
+                var inner = context.child(at: frame)
+                inner.cullBlock = bounds
+                let mark = list.commands.count
+                list.append(.beginCullBlock(bounds))
+                child.paint(into: &list, context: inner)
+                if list.commands.count == mark + 1 { list.commands.removeLast() } else { list.append(.endCullBlock) }
+                continue
+            }
             child.paint(into: &list, context: context.child(at: frame))
         }
     }

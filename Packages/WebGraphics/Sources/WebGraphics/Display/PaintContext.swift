@@ -17,6 +17,15 @@ public struct PaintContext {
     /// A colour that replaces every text's (a list's selected row in a focused list paints
     /// its text white); nil for the texts' own.
     public var foregroundOverride: RGBA?
+    /// Inside a scroll view's stored segment (new-website#286), the innermost cull block's
+    /// absolute bounds (the segment's window at first): smaller children are wrapped in cull
+    /// blocks so the painter can skip the ones the viewport misses when it paints the segment
+    /// again. `nil` outside segments.
+    public var cullBlock: CGRect?
+
+    /// Below this side (points) a cull block's children get no blocks of their own: a row's
+    /// parts leave the viewport with the row.
+    public static let cullBlockMinimum: CGFloat = 64
 
     public init(origin: CGPoint, scale: CGFloat) {
         self.origin = origin
@@ -42,6 +51,7 @@ public struct PaintContext {
         child.clipRect = clipRect
         child.effects = effects
         child.foregroundOverride = foregroundOverride
+        child.cullBlock = cullBlock
         return child
     }
 

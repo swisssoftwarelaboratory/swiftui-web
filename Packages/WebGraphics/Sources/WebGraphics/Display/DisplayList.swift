@@ -134,6 +134,21 @@ public enum DisplayCommand: Equatable, Sendable {
     case drawImage(ImageDraw)
     /// Draws a bitmap by value stretched into `rect` (absolute coordinates).
     case drawBitmap(DisplayBitmap, rect: CGRect)
+    /// Opens the stored content of scroll view `id` (closed by `endSegment`): a painter that
+    /// keeps segments stores the commands up to `endSegment` and paints them as it reads them.
+    /// `cull` is the area that shows (in the segment's coordinates, the viewport with the cull
+    /// margin): a `beginCullBlock` outside it is skipped whole.
+    case beginSegment(Int, cull: CGRect)
+    case endSegment
+    /// Paints stored segment `id` again moved by `offset` points: a frame in which its content
+    /// only scrolled (new-website#286). `shown` is the area the viewport shows and `cull` that
+    /// area with the cull margin, both in the segment's recorded coordinates. Only a host that
+    /// renders with segments (`renderKeepingSegments`) is sent this.
+    case reuseSegment(Int, offset: CGSize, shown: CGRect, cull: CGRect)
+    /// Opens commands that paint inside `bounds` (a subtree's frame), closed by `endCullBlock`:
+    /// inside a segment, a painter may skip the block when `bounds` misses the segment's cull area.
+    case beginCullBlock(CGRect)
+    case endCullBlock
 }
 
 /// The flat command list a painter consumes for one frame (decision 0002).
@@ -231,6 +246,11 @@ extension DisplayCommand: CustomStringConvertible {
             return text + ")"
         case .drawBitmap(let bitmap, let rect):
             return "drawBitmap(\(bitmap.width)x\(bitmap.height) \(r(rect)))"
+        case .beginSegment(let id, let cull): return "beginSegment(\(id) cull=\(r(cull)))"
+        case .endSegment: return "endSegment"
+        case .reuseSegment(let id, let offset, let shown, let cull): return "reuseSegment(\(id) dx=\(f(offset.width)) dy=\(f(offset.height)) shown=\(r(shown)) cull=\(r(cull)))"
+        case .beginCullBlock(let bounds): return "beginCullBlock\(r(bounds))"
+        case .endCullBlock: return "endCullBlock"
         }
     }
 }
@@ -385,4 +405,127 @@ public struct ColorMatrix: Equatable, Sendable {
 
 extension ColorMatrix: CustomStringConvertible {
     public var description: String { "colorMatrix(" + values.map { _displayFormat($0) }.joined(separator: " ") + ")" }
+}
+
+extension DisplayList {
+    /// The commands moved by `offset`: every top-level command's geometry, and the transform of
+    /// a top-level `concat` (what follows it up to its `restore` is in that transform's space
+    /// and stays as recorded).
+    public static func translated(_ commands: [DisplayCommand], by offset: CGPoint) -> [DisplayCommand] {
+        guard offset != .zero else { return commands }
+        let shift = CGAffineTransform(translationX: offset.x, y: offset.y)
+        var depth = 0
+        var result: [DisplayCommand] = []
+        result.reserveCapacity(commands.count)
+        for command in commands {
+            if depth > 0 {
+                if case .save = command { depth += 1 } else if case .restore = command { depth -= 1 }
+                result.append(command)
+                continue
+            }
+            switch command {
+            case .save, .restore, .beginGroup, .beginShadow, .beginMasked, .endGroup:
+                result.append(command)
+            case .concat(let transform):
+                // Entered by the preceding save: the block runs in this space until its restore.
+                depth = 1
+                result[result.count - 1] = .save
+                result.append(.concat(transform.concatenating(shift)))
+            case .clipRect(let rect): result.append(.clipRect(rect.offsetBy(dx: offset.x, dy: offset.y)))
+            case .clipRRect(let rect, let radius): result.append(.clipRRect(rect.offsetBy(dx: offset.x, dy: offset.y), cornerRadius: radius))
+            case .clipPath(let path, let eo): result.append(.clipPath(path.applying(shift), eoFill: eo))
+            case .beginFilter(let filter, let bounds): result.append(.beginFilter(filter, bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
+            case .beginBlend(let mode, let bounds): result.append(.beginBlend(mode, bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
+            case .beginMask(let bounds): result.append(.beginMask(bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
+            case .backdropBlur(let path, let bounds, let radius, let saturation):
+                result.append(.backdropBlur(path.applying(shift), bounds: bounds.offsetBy(dx: offset.x, dy: offset.y), radius: radius, saturation: saturation))
+            case .fillRect(let rect, let color): result.append(.fillRect(rect.offsetBy(dx: offset.x, dy: offset.y), color))
+            case .fillRRect(let rect, let radius, let color): result.append(.fillRRect(rect.offsetBy(dx: offset.x, dy: offset.y), cornerRadius: radius, color))
+            case .fillPath(let path, let color, let eo): result.append(.fillPath(path.applying(shift), color, eoFill: eo))
+            case .strokePath(let path, let style, let color): result.append(.strokePath(path.applying(shift), style: style, color))
+            case .fillGradient(let path, let gradient, let eo): result.append(.fillGradient(path.applying(shift), gradient.translated(by: offset), eoFill: eo))
+            case .strokeGradient(let path, let style, let gradient): result.append(.strokeGradient(path.applying(shift), style: style, gradient.translated(by: offset)))
+            case .drawText(let text, let font, let origin, let color): result.append(.drawText(text, font, origin: CGPoint(x: origin.x + offset.x, y: origin.y + offset.y), color))
+            case .drawTextGradient(let text, let font, let origin, let gradient):
+                result.append(.drawTextGradient(text, font, origin: CGPoint(x: origin.x + offset.x, y: origin.y + offset.y), gradient.translated(by: offset)))
+            case .drawImage(var draw):
+                draw.rect = draw.rect.offsetBy(dx: offset.x, dy: offset.y)
+                result.append(.drawImage(draw))
+            case .drawBitmap(let bitmap, let rect): result.append(.drawBitmap(bitmap, rect: rect.offsetBy(dx: offset.x, dy: offset.y)))
+            case .beginSegment(let id, let cull): result.append(.beginSegment(id, cull: cull.offsetBy(dx: offset.x, dy: offset.y)))
+            case .reuseSegment(let id, let moved, let shown, let cull):
+                // The shown and cull areas stay in the segment's recorded coordinates.
+                result.append(.reuseSegment(id, offset: CGSize(width: moved.width + offset.x, height: moved.height + offset.y), shown: shown, cull: cull))
+            case .beginCullBlock(let bounds): result.append(.beginCullBlock(bounds.offsetBy(dx: offset.x, dy: offset.y)))
+            case .endSegment, .endCullBlock: result.append(command)
+            }
+        }
+        return result
+    }
+}
+
+extension DisplayGradient {
+    /// The gradient moved by `offset` (its points are absolute).
+    public func translated(by offset: CGPoint) -> DisplayGradient {
+        var copy = self
+        func moved(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x + offset.x, y: point.y + offset.y) }
+        switch kind {
+        case .linear(let start, let end): copy.kind = .linear(start: moved(start), end: moved(end))
+        case .radial(let center, let startRadius, let endRadius): copy.kind = .radial(center: moved(center), startRadius: startRadius, endRadius: endRadius)
+        case .focalRadial(let startCenter, let startRadius, let endCenter, let endRadius):
+            copy.kind = .focalRadial(startCenter: moved(startCenter), startRadius: startRadius, endCenter: moved(endCenter), endRadius: endRadius)
+        case .angular(let center, let startAngle): copy.kind = .angular(center: moved(center), startAngle: startAngle)
+        case .elliptical(let center, let startRadius, let endRadius, let aspect):
+            copy.kind = .elliptical(center: moved(center), startRadius: startRadius, endRadius: endRadius, aspect: aspect)
+        }
+        return copy
+    }
+}
+
+/// The lists a host's stored segments came from (new-website#286), to read a frame that paints
+/// segments again as the commands it shows: debug bridges and tests.
+public struct SegmentSources: Sendable {
+    private var lists: [Int: DisplayList] = [:]
+
+    public init() {}
+
+    /// Keeps `list` as the source of the segments it defines. Only a handful of scroll views
+    /// paint at once; past that, the ones the list neither defines nor paints again go.
+    public mutating func store(_ list: DisplayList, defining defined: [Int], reusing reused: [Int]) {
+        for id in defined { lists[id] = list }
+        if lists.count > 64 {
+            let kept = Set(defined + reused)
+            lists = lists.filter { kept.contains($0.key) }
+        }
+    }
+
+    /// The commands, every `reuseSegment` replaced by the stored commands moved to where it
+    /// paints them (`reuseSegment`s whose source is gone stay as they are).
+    public func resolved(_ commands: [DisplayCommand], depth: Int = 0) -> [DisplayCommand] {
+        guard depth < 8, commands.contains(where: { if case .reuseSegment = $0 { return true }; return false }) else { return commands }
+        var out: [DisplayCommand] = []
+        out.reserveCapacity(commands.count)
+        for command in commands {
+            guard case .reuseSegment(let id, let offset, _, _) = command, let source = lists[id],
+                  let stored = Self.segment(id, in: source.commands) else { out.append(command); continue }
+            out.append(contentsOf: DisplayList.translated(resolved(stored, depth: depth + 1), by: CGPoint(x: offset.width, y: offset.height)))
+        }
+        return out
+    }
+
+    /// The commands between segment `id`'s `beginSegment` and its `endSegment`.
+    public static func segment(_ id: Int, in commands: [DisplayCommand]) -> [DisplayCommand]? {
+        guard let start = commands.firstIndex(where: { if case .beginSegment(id, _) = $0 { return true }; return false }) else { return nil }
+        var depth = 0
+        for index in (start + 1)..<commands.count {
+            switch commands[index] {
+            case .beginSegment: depth += 1
+            case .endSegment:
+                if depth == 0 { return Array(commands[(start + 1)..<index]) }
+                depth -= 1
+            default: break
+            }
+        }
+        return nil
+    }
 }

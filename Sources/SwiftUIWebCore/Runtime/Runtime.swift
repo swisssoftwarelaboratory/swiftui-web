@@ -548,7 +548,33 @@ public final class Runtime {
         if !scrolledNodes.contains(where: { $0 === node }) { scrolledNodes.append(node) }
     }
 
+    /// Whether the render in progress stores each clipping scroll view's content as a segment
+    /// the host's painter keeps (`renderKeepingSegments`, new-website#286), and counts those
+    /// renders: a segment is painted again only by the render right after the one that last
+    /// painted it, since the painter forgets the segments a frame did not paint.
+    package var recordingSegments = false
+    package var segmentFrame: UInt64 = 0
+
+    /// Counts the changes that may paint anything differently: every layout, repaint and redraw
+    /// request but the ones that only scroll (`requestScrollFrame`), and every frame that laid
+    /// out. A stored segment stays valid while it is unchanged; scrolling a view inside one
+    /// marks the segment itself (`ScrollNode.invalidateEnclosingSegments`).
+    package private(set) var paintEpoch: UInt64 = 0
+    /// Hands out segment identifiers, one per scroll view (`ScrollNode`).
+    package var segmentCounter = 0
+
+    /// Asks for a frame in which scroll views only moved their content (an offset changed, an
+    /// indicator faded): stored segments stay valid, unlike after `requestLayout`.
+    package func requestScrollFrame() {
+        requestLayout(invalidatingSizes: false, keepsSegments: true)
+    }
+
     package func requestLayout(invalidatingSizes: Bool = true, file: StaticString = #fileID, line: UInt = #line) {
+        requestLayout(invalidatingSizes: invalidatingSizes, keepsSegments: false, file: file, line: line)
+    }
+
+    private func requestLayout(invalidatingSizes: Bool, keepsSegments: Bool, file: StaticString = #fileID, line: UInt = #line) {
+        if !keepsSegments { paintEpoch &+= 1 }
         repaintOnly = false
         if invalidatingSizes { sizesInvalidated = true; lastInvalidatingRequest = "\(file):\(line)" }
         guard !layoutRequested else { return }
@@ -647,6 +673,8 @@ public final class Runtime {
         // A frame that only scrolled moves the scrolled content and keeps every frame else.
         if !updating, !sizesInvalidated, !layoutForced, presentations.isEmpty, scrolledNodes.allSatisfy(\.canMoveContentOnly) {
             let moved = !scrolledNodes.isEmpty
+            // A repaint asked for alongside the scroll is painted by this frame.
+            if repaintOnly { repaintOnly = false; paintEpoch &+= 1 }
             for node in scrolledNodes { node.moveContent() }
             scrolledNodes.removeAll()
             layoutRequested = false
@@ -660,6 +688,7 @@ public final class Runtime {
         // A frame that only repaints keeps every frame and size.
         if repaintOnly, !updating, !sizesInvalidated, presentations.isEmpty, scrolledNodes.isEmpty {
             repaintOnly = false
+            paintEpoch &+= 1
             layoutRequested = false
             updateAnimation = nil
             lastLayoutReason = "repaint"; lastLayoutMeasures = 0; lastLayoutComputes = 0
@@ -704,6 +733,7 @@ public final class Runtime {
         keptPlacements = 0
         scrolledNodes.removeAll()
         fullLayoutCount += 1
+        paintEpoch &+= 1
         inLayoutPass = true
         let invalidatedBefore = sizesInvalidated
         flush()

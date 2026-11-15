@@ -33,6 +33,11 @@ public enum DisplayOp: Double, Sendable {
     case backdropBlur = 23
     /// bitmap index (into the side table), rect
     case drawBitmap = 24
+    /// beginSegment: id, cull rect. reuseSegment: id, dx, dy, shown rect, cull rect (new-website#286)
+    case beginSegment = 25, endSegment = 26, reuseSegment = 27
+    /// beginCullBlock: bounds, then the index of the op after its `endCullBlock` (where a painter
+    /// skipping the block goes on)
+    case beginCullBlock = 28, endCullBlock = 29
 }
 
 /// Path element tags inside an encoded path: tag, then coordinates.
@@ -46,6 +51,10 @@ public struct EncodedDisplayList: Equatable, Sendable {
     public var strings: [String] = []
     /// Bitmaps drawn by value, indexed by `drawBitmap` ops.
     public var bitmaps: [DisplayBitmap] = []
+    /// The segments the list defines (`beginSegment`) and paints again (`reuseSegment`), for a
+    /// host keeping their sources.
+    public var segments: [Int] = []
+    public var reusedSegments: [Int] = []
 
     public init() {}
 }
@@ -92,8 +101,21 @@ public enum DisplayListEncoder {
             out.ops += style.dash.map { Double($0) }
             out.ops.append(style.dashPhase)
         }
+        // Open cull blocks: where each one's skip target goes once its end is reached.
+        var openBlocks: [Int] = []
         for command in list.commands {
             switch command {
+            case .beginSegment(let id, let cull): out.ops += [DisplayOp.beginSegment.rawValue, Double(id)]; rect(cull); out.segments.append(id)
+            case .endSegment: out.ops.append(DisplayOp.endSegment.rawValue)
+            case .reuseSegment(let id, let offset, let shown, let cull):
+                out.ops += [DisplayOp.reuseSegment.rawValue, Double(id), offset.width, offset.height]; rect(shown); rect(cull); out.reusedSegments.append(id)
+            case .beginCullBlock(let bounds):
+                out.ops.append(DisplayOp.beginCullBlock.rawValue); rect(bounds)
+                openBlocks.append(out.ops.count)
+                out.ops.append(0)
+            case .endCullBlock:
+                out.ops.append(DisplayOp.endCullBlock.rawValue)
+                if let slot = openBlocks.popLast() { out.ops[slot] = Double(out.ops.count) }
             case .fillGradient(let p, let g, let eo): out.ops.append(DisplayOp.fillGradient.rawValue); path(p); gradient(g); out.ops.append(eo ? 1 : 0)
             case .strokeGradient(let p, let style, let g): out.ops.append(DisplayOp.strokeGradient.rawValue); path(p); strokeStyle(style); gradient(g)
             case .save: out.ops.append(DisplayOp.save.rawValue)
@@ -208,6 +230,11 @@ public enum DisplayListDecoder {
             switch DisplayOp(rawValue: next())! {
             case .save: out.append("save")
             case .restore: out.append("restore")
+            case .beginSegment: let id = Int(next()); out.append("beginSegment \(id) \(f(rect()))")
+            case .endSegment: out.append("endSegment")
+            case .reuseSegment: let id = Int(next()), dx = next(), dy = next(), shown = f(rect()); out.append("reuseSegment \(id) \(dx),\(dy) \(shown) \(f(rect()))")
+            case .beginCullBlock: let bounds = f(rect()); out.append("beginCullBlock \(bounds) to \(Int(next()))")
+            case .endCullBlock: out.append("endCullBlock")
             case .clipRect: out.append("clipRect \(f(rect()))")
             case .clipRRect: out.append("clipRRect \(f(rect())) r\(next())")
             case .clipPath: let p = path(); out.append("clipPath \(p)\(next() == 1 ? " eo" : "")")

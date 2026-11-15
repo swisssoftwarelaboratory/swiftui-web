@@ -495,20 +495,183 @@ enum PainterScript {
         unionDeviceBox(ctx, box, x - left, y - ascent, x - left + width, y + descent, 2);
       }
       // Returns the loop's own milliseconds (the host's frame split separates them from the encode).
-      function paint(rootCtx, buf, strings, dpr, w, h, bitmaps) {
+      // Stored segments (new-website#286): a scroll view's content as the ops between its
+      // beginSegment and endSegment, kept with the frame's string and bitmap tables, painted
+      // again moved by reuseSegment. The main canvas forgets every segment a frame did not paint
+      // (the host paints one again only in the frame after one that painted it).
+      const segments = new Map();
+      let segmentMisses = 0;
+      // Tiles: a segment painted again is drawn into tiles between frames (one tile a task), and
+      // once the tiles cover what shows, a frame draws them instead of the segment's ops: a few
+      // image copies in place of every fill, shadow and line of text (new-website#286). A segment
+      // whose ops read what lies beneath them (a backdrop blur, a blend mode) is never tiled, nor
+      // one under a transform that is not a whole-pixel move. Tiles are whole device pixels, at
+      // most 512 points and the canvas's size (its groups paint into canvas-sized offscreens).
+      const tileMargin = 256;   // as the host's cull margin: a shadow reaching into a tile is in it
+      // A tile is painted with this border around it (points) and only its middle kept: a group's
+      // shadow is cast from what the group painted inside the canvas, so content just across a
+      // tile's edge must be in the canvas for its shadow to reach into the tile.
+      const tileBorder = 64;
+      let tileScratch = null;
+      const wantTiles = new Set();
+      let tileTimer = 0, tileMillis = 0, tilesDrawn = 0;
+      function tileSize(dpr, w, h) {
+        return [Math.floor(Math.min(512, w) * dpr) / dpr, Math.floor(Math.min(512, h) * dpr) / dpr];
+      }
+      // Draws the tiles under the shown area moved by dx, dy; false when they are not all there
+      // (they are asked for) or the segment cannot be drawn from tiles here.
+      function drawTiles(ctx, segment, dx, dy, shown, dpr, w, h) {
+        const m = ctx.getTransform();
+        if (m.b !== 0 || m.c !== 0 || Math.abs(m.a - dpr) > 1e-9 || Math.abs(m.d - dpr) > 1e-9) return false;
+        const ex = m.e + dx * dpr, ey = m.f + dy * dpr;
+        if (Math.abs(ex - Math.round(ex)) > 1e-6 || Math.abs(ey - Math.round(ey)) > 1e-6) return false;
+        const [tw, th] = tileSize(dpr, w, h);
+        if (segment.tileW !== tw || segment.tileH !== th || segment.dpr !== dpr) { segment.tiles.clear(); segment.tileW = tw; segment.tileH = th; segment.dpr = dpr; segment.w = w; segment.h = h; }
+        if (segment.lastDx !== undefined && (dx !== segment.lastDx || dy !== segment.lastDy)) segment.vertical = Math.abs(dy - segment.lastDy) >= Math.abs(dx - segment.lastDx);
+        segment.lastDx = dx; segment.lastDy = dy;
+        segment.shown = shown;
+        wantTiles.add(segment);
+        const i0 = Math.floor(shown.x0 / tw), i1 = Math.ceil(shown.x1 / tw) - 1, j0 = Math.floor(shown.y0 / th), j1 = Math.ceil(shown.y1 / th) - 1;
+        for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (!segment.tiles.has(i + ',' + j)) return false;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+          ctx.drawImage(segment.tiles.get(i + ',' + j), Math.round(ex + i * tw * dpr), Math.round(ey + j * th * dpr));
+        }
+        ctx.restore();
+        tilesDrawn++;
+        return true;
+      }
+      // The missing tile nearest the shown area: those under it first, then one tile ahead along
+      // the way it last moved. Tiles further than two tiles away are let go.
+      function nextTile(segment) {
+        const s = segment.shown, tw = segment.tileW, th = segment.tileH;
+        for (const key of segment.tiles.keys()) {
+          const [i, j] = key.split(',').map(Number);
+          if ((i + 1) * tw < s.x0 - 2 * tw || i * tw > s.x1 + 2 * tw || (j + 1) * th < s.y0 - 2 * th || j * th > s.y1 + 2 * th) segment.tiles.delete(key);
+        }
+        const ax = segment.vertical === false ? tw : 0, ay = segment.vertical === false ? 0 : th;
+        let best = null, bestDistance = Infinity;
+        for (const [rx, ry] of [[0, 0], [ax, ay]]) {
+          const i0 = Math.floor((s.x0 - rx) / tw), i1 = Math.ceil((s.x1 + rx) / tw) - 1, j0 = Math.floor((s.y0 - ry) / th), j1 = Math.ceil((s.y1 + ry) / th) - 1;
+          for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+            if (segment.tiles.has(i + ',' + j)) continue;
+            const cx = (i + 0.5) * tw - (s.x0 + s.x1) / 2, cy = (j + 0.5) * th - (s.y0 + s.y1) / 2;
+            const distance = cx * cx + cy * cy;
+            if (distance < bestDistance) { best = [i, j]; bestDistance = distance; }
+          }
+          if (best) return best;
+        }
+        return null;
+      }
+      // One tile a task, between frames, until every segment painted again has the tiles it wants.
+      function tileTask() {
+        tileTimer = 0;
+        const started = performance.now();
+        for (const segment of wantTiles) {
+          if (segments.get(segment.id) !== segment || !segment.tileable) { wantTiles.delete(segment); continue; }
+          const next = nextTile(segment);
+          if (!next) { wantTiles.delete(segment); continue; }
+          const [i, j] = next, tw = segment.tileW, th = segment.tileH, x0 = i * tw, y0 = j * th;
+          const dpr = segment.dpr, b = tileBorder, pw = Math.round(tw * dpr), ph = Math.round(th * dpr), pb = Math.round(b * dpr);
+          if (!tileScratch || tileScratch.width !== pw + 2 * pb || tileScratch.height !== ph + 2 * pb) tileScratch = new OffscreenCanvas(pw + 2 * pb, ph + 2 * pb);
+          const sctx = tileScratch.getContext('2d');
+          sctx.setTransform(1, 0, 0, 1, 0, 0);
+          sctx.clearRect(0, 0, tileScratch.width, tileScratch.height);
+          // The groups inside paint into offscreens the size of the bordered tile.
+          paint(sctx, segment.buf, segment.strings, dpr, tw + 2 * b, th + 2 * b, segment.bitmaps, false,
+                { x0: x0 - b, y0: y0 - b, start: segment.start, end: segment.end, cull: { x0: x0 - tileMargin, y0: y0 - tileMargin, x1: x0 + tw + tileMargin, y1: y0 + th + tileMargin } });
+          // Painting it may have found the segment cannot be tiled.
+          if (segment.tileable) {
+            const canvas = new OffscreenCanvas(pw, ph);
+            canvas.getContext('2d').drawImage(tileScratch, pb, pb, pw, ph, 0, 0, pw, ph);
+            segment.tiles.set(i + ',' + j, canvas);
+          }
+          break;
+        }
+        tileMillis += performance.now() - started;
+        if (wantTiles.size && !tileTimer) tileTimer = setTimeout(tileTask, 0);
+      }
+      function paint(rootCtx, buf, strings, dpr, w, h, bitmaps, keepsSegments, tile) {
         const started = performance.now();
         poolUsed = 0;
-        rootCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        rootCtx.clearRect(0, 0, w, h);
+        if (tile) {
+          rootCtx.setTransform(dpr, 0, 0, dpr, -tile.x0 * dpr, -tile.y0 * dpr);
+        } else {
+          rootCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          rootCtx.clearRect(0, 0, w, h);
+        }
         rootCtx.textBaseline = 'alphabetic';
         let ctx = rootCtx;
         const groups = [];
         let box = null;   // the innermost group's painted box, null outside groups
-        let i = 0;
-        const n = buf.length;
+        // The areas that show, innermost segment last: a cull block missing the top one is skipped.
+        const culls = [];
+        const painted = keepsSegments ? new Set() : null;
+        const opened = [];
+        // The segments whose ops are running, innermost last (stored or painted again).
+        const running = [];
+        if (tile) culls.push(tile.cull);
+        run(buf, strings, bitmaps, tile ? tile.start : 0, tile ? tile.end : buf.length);
+        if (painted) {
+          for (const id of segments.keys()) if (!painted.has(id)) segments.delete(id);
+          if (wantTiles.size && !tileTimer) tileTimer = setTimeout(tileTask, 0);
+        }
+        return performance.now() - started;
+        function run(buf, strings, bitmaps, start, n) {
+        let i = start;
         while (i < n) {
           const op = buf[i++];
           switch (op) {
+            case 25: {
+              const id = buf[i++], cx = buf[i++], cy = buf[i++], cw = buf[i++], ch = buf[i++];
+              // Painting an enclosing segment again meets its inner ones' ops: the stored one stays.
+              const stored = segments.get(id);
+              const segment = stored && stored.buf === buf && stored.start === i ? stored
+                : { id: id, buf: buf, strings: strings, bitmaps: bitmaps, start: i, end: -1, tiles: new Map(), tileable: true };
+              segments.set(id, segment);
+              opened.push(segment);
+              running.push(segment);
+              if (painted) painted.add(id);
+              culls.push({ x0: cx, y0: cy, x1: cx + cw, y1: cy + ch });
+              break;
+            }
+            case 26: { const segment = opened.pop(); if (segment) segment.end = i - 1; running.pop(); culls.pop(); break; }
+            case 27: {
+              const id = buf[i++], dx = buf[i++], dy = buf[i++];
+              const sx = buf[i++], sy = buf[i++], sw = buf[i++], sh = buf[i++];
+              const cx = buf[i++], cy = buf[i++], cw = buf[i++], ch = buf[i++];
+              const segment = segments.get(id);
+              if (!segment || segment.end < 0) {
+                if (segmentMisses++ === 0) console.error('SwiftUIWeb: segment ' + id + ' was not stored');
+                break;
+              }
+              if (painted) painted.add(id);
+              // The main canvas draws the segment from its tiles once they are there (never a tile
+              // being painted: its inner segments are painted as ops).
+              if (!tile && segment.tileable && drawTiles(ctx, segment, dx, dy, { x0: sx, y0: sy, x1: sx + sw, y1: sy + sh }, dpr, w, h)) {
+                if (box) unionDeviceBox(ctx, box, sx + dx, sy + dy, sx + sw + dx, sy + sh + dy, 0);
+                break;
+              }
+              ctx.save();
+              ctx.translate(dx, dy);
+              culls.push({ x0: cx, y0: cy, x1: cx + cw, y1: cy + ch });
+              running.push(segment);
+              run(segment.buf, segment.strings, segment.bitmaps, segment.start, segment.end);
+              running.pop();
+              culls.pop();
+              ctx.restore();
+              break;
+            }
+            case 28: {
+              const x = buf[i++], y = buf[i++], bw = buf[i++], bh = buf[i++], after = buf[i++];
+              const c = culls.length ? culls[culls.length - 1] : null;
+              // Skipped where painting it afresh would have culled it (a frame missing the area).
+              if (c && (x + bw <= c.x0 || x >= c.x1 || y + bh <= c.y0 || y >= c.y1)) i = after;
+              break;
+            }
+            case 29: break;
             case 1: ctx.save(); break;
             case 2: ctx.restore(); break;
             case 3: { const x = buf[i++], y = buf[i++], rw = buf[i++], rh = buf[i++]; ctx.beginPath(); ctx.rect(x, y, rw, rh); ctx.clip(); break; }
@@ -594,6 +757,8 @@ enum PainterScript {
               break;
             }
             case 23: {
+              // What lies beneath a segment's tile is not in it: a segment that reads it is not tiled.
+              for (const segment of running) segment.tileable = false;
               // Backdrop blur: copy what the current target holds, blur the path's device box
               // keeping its alpha, and draw the copy back clipped to the path.
               i = readPath(ctx, buf, i);
@@ -658,6 +823,7 @@ enum PainterScript {
               break;
             }
             case 20: {
+              for (const segment of running) segment.tileable = false;
               const mode = buf[i++];
               const x = buf[i++], y = buf[i++], rw = buf[i++], rh = buf[i++];
               const o = beginOffscreen(ctx, dpr, w, h);
@@ -778,7 +944,7 @@ enum PainterScript {
             default: throw new Error('SwiftUIWeb: unknown display op ' + op + ' at ' + (i - 1));
           }
         }
-        return performance.now() - started;
+        }
       }
       // The accessibility overlay's elements by semantics identifier: the host positions the
       // ones that moved with one call per frame (each property write crosses the bridge).
@@ -868,7 +1034,8 @@ enum PainterScript {
         button('copy', () => { const r = report + '\n' + navigator.userAgent; if (navigator.clipboard) navigator.clipboard.writeText(r); else prompt('report', r); });
       }
       window.__swiftuiweb = {
-        paint: paint, rasterize: rasterize, measure: measure, forgetMeasurements: forgetMeasurements, imageState: imageState, imageCancel: imageCancel, version: 4, installHud: installHud,
+        paint: paint, rasterize: rasterize, segmentMisses: function () { return segmentMisses; }, segmentCount: function () { return segments.size; },
+        tileStats: function () { let tiles = 0; for (const s of segments.values()) tiles += s.tiles.size; return { tiles: tiles, tileMillis: tileMillis, tilesDrawn: tilesDrawn }; }, measure: measure, forgetMeasurements: forgetMeasurements, imageState: imageState, imageCancel: imageCancel, version: 4, installHud: installHud,
         setImageLoadHandler: function (handler) { onImageLoad = handler; },
         overlayAdd: function (id, element) { overlay.set(id, element.style); },
         overlayRemove: function (id) { overlay.delete(id); },

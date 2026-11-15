@@ -91,6 +91,9 @@ public protocol HostedScene: AnyObject {
     func layout(in size: CGSize)
     /// Paints the laid-out scene into a display list at `scale` pixels per point.
     func render(scale: CGFloat) -> DisplayList
+    /// `render(scale:)` for a host whose painter keeps segments (`beginSegment`, `reuseSegment`;
+    /// new-website#286); the host paints every list it returns. Scenes without segments render.
+    func renderKeepingSegments(scale: CGFloat) -> DisplayList
     /// An image the loader was asked for has arrived (or failed).
     func imageLoadDidFinish()
     /// The title the window or document should show, if the scene sets one.
@@ -314,6 +317,10 @@ public struct ColorPanelRequest: Equatable, Sendable {
         self.supportsOpacity = supportsOpacity
         self.anchor = anchor
     }
+}
+
+extension HostedScene {
+    public func renderKeepingSegments(scale: CGFloat) -> DisplayList { render(scale: scale) }
 }
 
 extension HostedScene {
