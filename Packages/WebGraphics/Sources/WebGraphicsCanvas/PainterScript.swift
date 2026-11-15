@@ -54,6 +54,85 @@ enum PainterScript {
           }
         }
       }
+      // Text drawn as a stored picture of itself, in WebKit only. WebKit's canvas reuses its work
+      // for a line it drew before only while letterSpacing is 0: a spaced line (most text, since
+      // San Francisco is tracked at every size) costs about 11 us a call in Safari 26, against 1 us
+      // unspaced and 0.25 us for drawing a stored picture (new-website#285). Chromium spaces for
+      // free and draws such pictures slower, so it keeps fillText. A line becomes a picture the
+      // second time it is drawn the same way, so text that changes every frame stays fillText.
+      // The picture is drawn on whole device pixels and holds the text at its fraction of a pixel:
+      // across, to 1/64 (WebKit places glyphs continuously, and scrolling down never changes it);
+      // down, rounded up to 1/8, as WebKit itself moves text down a whole pixel at nearly any
+      // fraction above one, so at most 8 pictures of a line while it scrolls.
+      const textPictures = /Apple/.test(navigator.vendor || '') && typeof OffscreenCanvas === 'function';
+      const pictureCache = new Map(), pictureSeen = new Set();
+      let picturePixels = 0;
+      const pictureBudget = 4 * 1024 * 1024; // device pixels kept, about 16 MB
+      const inkCache = new Map();
+      // measureText's ink box of a line in a font, kept (WebKit's measureText costs ~5 us a call).
+      function ink(ctx, font, text) {
+        const k = font + '\n' + text;
+        let m = inkCache.get(k);
+        if (m === undefined) {
+          const r = ctx.measureText(text);
+          m = { width: r.width, left: r.actualBoundingBoxLeft || 0, right: r.actualBoundingBoxRight || 0, ascent: r.actualBoundingBoxAscent || 0, descent: r.actualBoundingBoxDescent || 0 };
+          if (inkCache.size > 4000) inkCache.clear();
+          inkCache.set(k, m);
+        }
+        return m;
+      }
+      // Draws text (setFont already applied to ctx, `spacing` what it returned) as a picture when
+      // that pays; returns false when the caller should draw it itself.
+      function drawTextPicture(ctx, font, text, x, y, fill, spacing) {
+        if (!textPictures || ctx.globalCompositeOperation !== 'source-over') return false;
+        if (!spacing && !tabularSlot && (ctx.letterSpacing || '0px') === '0px') return false;
+        const t = ctx.getTransform();
+        if (t.b !== 0 || t.c !== 0 || t.a <= 0 || t.a !== t.d) return false;
+        const s = t.a;
+        const dx = s * x + t.e, dy = s * y + t.f;
+        let ix = Math.floor(dx), iy = Math.floor(dy);
+        let qx = Math.round((dx - ix) * 64) / 64, qy = Math.ceil((dy - iy) * 8) / 8;
+        if (qx === 1) { ix++; qx = 0; }
+        if (qy === 1) { iy++; qy = 0; }
+        const key = font + '\n' + fill + '\n' + s + '\n' + qx + '\n' + qy + '\n' + text;
+        let p = pictureCache.get(key);
+        if (p === undefined) {
+          if (!pictureSeen.has(key)) {
+            if (pictureSeen.size > 4000) pictureSeen.clear();
+            pictureSeen.add(key);
+            return false;
+          }
+          const m = ink(ctx, font, text);
+          const count = text.length;
+          const pad = 2;
+          const left = Math.ceil((Math.max(0, m.left) + pad) * s);
+          const top = Math.ceil((m.ascent + pad) * s);
+          const right = Math.ceil((Math.max(m.width, m.right) + Math.abs(spacing) * count + tabularSlot * count + pad) * s);
+          const bottom = Math.ceil((m.descent + pad) * s);
+          const w = left + right + 1, h = top + bottom + 1;
+          const canvas = new OffscreenCanvas(w, h);
+          const pctx = canvas.getContext('2d');
+          pctx.setTransform(s, 0, 0, s, left + qx, top + qy);
+          pctx.textBaseline = 'alphabetic';
+          const own = setFont(pctx, font);
+          pctx.fillStyle = fill;
+          fillSpacedText(pctx, text, 0, 0, own);
+          p = { canvas, left, top, w, h };
+          pictureCache.set(key, p);
+          picturePixels += w * h;
+          for (const [k, old] of pictureCache) {
+            if (picturePixels <= pictureBudget) break;
+            pictureCache.delete(k);
+            picturePixels -= old.w * old.h;
+          }
+        } else {
+          // Most recently used last, so the budget drops the oldest first.
+          pictureCache.delete(key);
+          pictureCache.set(key, p);
+        }
+        ctx.drawImage(p.canvas, (ix - p.left - t.e) / s, (iy - p.top - t.f) / s, p.w / s, p.h / s);
+        return true;
+      }
       const lineCaps = ['butt', 'round', 'square'];
       const lineJoins = ['miter', 'round', 'bevel'];
       // The box of the path last read (its points and control points, which bound the curves),
@@ -409,10 +488,10 @@ enum PainterScript {
       }
       function textBox(ctx, font, text, x, y, box) {
         const spacing = setFont(ctx, font);
-        const m = ctx.measureText(text);
-        const ascent = (m.actualBoundingBoxAscent || 0), descent = (m.actualBoundingBoxDescent || 0);
-        const left = (m.actualBoundingBoxLeft || 0);
-        const width = m.width + left + (m.actualBoundingBoxRight || 0) + (spacing + tabularSlot) * text.length;
+        const m = ink(ctx, font, text);
+        const ascent = m.ascent, descent = m.descent;
+        const left = m.left;
+        const width = m.width + left + m.right + (spacing + tabularSlot) * text.length;
         unionDeviceBox(ctx, box, x - left, y - ascent, x - left + width, y + descent, 2);
       }
       // Returns the loop's own milliseconds (the host's frame split separates them from the encode).
@@ -616,8 +695,10 @@ enum PainterScript {
             }
             case 12: {
               const text = strings[buf[i++]], font = strings[buf[i++]], x = buf[i++], y = buf[i++];
-              ctx.fillStyle = color(buf[i++], buf[i++], buf[i++], buf[i++]);
-              fillSpacedText(ctx, text, x, y, setFont(ctx, font));
+              const fill = color(buf[i++], buf[i++], buf[i++], buf[i++]);
+              ctx.fillStyle = fill;
+              const spacing = setFont(ctx, font);
+              if (!drawTextPicture(ctx, font, text, x, y, fill, spacing)) fillSpacedText(ctx, text, x, y, spacing);
               if (box) textBox(ctx, font, text, x, y, box);
               break;
             }
@@ -713,7 +794,7 @@ enum PainterScript {
       }
       const measureCache = new Map();
       // A bundled font arrived: widths measured with its fallback face are stale.
-      function forgetMeasurements() { measureCache.clear(); slotCache.clear(); }
+      function forgetMeasurements() { measureCache.clear(); slotCache.clear(); inkCache.clear(); pictureCache.clear(); pictureSeen.clear(); picturePixels = 0; }
       function measure(ctx, font, text) {
         const k = font + ' ' + text;
         let w = measureCache.get(k);
