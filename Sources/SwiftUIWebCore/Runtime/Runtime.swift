@@ -9,6 +9,8 @@ import Foundation
 public final class Runtime {
     package let scheduler = UpdateScheduler()
     package private(set) var root: RootNode!
+    /// The scroll view `debugMainScrollOffset()` reads, kept between calls.
+    weak var debugMainScroll: ViewNode?
 
     /// Measures and breaks text. Hosts install their engine before the first layout.
     public var textEngine: any TextEngine = ZeroTextEngine() {

@@ -70,6 +70,10 @@ public protocol HostedScene: AnyObject {
     /// Every scroll view's frame in the window and content offset, [x, y, w, h, offsetX, offsetY]
     /// (debugging: a gesture's motion read frame by frame).
     var debugScrollViews: [[Double]] { get }
+    /// The vertical content offset of the window's tallest scroll view, kept from one call to the
+    /// next so that reading it every frame costs no walk of the tree (debugging: a scroll's motion
+    /// measured frame by frame in a real browser, where a walk would cost the frame time it measures).
+    func debugMainScrollOffset() -> Double?
     var lastLayoutMeasures: Int { get }
     var lastLayoutComputes: Int { get }
     /// Layout profiling (`layoutProfile()` on the debug bridge): on, the last pass's
@@ -389,6 +393,7 @@ extension HostedScene {
 extension HostedScene {
     public var lastLayoutReason: String { "" }
     public var debugScrollViews: [[Double]] { [] }
+    public func debugMainScrollOffset() -> Double? { nil }
     public var lastLayoutMeasures: Int { 0 }
     public var lastLayoutComputes: Int { 0 }
     public var profileLayout: Bool { get { false } set {} }

@@ -1413,4 +1413,17 @@ extension Runtime {
             return [f.minX, f.minY, f.width, f.height, scroll.contentOffset.x, scroll.contentOffset.y].map { Double($0) }
         }
     }
+
+    /// The window's tallest scroll view's vertical offset (`HostedScene`). The view is found once
+    /// and kept while it stays mounted, so a read every frame walks nothing.
+    public func debugMainScrollOffset() -> Double? {
+        if let node = debugMainScroll, node.isMounted, let scroll = node as? any _Scrollable {
+            return Double(scroll.contentOffset.y)
+        }
+        let candidates = root.descendants(where: { $0 is any _Scrollable }).filter { $0.isMounted }
+        guard let tallest = candidates.max(by: { $0.frameInRoot.height < $1.frameInRoot.height }),
+              let scroll = tallest as? any _Scrollable else { return nil }
+        debugMainScroll = tallest
+        return Double(scroll.contentOffset.y)
+    }
 }
