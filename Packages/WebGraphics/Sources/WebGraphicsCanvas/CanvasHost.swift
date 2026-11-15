@@ -1906,6 +1906,14 @@ public final class CanvasSceneHost {
             return .object(list)
         }
         closures.append(scrollViews)
+        // mainScrollOffset(): the tallest scroll view's vertical offset in points, cheap enough to
+        // read every frame (undefined when there is none).
+        let mainScrollOffset = JSClosure { [weak self] _ in
+            guard let self, let offset = self.scene.debugMainScrollOffset() else { return .undefined }
+            return .number(offset)
+        }
+        closures.append(mainScrollOffset)
+        debug.mainScrollOffset = .object(mainScrollOffset)
         debug.scrollViews = .object(scrollViews)
         debug.bench = .object(bench)
         debug.drag = .object(drag)
