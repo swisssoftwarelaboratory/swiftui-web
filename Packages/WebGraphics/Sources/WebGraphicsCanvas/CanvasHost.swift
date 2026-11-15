@@ -463,8 +463,11 @@ public final class CanvasSceneHost {
             self.scene.pointerModifiersChanged(self.modifiers(of: e))
             self.scene.pointerDown(at: self.point(of: e), type: self.pointerType(of: e), time: self.seconds(of: e))
             // A press on a drag source makes the canvas draggable for this press: the browser
-            // then starts a system drag when the pointer moves (sw-dragdrop-os).
-            self.canvas.draggable = .boolean(self.pointerType(of: e) == .mouse && self.scene.hasDragSource(at: self.point(of: e)))
+            // then starts a system drag when the pointer moves (sw-dragdrop-os). Not for a press
+            // that acts as a finger (an iPhone look's mouse): it scrolls and drags in the scene,
+            // as a touch does (new-website#288).
+            let type = self.pointerType(of: e)
+            self.canvas.draggable = .boolean(type == .mouse && !self.scene.pressActsAsFinger(type) && self.scene.hasDragSource(at: self.point(of: e)))
             self.scheduleFrame()
         }
         // The browser's default for a mouse-down on the canvas would move the page's focus to
