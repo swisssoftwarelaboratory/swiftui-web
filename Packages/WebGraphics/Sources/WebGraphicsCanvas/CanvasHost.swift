@@ -541,10 +541,14 @@ public final class CanvasSceneHost {
             self.scheduleFrame()
         }
         // Wheel deltas are consumed here (non-passive, so the page does not scroll too): pixel
-        // deltas map to points, lines to 16 pt, pages to the viewport. They move the content once
-        // per frame, in `tick` (new-website#279); `?wheel=events` applies each as it comes. A wheel with the control
-        // key is a trackpad pinch (Chromium and Firefox): the scale compounds by e^(-deltaY/100)
-        // and the pinch ends a fifth of a second after its last event.
+        // deltas are the page's CSS pixels, which a native page scrolls by one for one (WebKit,
+        // any device pixel ratio: new-website#277), so they map to points one for one, divided by
+        // the scale the canvas is shown at (a drawn phone shown smaller on a laptop: the content
+        // still moves as far on screen as the fingers did); lines are 16 pt, pages the viewport.
+        // They move the content once per frame, in `tick` (new-website#279); `?wheel=events`
+        // applies each as it comes. A wheel with the control key is a trackpad pinch (Chromium
+        // and Firefox): the scale compounds by e^(-deltaY/100) and the pinch ends a fifth of a
+        // second after its last event.
         let wheel = JSClosure { [weak self] args in
             MainActor.assumeIsolated {
                 guard let self, let e = args.first?.object else { return }
@@ -554,7 +558,7 @@ public final class CanvasSceneHost {
                     return
                 }
                 let mode = e.deltaMode.number ?? 0
-                let factor = mode == 1 ? 16.0 : mode == 2 ? self.height : 1.0
+                let factor = mode == 1 ? 16.0 : mode == 2 ? self.height : 1 / self.shownScale
                 let delta = CGSize(width: (e.deltaX.number ?? 0) * factor, height: (e.deltaY.number ?? 0) * factor)
                 if self.wheelPerEvent {
                     self.scene.scrollWheel(by: delta, at: self.point(of: e), time: self.seconds(of: e))
@@ -748,6 +752,14 @@ public final class CanvasSceneHost {
     }
 
     private var now: Double { (window.performance.object?.now?().number ?? 0) / 1000 }
+
+    /// How many of the page's CSS pixels one point of the canvas takes on screen: 1 unless an
+    /// ancestor scales it (a CSS transform or zoom), read each time since those change without
+    /// a resize.
+    private var shownScale: Double {
+        guard width > 0, let shown = canvas.getBoundingClientRect!().object?.width.number, shown > 0 else { return 1 }
+        return shown / width
+    }
 
     private func resize() {
         let newWidth = container.clientWidth.number ?? 0
