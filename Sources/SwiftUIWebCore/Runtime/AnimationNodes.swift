@@ -368,8 +368,13 @@ extension ViewNode {
         guard !layoutNodes.isEmpty else { child.unmount(); return }
         exitingChildren.append(child)
         var pending = layoutNodes.count
+        // The ghost is painted by the nearest layout node at or above this one (`collectExiting`).
+        var painter: ViewNode = self
+        while !painter.isLayoutNode, let up = painter.parent { painter = up }
+        let anchor = painter.placedOrigin
         for node in layoutNodes {
             node.markExiting()
+            node.exitAnchor = anchor
             node.beginTransition(insertion: false, animation: animation) { [weak self, weak child] in
                 pending -= 1
                 guard pending == 0, let self, let child, let index = self.exitingChildren.firstIndex(where: { $0 === child }) else { return }

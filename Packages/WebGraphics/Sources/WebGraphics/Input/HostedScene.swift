@@ -177,6 +177,9 @@ public protocol HostedScene: AnyObject {
     /// Whether a drag can start from a press at `point` (the browser host marks its canvas
     /// draggable for that press alone, so other gestures never become system drags).
     func hasDragSource(at point: CGPoint) -> Bool
+    /// Whether a press of this pointer acts as a finger (an iPhone look takes a mouse press as
+    /// one): such a press scrolls and drags inside the scene and never starts a system drag.
+    func pressActsAsFinger(_ type: PointerType) -> Bool
     /// The items of the drag the scene has in flight, for the host's system drag (empty: none).
     func externalDragItems() -> [ExternalDragItem]
     /// A press on a drag source: the host's system drag is starting from it, so the scene lifts
@@ -337,6 +340,7 @@ extension HostedScene {
     public func performAccessibilityAction(semanticsIdentifier: Int, name: String) {}
     public func takeAccessibilityEvents() -> [AccessibilityEvent] { [] }
     public func hasDragSource(at point: CGPoint) -> Bool { false }
+    public func pressActsAsFinger(_ type: PointerType) -> Bool { type == .touch }
     public func externalDragItems() -> [ExternalDragItem] { [] }
     public func beginExternalDrag(at point: CGPoint) -> [ExternalDragItem] { [] }
     public func externalDragUpdated(types: [String], at point: CGPoint) -> Bool { false }

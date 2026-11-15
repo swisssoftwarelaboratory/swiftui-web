@@ -18,6 +18,11 @@ open class ViewNode {
     package var hasBeenPlaced = false
     /// Set while the node lingers as a ghost through its removal transition.
     package var isExiting = false
+    /// Where the node that paints this ghost stood when the ghost was removed (`placedOrigin`).
+    /// A removed view stays where it was while its container moves: an app's own sheet host
+    /// that empties shrinks to a point at its parent's bottom edge, and the sheet sliding off
+    /// must not be dragged along to it (new-website#264).
+    package var exitAnchor: CGPoint?
 
     /// The structural parent, `nil` for the root.
     package private(set) weak var parent: ViewNode?
@@ -412,9 +417,33 @@ open class ViewNode {
 
     /// Ghosts of removed subtrees still animating out, at the frames they last had.
     package func paintExiting(into list: inout DisplayList, context: PaintContext) {
-        for ghost in collectExiting() {
-            ghost.paint(into: &list, context: context.child(at: ghost.presentedFrame))
+        let ghosts = collectExiting()
+        guard !ghosts.isEmpty else { return }
+        let here = placedOrigin
+        for ghost in ghosts {
+            var frame = ghost.presentedFrame
+            if let anchor = ghost.exitAnchor {
+                frame.origin.x += anchor.x - here.x
+                frame.origin.y += anchor.y - here.y
+            }
+            ghost.paint(into: &list, context: context.child(at: frame))
         }
+    }
+
+    /// This node's painted origin in the coordinate space of the content it scrolls with: the
+    /// presented frames of its placers, up to the nearest scroll view (scrolling still moves a
+    /// ghost) or the root.
+    package var placedOrigin: CGPoint {
+        var origin = CGPoint.zero
+        var node: ViewNode? = self
+        while let current = node, let placer = current.layoutParent, placer.parent != nil || placer.layoutParent != nil {
+            let frame = current.presentedFrame
+            origin.x += frame.minX
+            origin.y += frame.minY
+            if placer is any _Scrollable { break }
+            node = placer
+        }
+        return origin
     }
 
     /// This node's own drawing, before its children.
