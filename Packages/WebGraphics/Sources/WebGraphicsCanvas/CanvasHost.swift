@@ -36,6 +36,11 @@ public final class CanvasSceneHost {
     private var overlayState: [Int: SemanticsNode] = [:]
     private var closures: [JSClosure] = []
     private var frameClosure: JSClosure?
+    /// Wheel input waiting for its frame.
+    private var wheelInput = WheelResampler()
+    /// `?wheel=events`: every wheel event moves the content as it arrives (the way before
+    /// new-website#279, kept to compare).
+    private lazy var wheelPerEvent: Bool = (window.location.object?.search.string ?? "").contains("wheel=events")
 
     /// The platform look the page asks for (`data-platform="ios"` / `"macos"` on the container
     /// or `?platform=` in the URL, lowercased), if any.
@@ -463,8 +468,11 @@ public final class CanvasSceneHost {
             self.scene.pointerModifiersChanged(self.modifiers(of: e))
             self.scene.pointerDown(at: self.point(of: e), type: self.pointerType(of: e), time: self.seconds(of: e))
             // A press on a drag source makes the canvas draggable for this press: the browser
-            // then starts a system drag when the pointer moves (sw-dragdrop-os).
-            self.canvas.draggable = .boolean(self.pointerType(of: e) == .mouse && self.scene.hasDragSource(at: self.point(of: e)))
+            // then starts a system drag when the pointer moves (sw-dragdrop-os). Not for a press
+            // that acts as a finger (an iPhone look's mouse): it scrolls and drags in the scene,
+            // as a touch does (new-website#288).
+            let type = self.pointerType(of: e)
+            self.canvas.draggable = .boolean(type == .mouse && !self.scene.pressActsAsFinger(type) && self.scene.hasDragSource(at: self.point(of: e)))
             self.scheduleFrame()
         }
         // The browser's default for a mouse-down on the canvas would move the page's focus to
@@ -537,8 +545,10 @@ public final class CanvasSceneHost {
         // any device pixel ratio: new-website#277), so they map to points one for one, divided by
         // the scale the canvas is shown at (a drawn phone shown smaller on a laptop: the content
         // still moves as far on screen as the fingers did); lines are 16 pt, pages the viewport.
-        // A wheel with the control key is a trackpad pinch (Chromium and Firefox): the scale
-        // compounds by e^(-deltaY/100) and the pinch ends a fifth of a second after its last event.
+        // They move the content once per frame, in `tick` (new-website#279); `?wheel=events`
+        // applies each as it comes. A wheel with the control key is a trackpad pinch (Chromium
+        // and Firefox): the scale compounds by e^(-deltaY/100) and the pinch ends a fifth of a
+        // second after its last event.
         let wheel = JSClosure { [weak self] args in
             MainActor.assumeIsolated {
                 guard let self, let e = args.first?.object else { return }
@@ -550,8 +560,14 @@ public final class CanvasSceneHost {
                 let mode = e.deltaMode.number ?? 0
                 let factor = mode == 1 ? 16.0 : mode == 2 ? self.height : 1 / self.shownScale
                 let delta = CGSize(width: (e.deltaX.number ?? 0) * factor, height: (e.deltaY.number ?? 0) * factor)
-                self.scene.scrollWheel(by: delta, at: self.point(of: e), time: self.seconds(of: e))
-                if self.scene.needsFrame { self.scheduleFrame() }
+                if self.wheelPerEvent {
+                    self.scene.scrollWheel(by: delta, at: self.point(of: e), time: self.seconds(of: e))
+                    if self.scene.needsFrame { self.scheduleFrame() }
+                    return
+                }
+                // Applied at the next frame, where the input was a frame ago (`WheelResampler`).
+                self.wheelInput.add(delta, at: self.point(of: e), time: self.seconds(of: e))
+                self.scheduleFrame()
             }
             return .undefined
         }
@@ -818,8 +834,11 @@ public final class CanvasSceneHost {
         guard !frameScheduled else { return }
         frameScheduled = true
         if frameClosure == nil {
-            frameClosure = JSClosure { [weak self] _ in
-                MainActor.assumeIsolated { self?.tick() }
+            frameClosure = JSClosure { [weak self] args in
+                // An animation frame's time stamp: when the frame began, the same for every
+                // callback of the frame (a timer's first frames have none).
+                let frameTime = args.first?.number.map { $0 / 1000 }
+                MainActor.assumeIsolated { self?.tick(frameTime: frameTime) }
                 return .undefined
             }
         }
@@ -833,7 +852,7 @@ public final class CanvasSceneHost {
         }
     }
 
-    private func tick() {
+    private func tick(frameTime: Double? = nil) {
         frameScheduled = false
         let time = now
         // The gap between consecutive animation frames while frames run back to back: a gap
@@ -841,6 +860,9 @@ public final class CanvasSceneHost {
         frameGapMillis = lastFrameTime.map { (time - $0) * 1000 } ?? 0
         let elapsed = lastFrameTime.map { min(0.1, time - $0) } ?? 0
         advanceScriptedDrag(time: time)
+        // Wheel input is sampled at the frame's own time, so each frame's step follows the time
+        // between frames, not when this callback happened to run.
+        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time) }
         // Animations the last frame began start from when it was painted: the clock is about
         // to move by the whole gap, and the work before the paint is not part of the motion.
         if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }
@@ -850,7 +872,7 @@ public final class CanvasSceneHost {
         guard needsLayout || scene.needsFrame else {
             // An animation in a phase that changes nothing on screen (the indicator hold) still
             // needs the clock to advance.
-            if animating || scriptedDrag != nil { scheduleFrame() } else { lastFrameTime = nil }
+            if animating || scriptedDrag != nil || wheelInput.isPending { scheduleFrame() } else { lastFrameTime = nil }
             return
         }
         needsLayout = false
@@ -882,7 +904,7 @@ public final class CanvasSceneHost {
         }
         // A preference action, observation, scroll animation or an animation the layout just
         // started may need another frame.
-        if animating || scene.isAnimating || scene.needsFrame || scriptedDrag != nil { scheduleFrame() } else { lastFrameTime = nil }
+        if animating || scene.isAnimating || scene.needsFrame || scriptedDrag != nil || wheelInput.isPending { scheduleFrame() } else { lastFrameTime = nil }
     }
 
     /// Time of the previous frame while frames run back to back (scroll animations).

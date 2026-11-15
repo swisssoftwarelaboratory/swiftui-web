@@ -72,6 +72,18 @@ the events' own times, stops rising and falls to three quarters of its peak, and
 gesture is swallowed. `WheelGestureTests` replays a minute of real trackpad swipes and the
 simulator's drag table. Not matched yet: iOS's rubber band at a scroll view's ends.
 
+Wheel input moves the content once per frame, as UIKit delivers touches (new-website#279). Safari
+on a Mac sends a trackpad's events every 4 to 9 ms in whole points that alternate (2, 4, 2, 4), so
+a 60 Hz frame got two or three and the content's step jumped from frame to frame. `CanvasHost`
+now hands its events to a `WheelResampler`: each event's distance is spread over the time since
+the one before (at most a frame), and every frame the scene gets one wheel call with what the
+input moved, sampled a frame (16.7 ms) behind the frame and averaged over a frame. On real Safari
+trackpad sessions that halves how much a frame's step differs from its neighbours' (52 % to 24 %,
+56 % to 21 %, 42 % to 25 %) and leaves no frame standing still mid-scroll, for about 12 ms of
+delay; nothing is lost once the frames pass the last event. `?wheel=events` applies each event as
+it arrives, to compare. `WheelResamplerTests`; `WheelGestureTests` replays the recorded swipes
+through it too.
+
 A control that tracks drags declares the axes it keeps (`_Interactive.dragAxes`; a slider's
 track claims `.horizontal`). When the finger crosses the slop on such a control, the movement's
 dominant axis decides: along a claimed axis the press keeps the touch and the pan is dropped

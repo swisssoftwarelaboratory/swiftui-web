@@ -434,11 +434,16 @@ extension PlainButtonStyle: ButtonStyle {
 
 /// The plain style: the label, at 70 % while pressed and 50 % while disabled (ios/button/looks
 /// `disabledPlain` reads (127) for the black label; button/looks the same on macOS).
+/// On iOS the press shows at once and the release fades back on the default spring, along with
+/// whatever the action changed in the label (a tab bar's new highlight fades in over about half a
+/// second, measured in the simulator, new-website#264); on the Mac both are instant.
 struct _PlainButtonBody: View {
     let configuration: ButtonStyleConfiguration
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.platformProfile) private var platform
     var body: some View {
         configuration.label.opacity(configuration.isPressed ? 0.7 : (isEnabled ? 1 : PlatformMetrics.buttonPlainDisabledAlpha))
+            .animation(platform.isIOS && !configuration.isPressed ? .default : nil, value: configuration.isPressed)
     }
 }
 
