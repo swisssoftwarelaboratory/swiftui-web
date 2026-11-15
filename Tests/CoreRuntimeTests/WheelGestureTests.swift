@@ -367,5 +367,68 @@ private struct PagedCard: View {
         for _ in 0..<60 { frame(r) }
         #expect(model.index == pages, "\(Int(fraction * 361)) pt at \(Int(speed)) pt/s")
     }
+
+    /// Swipes right after one another, each starting while the last one's momentum still runs
+    /// (new-website#293): every swipe turns its page at once, as a finger flicks page after page
+    /// on an iPhone, and the tails turn none. Two of them used to be taken for the tail before:
+    /// three swipes turned two pages. Once per frame (`perFrame`) as the page applies them, and
+    /// one event at a time (`?wheel=events`).
+    @Test(arguments: [true, false])
+    func backToBackSwipesEachTurnAPage(perFrame: Bool) {
+        let r = Runtime()
+        var now = 0.0
+        r.wheelClock = { now }
+        r.textEngine = MetricsTextEngine()
+        r.mount(TenPages())
+        for _ in 0..<3 { r.layout(in: size) }
+        let point = CGPoint(x: 150, y: 140)
+        guard let pager = r.scrollableNodes(at: point).first(where: { $0.scrollAxes.contains(.horizontal) }) else {
+            Issue.record("no pager under the pointer"); return
+        }
+        var input = WheelResampler()
+        var next = 0
+        let events = recordedBackToBackSwipes
+        // The second burst begins 2.5 s after the first ends.
+        let secondBurst = events.first { $0[0] > 2 }?[0] ?? 0
+        var mostDuringFirst = 0.0
+        var restedAfterFirst: Double?
+        while now < events[events.count - 1][0] + 1.5 {
+            now += 1.0 / 60
+            _ = r.advanceScrollAnimations(elapsed: 1.0 / 60)
+            r.layout(in: size)
+            while next < events.count, events[next][0] <= now {
+                let delta = CGSize(width: events[next][1], height: events[next][2])
+                if perFrame { input.add(delta, at: point, time: events[next][0]) } else { r.scrollWheel(by: delta, at: point, time: events[next][0]) }
+                next += 1
+            }
+            if perFrame, let frameInput = input.take(at: now) { r.scrollWheel(by: frameInput.delta, at: frameInput.point, time: frameInput.time) }
+            let offset = Double(pager.contentOffset.x)
+            if now < secondBurst { mostDuringFirst = max(mostDuringFirst, offset) }
+            if restedAfterFirst == nil, now >= secondBurst - 0.1 { restedAfterFirst = offset }
+        }
+        // Three swipes, three pages, and never a fourth on the way (a settle may overshoot 4 pt).
+        #expect(restedAfterFirst == 900, "\(String(describing: restedAfterFirst))")
+        #expect(mostDuringFirst < 910, "\(mostDuringFirst)")
+        #expect(Double(pager.contentOffset.x) == 1800, "\(pager.contentOffset.x)")
+    }
+}
+
+/// Ten pages side by side, the pager alone.
+private struct TenPages: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                Color.gray.frame(height: 100)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(0..<10, id: \.self) { i in Text("page \(i)").frame(height: 80).containerRelativeFrame(.horizontal).id(i) }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                Color.gray.frame(height: 900)
+            }
+        }
+    }
 }
 #endif

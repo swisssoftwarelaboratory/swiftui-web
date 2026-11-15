@@ -957,6 +957,8 @@ package struct WheelGesture {
     package var nodes: [ViewNode & _Scrollable]
     package var lastTime: Double
     package var lastMagnitude: CGFloat
+    /// The last three events' sizes and the time before each, newest last.
+    package var recentSteps: [(magnitude: CGFloat, gap: Double)] = []
     /// Speeds along the axis (points per second) of the recent events, newest last.
     package var speeds: [CGFloat] = []
     /// The fastest slice of the gesture so far.
@@ -999,6 +1001,20 @@ package struct WheelGesture {
             // in uneven pairs, 8, 19, 12, 18 pt, so the largest of them is the measure).
             let recent = recentMagnitudes.max() ?? lastMagnitude
             if magnitude > max(4, 3 * recent) { return false }
+            // Fingers back on the trackpad: Safari cuts the tail, and the new swipe starts far
+            // slower than the tail was going before it gathers speed (15 pt every 8 ms, then a
+            // 44 ms pause and 6, 7, 11, 13, 16, 22, 40 pt; a frame at a time, 71, 44, then 3,
+            // 12, 35, 61). So this event and the one before, together, moving at under 0.3 of
+            // the two before them start a new gesture. Two events, because the tail taken a
+            // frame at a time is uneven (205, 128, 58, 180 pt): one slow frame is not a cut. A
+            // tail slows by a few percent an event, a busy page coalesces events into larger
+            // ones at the same speed, and the tail's thinning end (1 to 3 pt) is too small to
+            // count (new-website#293).
+            if recentSteps.count == 3, recentSteps[0].magnitude >= 4, recentSteps[1].magnitude >= 4 {
+                let before = (recentSteps[0].magnitude + recentSteps[1].magnitude) / CGFloat(max(recentSteps[0].gap + recentSteps[1].gap, 0.008))
+                let since = (recentSteps[2].magnitude + magnitude) / CGFloat(max(recentSteps[2].gap + gap, 0.008))
+                if since < 0.3 * before { return false }
+            }
         }
         return true
     }
@@ -1008,6 +1024,8 @@ package struct WheelGesture {
         displacement += along
         recentMagnitudes.append(magnitude)
         if recentMagnitudes.count > 3 { recentMagnitudes.removeFirst() }
+        recentSteps.append((magnitude, now - lastTime))
+        if recentSteps.count > 3 { recentSteps.removeFirst() }
         lastTime = now
         lastMagnitude = magnitude
         // Speeds are taken over 16 ms slices of the events' own time: events come in uneven
