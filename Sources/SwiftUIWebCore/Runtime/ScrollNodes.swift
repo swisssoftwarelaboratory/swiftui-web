@@ -58,6 +58,9 @@ package protocol _Scrollable: AnyObject {
     /// A new wheel gesture starts over it: a settle still running is stopped, and the gesture
     /// counts from where it was heading.
     func beginWheelGesture()
+    /// Its furthest vertical offset when a host's native scroller may drive it
+    /// (`Runtime.nativeScrollTarget`); nil when it does not scroll vertically.
+    var nativeScrollMaximum: CGFloat? { get }
 }
 
 extension Axis.Set {
@@ -90,6 +93,7 @@ extension _Scrollable {
     package var settlesOnRelease: Bool { false }
     package var scrollAxes: Axis.Set { [.horizontal, .vertical] }
     package func beginWheelGesture() {}
+    package var nativeScrollMaximum: CGFloat? { nil }
 }
 
 package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, _ScrollTarget, _Scrollable, _RelativeFrameContainer, _SegmentRecording {
@@ -204,6 +208,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
     package var axes: Axis.Set { view.axes }
     package var scrollAxes: Axis.Set { axes }
     package var settlesOnRelease: Bool { environment._scrollTargetBehavior != nil }
+    package var nativeScrollMaximum: CGFloat? { axes.contains(.vertical) && isScrollEnabled ? maximumOffset.y : nil }
 
     /// Where the next wheel sequence counts from, when a settle it interrupted was heading there.
     private var pendingWheelStart: CGPoint?
@@ -1410,6 +1415,61 @@ extension Runtime {
 }
 
 extension Runtime {
+    /// The vertical scroll view a host's native scroller drives (`HostedScene`, new-website#404):
+    /// the innermost one on the hit path under `point` (a hidden tab's is not on it; a sheet's
+    /// is, over its panel) that can scroll vertically, the first that can still move along
+    /// `direction` when one can, so a scroll that starts at an inner view's end moves the view
+    /// around it (scroll chaining, per gesture as on iOS). A paging view, and a hosted UIKit
+    /// tree under the pointer, stay with `scrollWheel`.
+    public func nativeScrollTarget(at point: CGPoint, direction: CGFloat) -> NativeScrollState? {
+        nativeScrollNode = nil
+        if hostsPlatformView(at: point) { return nil }
+        let candidates = scrollableNodes(at: point).filter { ($0.nativeScrollMaximum ?? 0) > 0 }
+        let movable = candidates.first { node in
+            let offset = node.contentOffset.y, maximum = node.nativeScrollMaximum ?? 0
+            return direction > 0 ? offset < maximum - 0.5 : direction < 0 ? offset > 0.5 : true
+        }
+        guard let node = movable ?? candidates.first, !node.settlesOnRelease else { return nil }
+        nativeScrollNode = node
+        return nativeScrollState
+    }
+
+    /// Whether a hosted UIKit tree is under `point` in the window. Only looks: the host calls
+    /// `nativeScrollTarget` on quiet frames, and `interactiveNode(at:)` would close a menu or
+    /// popover the point is outside of, as a press there does.
+    private func hostsPlatformView(at point: CGPoint) -> Bool {
+        if let top = presentations.last, top.panel.contains(point) || top.isModal { return false }
+        for node in root.layoutChildren.reversed() {
+            let shift = node.hitTestOffset
+            let local = CGPoint(x: point.x - node.frame.minX - shift.x, y: point.y - node.frame.minY - shift.y)
+            if node.clipsHitTesting, !node.contains(local) { continue }
+            if node.hitTest(local, where: { $0 is any _PlatformViewHosting }) != nil { return true }
+        }
+        return false
+    }
+
+    /// The kept target's offset and furthest offset (`HostedScene`); reads two stored values.
+    public var nativeScrollState: NativeScrollState? {
+        guard let node = nativeScrollNode, node.isMounted, let scroll = node as? any _Scrollable,
+              let maximum = scroll.nativeScrollMaximum else { return nil }
+        return NativeScrollState(offset: scroll.contentOffset.y, maximum: maximum)
+    }
+
+    /// Moves the kept target to `offset` (`HostedScene`): a wheel's move of that one view, with
+    /// its indicator and scroll phase, and no chaining (the host picks the view per gesture).
+    /// Momentum a finger left on it stops: the native scroller has the content now.
+    public func setNativeScrollOffset(_ offset: CGFloat) {
+        guard let node = nativeScrollNode, node.isMounted, let scroll = node as? (ViewNode & _Scrollable) else { return }
+        let delta = offset - scroll.contentOffset.y
+        guard delta != 0 else { return }
+        if scroll.isDecelerating { scroll.stopMomentum() }
+        // The next wheel event through `scrollWheel` starts a gesture of its own.
+        wheelGesture = nil
+        let before = scroll.contentOffset
+        _ = scroll.scroll(by: CGSize(width: 0, height: delta))
+        if scroll.contentOffset != before { scroll.showIndicators() }
+    }
+
     /// Every scroll view's frame in the window and its content offset (`HostedScene`), the
     /// presentations' last.
     public var debugScrollViews: [[Double]] {
