@@ -394,6 +394,17 @@ private struct PagedCard: View {
         #expect(run.final == 600, "\(run.final)")
     }
 
+    /// One swipe turns one page when the page gets part of it late, as one larger event at the
+    /// same speed (new-website#293): that read as a new swipe, raw or as a frame with nothing
+    /// before it, and one swipe turned three pages. Once per frame and one event at a time.
+    @Test(arguments: [true, false])
+    func aSwipeThePageGetsLateTurnsOnePage(perFrame: Bool) {
+        guard let run = replayOverTenPages(recordedLateSwipes, perFrame: perFrame) else { return }
+        #expect(run.restedAfterFirst == 300, "\(run.restedAfterFirst)")
+        #expect(run.mostDuringFirst < 310, "\(run.mostDuringFirst)")
+        #expect(run.final == 600, "\(run.final)")
+    }
+
     /// Replays two bursts of recorded wheel events (the second starting more than 2 s in) over
     /// `TenPages`, from page 0: where the pager rested before the second burst, how far it went
     /// in each, and where it ends.

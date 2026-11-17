@@ -499,6 +499,8 @@ public final class Runtime {
     package var wheelEventTime: Double?
     /// Set while a frame's wheel input that follows a pause in fast motion is applied.
     package var wheelAfterPause = false
+    /// Set while a frame's wheel input (`WheelResampler`), not a single event, is applied.
+    package var wheelPerFrame = false
     /// Seconds on a steady clock, for wheel gestures; tests set their own.
     package var wheelClock: () -> Double = {
         let elapsed = ContinuousClock.now - _wheelClockOrigin
@@ -989,7 +991,7 @@ package struct WheelGesture {
     /// Whether an event of `delta` at `now` still belongs to this gesture. Read from a real
     /// trackpad's events in Safari (new-website#216): a tail never turns back, and a new swipe
     /// often starts within a tenth of a second of the last one, or the other way.
-    package func continues(with delta: CGSize, magnitude: CGFloat, at now: Double, afterPause: Bool = false) -> Bool {
+    package func continues(with delta: CGSize, magnitude: CGFloat, at now: Double, afterPause: Bool = false, perFrame: Bool = false) -> Bool {
         let gap = now - lastTime
         // A tail's events come 8 to 17 ms apart and only thin out to 33, 66 and 100 ms at its
         // very end, 1 pt each; a new swipe often starts about 100 ms after that. A pause of
@@ -1011,12 +1013,19 @@ package struct WheelGesture {
         // an uneven tail (a frame at a time 52, 119, 83 pt) can keep the speed from falling
         // steadily, and the next swipe was then held to the first one's single page.
         if afterPause { return false }
-        if let last = recentSteps.last, WheelPause.isPause(lastMagnitude: lastMagnitude, lastGap: last.gap, magnitude: magnitude, gap: gap) { return false }
+        // Only on single events: a frame's input has holes of its own (a frame with nothing
+        // when Safari hands the page 42 ms of a swipe at once), which read as a pause started
+        // new gestures mid-swipe, and one swipe turned three pages.
+        if !perFrame, let last = recentSteps.last, WheelPause.isPause(lastMagnitude: lastMagnitude, lastGap: last.gap, magnitude: magnitude, gap: gap) { return false }
         if inMomentum || settled {
             // A clear new push: larger than three times the last few events (the tail comes
             // in uneven pairs, 8, 19, 12, 18 pt, so the largest of them is the measure).
+            // Taken as speeds, each over 8 ms at least: what a busy page gets late comes as one
+            // larger event at the same speed (32 pt every 8 ms, then 142 pt after 42 ms), and as
+            // sizes that read as a new push, which turned a second page mid-swipe.
             let recent = recentMagnitudes.max() ?? lastMagnitude
-            if magnitude > max(4, 3 * recent) { return false }
+            let recentSpeed = recentSteps.map { $0.magnitude / CGFloat(max($0.gap, 0.008)) }.max() ?? recent / 0.008
+            if magnitude > max(4, 3 * recent), magnitude / CGFloat(max(gap, 0.008)) > 3 * recentSpeed { return false }
             // Fingers back on the trackpad: Safari cuts the tail, and the new swipe starts far
             // slower than the tail was going before it gathers speed (15 pt every 8 ms, then a
             // 44 ms pause and 6, 7, 11, 13, 16, 22, 40 pt; a frame at a time, 71, 44, then 3,
