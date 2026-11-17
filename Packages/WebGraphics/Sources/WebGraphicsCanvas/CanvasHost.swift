@@ -862,7 +862,7 @@ public final class CanvasSceneHost {
         advanceScriptedDrag(time: time)
         // Wheel input is sampled at the frame's own time, so each frame's step follows the time
         // between frames, not when this callback happened to run.
-        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time) }
+        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time, afterPause: input.afterPause) }
         // Animations the last frame began start from when it was painted: the clock is about
         // to move by the whole gap, and the work before the paint is not part of the motion.
         if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }

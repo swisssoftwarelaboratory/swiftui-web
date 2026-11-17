@@ -327,7 +327,7 @@ private struct PagedCard: View {
             }
             guard let frameInput = input.take(at: Self.clock.now) else { continue }
             let previous = r.wheelGesture
-            r.scrollWheel(by: frameInput.delta, at: frameInput.point, time: frameInput.time)
+            r.scrollWheel(by: frameInput.delta, at: frameInput.point, time: frameInput.time, afterPause: frameInput.afterPause)
             if let g = r.wheelGesture, previous == nil || g.lastTime != previous!.lastTime, g.recentMagnitudes.isEmpty {
                 if gestureCount > 0 { turns.append(model.index - startIndex) }
                 startIndex = model.index
@@ -375,6 +375,30 @@ private struct PagedCard: View {
     /// one event at a time (`?wheel=events`).
     @Test(arguments: [true, false])
     func backToBackSwipesEachTurnAPage(perFrame: Bool) {
+        guard let run = replayOverTenPages(recordedBackToBackSwipes, perFrame: perFrame) else { return }
+        // Three swipes, three pages, and never a fourth on the way (a settle may overshoot 4 pt).
+        #expect(run.restedAfterFirst == 900, "\(run.restedAfterFirst)")
+        #expect(run.mostDuringFirst < 910, "\(run.mostDuringFirst)")
+        #expect(run.final == 1800, "\(run.final)")
+    }
+
+    /// Fast swipes (new-website#293, Tim's "after a certain speed it blocks me"): a swipe that
+    /// starts after a short pause in the last one's fast tail turns its page even when that
+    /// uneven tail was never recognised as the tail (it was held to the first swipe's page), and
+    /// a tail a busy page gets 74 ms late turns no second page. Once per frame, as the page does.
+    @Test func fastSwipesEachTurnAPage() {
+        guard let run = replayOverTenPages(recordedFastSwipes, perFrame: true) else { return }
+        #expect(run.restedAfterFirst == 900, "\(run.restedAfterFirst)")
+        #expect(run.mostDuringFirst < 910, "\(run.mostDuringFirst)")
+        #expect(run.leastDuringSecond > 590, "\(run.leastDuringSecond)")
+        #expect(run.final == 600, "\(run.final)")
+    }
+
+    /// Replays two bursts of recorded wheel events (the second starting more than 2 s in) over
+    /// `TenPages`, from page 0: where the pager rested before the second burst, how far it went
+    /// in each, and where it ends.
+    private func replayOverTenPages(_ events: [[Double]], perFrame: Bool)
+        -> (restedAfterFirst: Double, mostDuringFirst: Double, leastDuringSecond: Double, final: Double)? {
         let r = Runtime()
         var now = 0.0
         r.wheelClock = { now }
@@ -383,15 +407,13 @@ private struct PagedCard: View {
         for _ in 0..<3 { r.layout(in: size) }
         let point = CGPoint(x: 150, y: 140)
         guard let pager = r.scrollableNodes(at: point).first(where: { $0.scrollAxes.contains(.horizontal) }) else {
-            Issue.record("no pager under the pointer"); return
+            Issue.record("no pager under the pointer"); return nil
         }
         var input = WheelResampler()
         var next = 0
-        let events = recordedBackToBackSwipes
-        // The second burst begins 2.5 s after the first ends.
         let secondBurst = events.first { $0[0] > 2 }?[0] ?? 0
-        var mostDuringFirst = 0.0
-        var restedAfterFirst: Double?
+        var mostDuringFirst = 0.0, leastDuringSecond = Double.infinity
+        var restedAfterFirst = -1.0
         while now < events[events.count - 1][0] + 1.5 {
             now += 1.0 / 60
             _ = r.advanceScrollAnimations(elapsed: 1.0 / 60)
@@ -401,15 +423,12 @@ private struct PagedCard: View {
                 if perFrame { input.add(delta, at: point, time: events[next][0]) } else { r.scrollWheel(by: delta, at: point, time: events[next][0]) }
                 next += 1
             }
-            if perFrame, let frameInput = input.take(at: now) { r.scrollWheel(by: frameInput.delta, at: frameInput.point, time: frameInput.time) }
+            if perFrame, let frameInput = input.take(at: now) { r.scrollWheel(by: frameInput.delta, at: frameInput.point, time: frameInput.time, afterPause: frameInput.afterPause) }
             let offset = Double(pager.contentOffset.x)
-            if now < secondBurst { mostDuringFirst = max(mostDuringFirst, offset) }
-            if restedAfterFirst == nil, now >= secondBurst - 0.1 { restedAfterFirst = offset }
+            if now < secondBurst { mostDuringFirst = max(mostDuringFirst, offset) } else { leastDuringSecond = min(leastDuringSecond, offset) }
+            if restedAfterFirst < 0, now >= secondBurst - 0.1 { restedAfterFirst = offset }
         }
-        // Three swipes, three pages, and never a fourth on the way (a settle may overshoot 4 pt).
-        #expect(restedAfterFirst == 900, "\(String(describing: restedAfterFirst))")
-        #expect(mostDuringFirst < 910, "\(mostDuringFirst)")
-        #expect(Double(pager.contentOffset.x) == 1800, "\(pager.contentOffset.x)")
+        return (restedAfterFirst, mostDuringFirst, leastDuringSecond, Double(pager.contentOffset.x))
     }
 }
 

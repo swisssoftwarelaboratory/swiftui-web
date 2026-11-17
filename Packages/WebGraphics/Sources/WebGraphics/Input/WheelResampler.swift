@@ -39,6 +39,12 @@ public struct WheelResampler {
     /// What the events in `events` have already been handed out of.
     private var handedOut = CGSize.zero
     private var lastTime: Double?
+    /// The last event's size along its larger axis, and the time before it.
+    private var lastMagnitude: CGFloat = 0
+    private var lastGap: Double?
+    /// An event that came after a pause in fast motion (`WheelPause`), until a frame hands it
+    /// out: its time and spread.
+    private var pause: (time: Double, spread: Double)?
     /// Where the last event was (the scroll views under it take the movement).
     public private(set) var point = CGPoint.zero
 
@@ -57,13 +63,21 @@ public struct WheelResampler {
         // Out-of-order stamps count as simultaneous with the last event.
         let time = max(time, lastTime ?? time)
         let spread = lastTime.map { min(maxSpread, time - $0) } ?? maxSpread
+        let magnitude = max(abs(delta.width), abs(delta.height))
+        if let lastTime, let lastGap, WheelPause.isPause(lastMagnitude: lastMagnitude, lastGap: lastGap, magnitude: magnitude, gap: time - lastTime) {
+            pause = (time, spread)
+        }
+        lastGap = lastTime.map { time - $0 }
+        lastMagnitude = magnitude
         lastTime = time
         events.append(Event(time: time, spread: spread, delta: delta))
     }
 
     /// The movement for the frame at `now`: what the sampled input moved since the last frame,
-    /// with the input time it stands for. Nil when nothing moves this frame.
-    public mutating func take(at now: Double) -> (delta: CGSize, point: CGPoint, time: Double)? {
+    /// with the input time it stands for, and whether it begins after a pause in fast motion
+    /// (`WheelPause`: the once-per-frame steps smooth the pause itself away). Nil when nothing
+    /// moves this frame.
+    public mutating func take(at now: Double) -> (delta: CGSize, point: CGPoint, time: Double, afterPause: Bool)? {
         guard !events.isEmpty else { return nil }
         let sampleTime = now - delay
         let samples = 5
@@ -89,7 +103,12 @@ public struct WheelResampler {
         }
         if events.isEmpty { handedOut = .zero }
         guard delta.width != 0 || delta.height != 0 else { return nil }
-        return (delta, point, sampleTime)
+        var afterPause = false
+        if let p = pause, windowEnd > p.time - p.spread {
+            afterPause = true
+            pause = nil
+        }
+        return (delta, point, sampleTime, afterPause)
     }
 
     private var total: CGSize {
@@ -107,5 +126,22 @@ public struct WheelResampler {
             y += e.delta.height * CGFloat(f)
         }
         return CGSize(width: x, height: y)
+    }
+}
+
+/// A pause in fast wheel motion: fingers touching the trackpad again. Safari cuts the OS's
+/// momentum tail when they do, and the tail's events, steady 4 to 9 ms apart, stop for 30 to
+/// 60 ms; the new swipe then starts slower than the tail was going (31 pt every 8 ms, a 32 ms
+/// pause, then 20, 18, 26, 38 pt). A tail never pauses while it is still fast; a busy page only
+/// gets its events late, coalesced into larger ones at the same speed; and the tail's thinning
+/// end (1 to 3 pt, 33 to 100 ms apart) is too small to count (new-website#293).
+public enum WheelPause {
+    /// Whether an event of `magnitude` points, `gap` seconds after one of `lastMagnitude` that
+    /// came `lastGap` after its own predecessor, follows a pause in fast motion.
+    public static func isPause(lastMagnitude: CGFloat, lastGap: Double, magnitude: CGFloat, gap: Double) -> Bool {
+        guard gap >= 0.025, lastMagnitude >= 4 else { return false }
+        // Events in uneven pairs come 2 ms apart as well as 9: a speed is taken over 8 ms at least.
+        let before = lastMagnitude / CGFloat(max(lastGap, 0.008))
+        return magnitude / CGFloat(gap) < 0.5 * before
     }
 }

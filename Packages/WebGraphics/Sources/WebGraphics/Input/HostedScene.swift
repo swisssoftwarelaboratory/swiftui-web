@@ -118,6 +118,9 @@ public protocol HostedScene: AnyObject {
     /// The same, with the event's time in seconds (the host's clock): a scene that reads a
     /// trackpad gesture out of its wheel events measures their gaps with it.
     func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double)
+    /// The same, applied once per frame (`WheelResampler`): `afterPause` when this frame's input
+    /// begins after a pause in fast motion (`WheelPause`), which the frame's step hides.
+    func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool)
     /// A pinch from a trackpad or two touches: `scale` and `rotation` (radians, clockwise) are
     /// cumulative since `began`; `point` is the pinch's centre.
     func pinch(_ phase: ContinuousGesturePhase, scale: CGFloat, rotation: Double, at point: CGPoint, time: Double)
@@ -330,6 +333,7 @@ extension HostedScene {
 extension HostedScene {
     public func commitAnimations(lateness: Double) {}
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double) { scrollWheel(by: delta, at: point) }
+    public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) { scrollWheel(by: delta, at: point, time: time) }
     public func hostElements() -> [HostElement] { [] }
     public func colorPanel(_ identifier: Int, didPick color: RGBA) {}
     public func colorPanelDidClose(_ identifier: Int) {}
