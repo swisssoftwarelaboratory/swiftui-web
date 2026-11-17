@@ -1208,7 +1208,7 @@ extension Runtime {
         let now = wheelEventTime ?? wheelClock()
         let magnitude = max(abs(delta.width), abs(delta.height))
         var gesture: WheelGesture
-        if var current = wheelGesture, current.nodes.allSatisfy(\.isMounted), current.continues(with: delta, magnitude: magnitude, at: now, afterPause: wheelAfterPause) {
+        if var current = wheelGesture, current.nodes.allSatisfy(\.isMounted), current.continues(with: delta, magnitude: magnitude, at: now, afterPause: wheelAfterPause, perFrame: wheelPerFrame) {
             current.record(delta, magnitude: magnitude, at: now)
             gesture = current
         } else {
@@ -1257,7 +1257,8 @@ extension Runtime {
     /// fast motion: a new swipe, even where its speed alone looks like more of the tail.
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) {
         wheelAfterPause = afterPause
-        defer { wheelAfterPause = false }
+        wheelPerFrame = true
+        defer { wheelAfterPause = false; wheelPerFrame = false }
         scrollWheel(by: delta, at: point, time: time)
     }
 
