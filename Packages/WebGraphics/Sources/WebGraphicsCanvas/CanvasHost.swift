@@ -83,8 +83,6 @@ public final class CanvasSceneHost {
                 })
         }
         scene.hostDisplayScale = JSObject.global.devicePixelRatio.number.map { CGFloat($0) } ?? 1
-        // `?wheel=iphone`: a trackpad scroll coasts and bounces the iPhone's way (new-website#278).
-        if (window.location.object?.search.string ?? "").contains("wheel=iphone") { scene.wheelCoastsLikeIPhone = true }
         document = window.document.object!
         if window.__swiftuiweb.isUndefined {
             let script = document.createElement!("script").object!
@@ -145,6 +143,12 @@ public final class CanvasSceneHost {
         _ = container.appendChild!(announcer)
 
         requestedPlatform = Self.requestedPlatform(window: window, container: container)
+        // On the iPhone look, a trackpad scroll coasts and bounces the iPhone's way instead of
+        // riding Safari's momentum tail (new-website#278); `?wheel=iphone` asks for it anywhere,
+        // `?wheel=safari` or `?wheel=events` keeps Safari's tail.
+        let search = window.location.object?.search.string ?? ""
+        scene.wheelCoastsLikeIPhone = search.contains("wheel=iphone")
+            || (requestedPlatform == "ios" && !search.contains("wheel=safari") && !search.contains("wheel=events"))
         hasCoarsePointer = window.matchMedia?("(pointer: coarse)").object?.matches.boolean ?? false
         scene.textEngine = Canvas2DTextEngine(context: context, bridge: bridge)
         scene.assetCatalog = Self.assetCatalog(from: window.__swiftuiwebAssets)
@@ -864,7 +868,7 @@ public final class CanvasSceneHost {
         advanceScriptedDrag(time: time)
         // Wheel input is sampled at the frame's own time, so each frame's step follows the time
         // between frames, not when this callback happened to run.
-        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time) }
+        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time, afterPause: input.afterPause) }
         // Animations the last frame began start from when it was painted: the clock is about
         // to move by the whole gap, and the work before the paint is not part of the motion.
         if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }

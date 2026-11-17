@@ -63,7 +63,7 @@ private struct Rows: View {
                 input.add(CGSize(width: 0, height: events[next][1]), at: point, time: base + events[next][0])
                 next += 1
             }
-            if let frame = input.take(at: now) { r.scrollWheel(by: frame.delta, at: frame.point, time: frame.time) }
+            if let frame = input.take(at: now) { r.scrollWheel(by: frame.delta, at: frame.point, time: frame.time, afterPause: frame.afterPause) }
             r.layout(in: size)
             offsets.append(node.contentOffset.y)
         }

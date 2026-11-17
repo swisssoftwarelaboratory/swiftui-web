@@ -499,6 +499,8 @@ public final class Runtime {
     public var wheelCoastsLikeIPhone = false
     /// The time of the wheel event being handled, when the host gave one.
     package var wheelEventTime: Double?
+    /// Set while a frame's wheel input that follows a pause in fast motion is applied.
+    package var wheelAfterPause = false
     /// Seconds on a steady clock, for wheel gestures; tests set their own.
     package var wheelClock: () -> Double = {
         let elapsed = ContinuousClock.now - _wheelClockOrigin
@@ -995,17 +997,29 @@ package struct WheelGesture {
     /// Whether an event of `delta` at `now` still belongs to this gesture. Read from a real
     /// trackpad's events in Safari (new-website#216): a tail never turns back, and a new swipe
     /// often starts within a tenth of a second of the last one, or the other way.
-    package func continues(with delta: CGSize, magnitude: CGFloat, at now: Double) -> Bool {
+    package func continues(with delta: CGSize, magnitude: CGFloat, at now: Double, afterPause: Bool = false) -> Bool {
         let gap = now - lastTime
         // A tail's events come 8 to 17 ms apart and only thin out to 33, 66 and 100 ms at its
         // very end, 1 pt each; a new swipe often starts about 100 ms after that. A pause of
         // 60 ms starts a gesture: a straggler at a tail's end becomes a 1 pt gesture that
         // settles back on its page.
-        if gap >= 0.06 { return false }
+        // Not when the motion arrives late at its own speed: a page busy for 74 ms gets the tail
+        // it missed as one event (260 pt every 8 ms, then 1720 pt), which turned a second page.
+        if gap >= 0.06 {
+            let before = lastMagnitude / CGFloat(max(recentSteps.last?.gap ?? 0.008, 0.008))
+            let caughtUp = lastMagnitude >= 4 && magnitude / CGFloat(gap) >= 0.5 * before
+            if !caughtUp { return false }
+        }
         let along = axis == .horizontal ? delta.width : delta.height
         // A gesture never turns back along its axis, nor turns a right angle.
         if along != 0, displacement != 0, (along > 0) != (displacement > 0) { return false }
         if along == 0, (axis == .horizontal ? delta.height : delta.width) != 0 { return false }
+        // Fingers back on the trackpad after a pause in fast motion (`WheelPause`): seen here on
+        // single events, or marked by the frame's input. Even before the tail was recognised:
+        // an uneven tail (a frame at a time 52, 119, 83 pt) can keep the speed from falling
+        // steadily, and the next swipe was then held to the first one's single page.
+        if afterPause { return false }
+        if let last = recentSteps.last, WheelPause.isPause(lastMagnitude: lastMagnitude, lastGap: last.gap, magnitude: magnitude, gap: gap) { return false }
         if inMomentum || settled {
             // A clear new push: larger than three times the last few events (the tail comes
             // in uneven pairs, 8, 19, 12, 18 pt, so the largest of them is the measure).

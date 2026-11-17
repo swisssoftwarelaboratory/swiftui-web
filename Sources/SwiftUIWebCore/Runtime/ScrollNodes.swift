@@ -1378,7 +1378,7 @@ extension Runtime {
         let now = wheelEventTime ?? wheelClock()
         let magnitude = max(abs(delta.width), abs(delta.height))
         var gesture: WheelGesture
-        if var current = wheelGesture, current.nodes.allSatisfy(\.isMounted), current.continues(with: delta, magnitude: magnitude, at: now) {
+        if var current = wheelGesture, current.nodes.allSatisfy(\.isMounted), current.continues(with: delta, magnitude: magnitude, at: now, afterPause: wheelAfterPause) {
             current.record(delta, magnitude: magnitude, at: now)
             gesture = current
         } else {
@@ -1438,9 +1438,16 @@ extension Runtime {
         guard gesture.inMomentum else { return }
         gesture.settled = true
         // The finger's speed when the tail began, slowed by iOS's friction for the time the
-        // tail took to recognise: the coast is where an iPhone's would be by now.
-        let since = max(0, now - (gesture.liftTime ?? now))
-        let speed = Double(gesture.liftSpeed) * _pow(PlatformMetrics.scrollDecelerationRate, since * 1000)
+        // tail took to recognise: the coast is where an iPhone's would be by now. A gesture that
+        // never sped up is a piece of tail split off by a pause (a busy page's late events): the
+        // motion goes on at the speed it has now, where paging takes it as no flick at all.
+        let speed: Double
+        if gesture.speededUp {
+            let since = max(0, now - (gesture.liftTime ?? now))
+            speed = Double(gesture.liftSpeed) * _pow(PlatformMetrics.scrollDecelerationRate, since * 1000)
+        } else {
+            speed = Double(gesture.speeds.last ?? 0)
+        }
         coaster.iPhoneWheelLift(velocity: CGFloat(gesture.displacement < 0 ? -speed : speed))
         requestScrollFrame()
     }
@@ -1451,6 +1458,14 @@ extension Runtime {
         wheelEventTime = time
         defer { wheelEventTime = nil }
         scrollWheel(by: delta, at: point)
+    }
+
+    /// A frame's wheel input (`WheelResampler`), `afterPause` when it begins after a pause in
+    /// fast motion: a new swipe, even where its speed alone looks like more of the tail.
+    public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) {
+        wheelAfterPause = afterPause
+        defer { wheelAfterPause = false }
+        scrollWheel(by: delta, at: point, time: time)
     }
 
     /// The deepest list under `point` that takes sideways scrolls as swipes.

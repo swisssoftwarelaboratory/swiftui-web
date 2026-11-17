@@ -121,6 +121,9 @@ public protocol HostedScene: AnyObject {
     /// Whether a trackpad scroll coasts and bounces the iPhone's way instead of riding the OS's
     /// momentum tail (a scene that has no such way ignores it).
     var wheelCoastsLikeIPhone: Bool { get set }
+    /// The same, applied once per frame (`WheelResampler`): `afterPause` when this frame's input
+    /// begins after a pause in fast motion (`WheelPause`), which the frame's step hides.
+    func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool)
     /// A pinch from a trackpad or two touches: `scale` and `rotation` (radians, clockwise) are
     /// cumulative since `began`; `point` is the pinch's centre.
     func pinch(_ phase: ContinuousGesturePhase, scale: CGFloat, rotation: Double, at point: CGPoint, time: Double)
@@ -337,6 +340,7 @@ extension HostedScene {
         get { false }
         set {}
     }
+    public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) { scrollWheel(by: delta, at: point, time: time) }
     public func hostElements() -> [HostElement] { [] }
     public func colorPanel(_ identifier: Int, didPick color: RGBA) {}
     public func colorPanelDidClose(_ identifier: Int) {}
