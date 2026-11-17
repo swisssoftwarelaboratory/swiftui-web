@@ -213,5 +213,24 @@ import SwiftUIWebHeadless
         }
         #expect((seen[5].red?.y ?? 0) > (start.red?.y ?? .infinity), "\(seen)")
     }
+
+    @Test func aSheetEnteringAnEmptyHostFadesItsDimInPlace() {
+        let model = Model()
+        var environment = EnvironmentValues()
+        environment.platformProfile = .iOS
+        let r = Runtime(environment: environment)
+        r.mount(ShellHost(model: model))
+        r.layout(in: size)
+        withAnimation(.smooth(duration: 0.3)) { model.sheet = 1 }
+        r.layout(in: size)
+        var seen: [(red: CGPoint?, dim: CGPoint?)] = []
+        for _ in 0..<12 { r.advanceAnimations(elapsed: 1.0 / 60); r.layout(in: size); seen.append(origins(r)) }
+        // The dim fades in where it stands; the sheet rises straight up from below.
+        #expect(seen.contains { $0.dim != nil }, "\(seen)")
+        for frame in seen {
+            if let dim = frame.dim { #expect(abs(dim.x) < 0.01 && abs(dim.y) < 0.01, "\(seen)") }
+            if let red = frame.red { #expect(abs(red.x) < 0.01, "\(seen)") }
+        }
+    }
 }
 #endif

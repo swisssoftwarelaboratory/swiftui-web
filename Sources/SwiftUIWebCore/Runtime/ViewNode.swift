@@ -290,7 +290,11 @@ open class ViewNode {
         // come out mirrored, and a left-to-right island inside stays as written.
         if placer.mirrorsPlacements { origin.x = placer.frame.width - origin.x - size.width }
         frame = CGRect(origin: origin, size: size)
-        if let previous, frame != oldTarget {
+        // A node that was empty (nothing inside it had a place yet) doesn't tween from there:
+        // SwiftUI moves each view from where it was, and a view just inserted had no place, so it
+        // appears where it lands under its own transition. An app's own sheet host growing from a
+        // point would otherwise drag its dim and sheet in from that point (new-website#264).
+        if let previous, frame != oldTarget, previous.width > 0 || previous.height > 0 {
             if let animation = runtime.effectiveLayoutAnimation(for: self) {
                 beginFrameTween(from: previous, animation: animation)
             } else {
