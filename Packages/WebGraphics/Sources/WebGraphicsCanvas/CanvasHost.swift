@@ -83,6 +83,8 @@ public final class CanvasSceneHost {
                 })
         }
         scene.hostDisplayScale = JSObject.global.devicePixelRatio.number.map { CGFloat($0) } ?? 1
+        // `?wheel=iphone`: a trackpad scroll coasts and bounces the iPhone's way (new-website#278).
+        if (window.location.object?.search.string ?? "").contains("wheel=iphone") { scene.wheelCoastsLikeIPhone = true }
         document = window.document.object!
         if window.__swiftuiweb.isUndefined {
             let script = document.createElement!("script").object!
