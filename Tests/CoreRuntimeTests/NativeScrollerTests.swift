@@ -162,6 +162,24 @@ import WebGraphics
         #expect(r.nativeScrollState == nil)
     }
 
+    /// The host picks a view on every quiet frame: that never closes an open menu or popover,
+    /// as a press outside it would.
+    @Test func pickingLeavesAnOpenPopoverOpen() {
+        let model = Model()
+        let r = Runtime()
+        r.mount(VStack {
+            Text("Anchor").popover(isPresented: Binding(get: { model.sheet }, set: { model.sheet = $0 })) { Text("Inside").frame(width: 120, height: 80) }
+            rows(20, probe: "list")
+        })
+        r.layout(in: size)
+        model.sheet = true
+        r.layout(in: size)
+        #expect(r.presentations.count == 1)
+        _ = r.nativeScrollTarget(at: CGPoint(x: 196, y: 800), direction: 0)
+        r.layout(in: size)
+        #expect(r.presentations.count == 1 && model.sheet)
+    }
+
     // MARK: The host's gesture sorting
 
     @Test func aGestureKeepsItsAxis() {

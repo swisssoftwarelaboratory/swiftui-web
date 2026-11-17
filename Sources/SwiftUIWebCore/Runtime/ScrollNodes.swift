@@ -1423,7 +1423,7 @@ extension Runtime {
     /// tree under the pointer, stay with `scrollWheel`.
     public func nativeScrollTarget(at point: CGPoint, direction: CGFloat) -> NativeScrollState? {
         nativeScrollNode = nil
-        if let hit = interactiveNode(at: point), hit is any _PlatformViewHosting { return nil }
+        if hostsPlatformView(at: point) { return nil }
         let candidates = scrollableNodes(at: point).filter { ($0.nativeScrollMaximum ?? 0) > 0 }
         let movable = candidates.first { node in
             let offset = node.contentOffset.y, maximum = node.nativeScrollMaximum ?? 0
@@ -1432,6 +1432,20 @@ extension Runtime {
         guard let node = movable ?? candidates.first, !node.settlesOnRelease else { return nil }
         nativeScrollNode = node
         return nativeScrollState
+    }
+
+    /// Whether a hosted UIKit tree is under `point` in the window. Only looks: the host calls
+    /// `nativeScrollTarget` on quiet frames, and `interactiveNode(at:)` would close a menu or
+    /// popover the point is outside of, as a press there does.
+    private func hostsPlatformView(at point: CGPoint) -> Bool {
+        if let top = presentations.last, top.panel.contains(point) || top.isModal { return false }
+        for node in root.layoutChildren.reversed() {
+            let shift = node.hitTestOffset
+            let local = CGPoint(x: point.x - node.frame.minX - shift.x, y: point.y - node.frame.minY - shift.y)
+            if node.clipsHitTesting, !node.contains(local) { continue }
+            if node.hitTest(local, where: { $0 is any _PlatformViewHosting }) != nil { return true }
+        }
+        return false
     }
 
     /// The kept target's offset and furthest offset (`HostedScene`); reads two stored values.
