@@ -124,6 +124,18 @@ public protocol HostedScene: AnyObject {
     /// The same, applied once per frame (`WheelResampler`): `afterPause` when this frame's input
     /// begins after a pause in fast motion (`WheelPause`), which the frame's step hides.
     func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool)
+    /// The vertical scroll view a host's own native scroller drives (new-website#404: Safari's
+    /// scroller with its momentum, no bounce): the innermost one under `point` that is shown and
+    /// can scroll vertically, preferring one that can still move along `direction` (positive: the
+    /// content moves up, negative: down, zero: either), so a scroll at an inner view's end hands
+    /// over to the view around it. Kept as the target until the next call. Nil when there is
+    /// none, or when it is a paging view, which stays with `scrollWheel`.
+    func nativeScrollTarget(at point: CGPoint, direction: CGFloat) -> NativeScrollState?
+    /// The kept target's offset and furthest offset now, without walking the tree; nil once it
+    /// is gone (unmounted).
+    var nativeScrollState: NativeScrollState? { get }
+    /// Moves the kept target's content to vertical `offset` (clamped), as a wheel moves it.
+    func setNativeScrollOffset(_ offset: CGFloat)
     /// A pinch from a trackpad or two touches: `scale` and `rotation` (radians, clockwise) are
     /// cumulative since `began`; `point` is the pinch's centre.
     func pinch(_ phase: ContinuousGesturePhase, scale: CGFloat, rotation: Double, at point: CGPoint, time: Double)
@@ -214,6 +226,17 @@ public protocol HostedScene: AnyObject {
     /// Platform elements the host places over the painted content after a render: a video
     /// player, a web view. The scene paints a stand-in underneath for hosts without them.
     func hostElements() -> [HostElement]
+}
+
+/// Where a scroll view a host's native scroller drives stands (`HostedScene.nativeScrollTarget`):
+/// its vertical offset and furthest offset, in points.
+public struct NativeScrollState: Equatable, Sendable {
+    public var offset: CGFloat
+    public var maximum: CGFloat
+    public init(offset: CGFloat, maximum: CGFloat) {
+        self.offset = offset
+        self.maximum = maximum
+    }
 }
 
 /// An element a host shows over the canvas at a view's frame (`VideoPlayer`, `WebView`).
@@ -341,6 +364,10 @@ extension HostedScene {
         set {}
     }
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) { scrollWheel(by: delta, at: point, time: time) }
+    /// Scenes without the API leave every scroll to `scrollWheel`.
+    public func nativeScrollTarget(at point: CGPoint, direction: CGFloat) -> NativeScrollState? { nil }
+    public var nativeScrollState: NativeScrollState? { nil }
+    public func setNativeScrollOffset(_ offset: CGFloat) {}
     public func hostElements() -> [HostElement] { [] }
     public func colorPanel(_ identifier: Int, didPick color: RGBA) {}
     public func colorPanelDidClose(_ identifier: Int) {}

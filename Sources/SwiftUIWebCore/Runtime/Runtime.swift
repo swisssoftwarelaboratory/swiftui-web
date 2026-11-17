@@ -11,6 +11,8 @@ public final class Runtime {
     package private(set) var root: RootNode!
     /// The scroll view `debugMainScrollOffset()` reads, kept between calls.
     weak var debugMainScroll: ViewNode?
+    /// The scroll view the host's native scroller drives (`nativeScrollTarget`), kept between calls.
+    weak var nativeScrollNode: ViewNode?
 
     /// Measures and breaks text. Hosts install their engine before the first layout.
     public var textEngine: any TextEngine = ZeroTextEngine() {

@@ -42,6 +42,10 @@ public final class CanvasSceneHost {
     /// new-website#279, kept to compare).
     private lazy var wheelPerEvent: Bool = (window.location.object?.search.string ?? "").contains("wheel=events")
 
+    /// Safari's own scroller drives vertical scrolling (new-website#404, `NativeScroller`); nil
+    /// with `?scroll=wheel`, where every wheel event goes to the scene as before.
+    private let nativeScroller: NativeScroller?
+
     /// The platform look the page asks for (`data-platform="ios"` / `"macos"` on the container
     /// or `?platform=` in the URL, lowercased), if any.
     public let requestedPlatform: String?
@@ -105,7 +109,22 @@ public final class CanvasSceneHost {
         canvas = document.createElement!("canvas").object!
         canvas.style.object!.display = .string("block")
         canvas.style.object!.touchAction = .string("none")
-        _ = container.appendChild!(canvas)
+        // On the iPhone look, a trackpad scroll coasts and bounces the iPhone's way instead of
+        // riding Safari's momentum (new-website#278: Tim judged it closer to the iPhone than
+        // Safari's own scroller), through the scene's wheel path, so no native scroller.
+        // `?wheel=iphone` asks for it anywhere; `?wheel=safari` or `?wheel=events` keeps Safari's
+        // way on the iPhone look too.
+        let search = window.location.object?.search.string ?? ""
+        scene.wheelCoastsLikeIPhone = search.contains("wheel=iphone")
+            || (Self.requestedPlatform(window: window, container: container) == "ios" && !search.contains("wheel=safari") && !search.contains("wheel=events"))
+        if search.contains("scroll=wheel") || scene.wheelCoastsLikeIPhone {
+            nativeScroller = nil
+            _ = container.appendChild!(canvas)
+        } else {
+            let scroller = NativeScroller(document: document, canvas: canvas)
+            nativeScroller = scroller
+            _ = container.appendChild!(scroller.box)
+        }
         context = canvas.getContext!("2d").object!
         // Videos and web views sit between the canvas and the accessibility overlay, taking
         // pointer events themselves; the canvas's painted stand-ins stay underneath.
@@ -143,12 +162,6 @@ public final class CanvasSceneHost {
         _ = container.appendChild!(announcer)
 
         requestedPlatform = Self.requestedPlatform(window: window, container: container)
-        // On the iPhone look, a trackpad scroll coasts and bounces the iPhone's way instead of
-        // riding Safari's momentum tail (new-website#278); `?wheel=iphone` asks for it anywhere,
-        // `?wheel=safari` or `?wheel=events` keeps Safari's tail.
-        let search = window.location.object?.search.string ?? ""
-        scene.wheelCoastsLikeIPhone = search.contains("wheel=iphone")
-            || (requestedPlatform == "ios" && !search.contains("wheel=safari") && !search.contains("wheel=events"))
         hasCoarsePointer = window.matchMedia?("(pointer: coarse)").object?.matches.boolean ?? false
         scene.textEngine = Canvas2DTextEngine(context: context, bridge: bridge)
         scene.assetCatalog = Self.assetCatalog(from: window.__swiftuiwebAssets)
@@ -495,6 +508,7 @@ public final class CanvasSceneHost {
         on(canvas, "contextmenu") { e in _ = e.preventDefault!() }
         on(canvas, "pointermove") { [weak self] e in
             guard let self else { return }
+            self.nativeScroller?.lastPoint = self.point(of: e)
             if self.pointerType(of: e) == .touch, self.touchMoved(e) { return }
             self.scene.pointerMoved(to: self.point(of: e), time: self.seconds(of: e))
             self.applyPointerStyle()
@@ -581,6 +595,39 @@ public final class CanvasSceneHost {
         let wheelOptions = JSObject.global.Object.function!.new()
         wheelOptions.passive = .boolean(false)
         _ = canvas.addEventListener!("wheel", wheel, wheelOptions)
+        if let scroller = nativeScroller {
+            // Vertical trackpad and wheel scrolls are Safari's own: they reach only the box, which
+            // the browser scrolls with its own momentum and no bounce, and `tick` moves the
+            // scene's scroll view to the box every frame (new-website#404). Non-passive, so the
+            // box is set up for the scroll view under the pointer before the browser scrolls it.
+            // Sideways scrolls, pinches, scrolls with nothing to drive and synthetic events
+            // (tests, probes) go on to the canvas's handler as before.
+            let boxWheel = JSClosure { [weak self] args in
+                MainActor.assumeIsolated {
+                    guard let self, let e = args.first?.object, e.isTrusted.boolean == true,
+                          e.ctrlKey.boolean != true, !self.gesturePinch else { return }
+                    let point = self.point(of: e)
+                    let time = self.seconds(of: e)
+                    if scroller.takesWheel(dx: e.deltaX.number ?? 0, dy: e.deltaY.number ?? 0, time: time, pick: { direction in
+                        // What the box moved since the last frame belongs to the view it moved.
+                        self.applyNativeScroll(time: time)
+                        return self.scene.nativeScrollTarget(at: point, direction: direction)
+                    }) {
+                        _ = e.stopPropagation!()
+                        self.scheduleFrame()
+                    }
+                }
+                return .undefined
+            }
+            closures.append(boxWheel)
+            let boxOptions = JSObject.global.Object.function!.new()
+            boxOptions.passive = .boolean(false)
+            boxOptions.capture = .boolean(true)
+            _ = scroller.box.addEventListener!("wheel", boxWheel, boxOptions)
+            // The browser scrolled the box (its momentum goes on without wheel events reaching
+            // here when the page is busy): a frame applies it.
+            on(scroller.box, "scroll") { [weak self] _ in self?.scheduleFrame() }
+        }
         on(window, "resize") { [weak self] _ in self?.resize() }
         // Keys go to the scene: the focused element's handlers,
         // the open menu, keyboard shortcuts, Escape. A text field's input keeps its own keys
@@ -869,6 +916,8 @@ public final class CanvasSceneHost {
         // Wheel input is sampled at the frame's own time, so each frame's step follows the time
         // between frames, not when this callback happened to run.
         if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time, afterPause: input.afterPause) }
+        // The native scroller's position this frame, before the frame lays out (new-website#404).
+        applyNativeScroll(time: time)
         // Animations the last frame began start from when it was painted: the clock is about
         // to move by the whole gap, and the work before the paint is not part of the motion.
         if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }
@@ -878,6 +927,7 @@ public final class CanvasSceneHost {
         guard needsLayout || scene.needsFrame else {
             // An animation in a phase that changes nothing on screen (the indicator hold) still
             // needs the clock to advance.
+            syncNativeScroller(time: time, laidOut: false)
             if animating || scriptedDrag != nil || wheelInput.isPending { scheduleFrame() } else { lastFrameTime = nil }
             return
         }
@@ -896,6 +946,7 @@ public final class CanvasSceneHost {
         overlayStart = painted
         updateOverlay()
         updateHostElements()
+        syncNativeScroller(time: now, laidOut: true)
         mark(nil)
         lastDisplayList = list
         frameCount += 1
@@ -911,6 +962,28 @@ public final class CanvasSceneHost {
         // A preference action, observation, scroll animation or an animation the layout just
         // started may need another frame.
         if animating || scene.isAnimating || scene.needsFrame || scriptedDrag != nil || wheelInput.isPending { scheduleFrame() } else { lastFrameTime = nil }
+    }
+
+    /// Moves the scene's driven scroll view to where the native scroller's box is, once per
+    /// frame (and before a new gesture picks another view).
+    private func applyNativeScroll(time: Double) {
+        guard let scroller = nativeScroller, let top = scroller.movedTop(time: time) else { return }
+        scene.setNativeScrollOffset(CGFloat(top))
+    }
+
+    /// Keeps the box in step with the scene after a frame: the driven view's furthest offset
+    /// sizes the box, and an offset the scene set itself (a programmatic scroll, content that got
+    /// shorter, a kept anchor) moves the box there. While nothing scrolls, a frame that laid out
+    /// picks the view again (navigation, a tab switch, a sheet), so the box never stands for a
+    /// view that is gone or hidden.
+    private func syncNativeScroller(time: Double, laidOut: Bool) {
+        guard let scroller = nativeScroller else { return }
+        if laidOut, scroller.isIdle(at: time) {
+            let point = scroller.lastPoint ?? CGPoint(x: width / 2, y: height / 2)
+            scroller.follow(scene.nativeScrollTarget(at: point, direction: 0))
+        } else {
+            scroller.follow(scene.nativeScrollState)
+        }
     }
 
     /// Time of the previous frame while frames run back to back (scroll animations).
@@ -1942,6 +2015,20 @@ public final class CanvasSceneHost {
         }
         closures.append(mainScrollOffset)
         debug.mainScrollOffset = .object(mainScrollOffset)
+        // nativeScroller(): [box scrollTop, the scene's driven view's offset, its furthest offset,
+        // whether a view is driven] (new-website#404), cheap enough to read every frame;
+        // undefined with `?scroll=wheel`.
+        let nativeScrollerState = JSClosure { [weak self] _ in
+            guard let self, let scroller = self.nativeScroller else { return .undefined }
+            let state = self.scene.nativeScrollState
+            let row = JSObject.global.Array.function!.new()
+            for value in [scroller.box.scrollTop.number ?? 0, Double(state?.offset ?? -1), Double(state?.maximum ?? -1), scroller.isDriving ? 1 : 0] {
+                _ = row.push!(JSValue.number(value))
+            }
+            return .object(row)
+        }
+        closures.append(nativeScrollerState)
+        debug.nativeScroller = .object(nativeScrollerState)
         debug.scrollViews = .object(scrollViews)
         debug.bench = .object(bench)
         debug.drag = .object(drag)
