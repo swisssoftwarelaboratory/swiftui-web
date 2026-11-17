@@ -907,7 +907,7 @@ public final class CanvasSceneHost {
         advanceScriptedDrag(time: time)
         // Wheel input is sampled at the frame's own time, so each frame's step follows the time
         // between frames, not when this callback happened to run.
-        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time) }
+        if let input = wheelInput.take(at: frameTime ?? time) { scene.scrollWheel(by: input.delta, at: input.point, time: input.time, afterPause: input.afterPause) }
         // The native scroller's position this frame, before the frame lays out (new-website#404).
         applyNativeScroll(time: time)
         // Animations the last frame began start from when it was painted: the clock is about
