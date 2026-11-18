@@ -495,6 +495,10 @@ public final class Runtime {
 
     /// The trackpad gesture the last wheel event belonged to (`wheelGestureEvent`).
     package var wheelGesture: WheelGesture?
+    /// A trackpad scroll drives a scroll view the iPhone way: iOS's coast after the fingers lift
+    /// in place of Safari's momentum tail, and the rubber band at the ends (new-website#278).
+    /// Hosts set it (`?wheel=iphone` in the canvas host).
+    public var wheelCoastsLikeIPhone = false
     /// The time of the wheel event being handled, when the host gave one.
     package var wheelEventTime: Double?
     /// Set while a frame's wheel input that follows a pause in fast motion is applied.
@@ -981,6 +985,12 @@ package struct WheelGesture {
     package var mover: (ViewNode & _Scrollable)?
     /// Set once the mover settled: the rest of the gesture is its momentum.
     package var settled = false
+    /// The scroll view the gesture drives the iPhone way (`Runtime.wheelCoastsLikeIPhone`).
+    package var coaster: (ViewNode & _Scrollable)?
+    /// The time of the slice whose speed `liftSpeed` is: where the finger lifted.
+    package var liftTime: Double?
+    /// The end times of `speeds`' slices.
+    package var speedTimes: [Double] = []
 
     /// The last few events' sizes, newest last (a new push is judged against them).
     package var recentMagnitudes: [CGFloat] = []
@@ -1060,9 +1070,11 @@ package struct WheelGesture {
         sliceSum += abs(along)
         guard now - start >= 0.016 else { return }
         speeds.append(sliceSum / CGFloat(now - start))
+        speedTimes.append(now)
         sliceStart = now
         sliceSum = 0
         if speeds.count > 8 { speeds.removeFirst(speeds.count - 8) }
+        if speedTimes.count > 8 { speedTimes.removeFirst(speedTimes.count - 8) }
         if speeds.count >= 2, speeds[speeds.count - 1] >= speeds[speeds.count - 2] * 0.98 { speededUp = true }
         peakSpeed = max(peakSpeed, speeds.last ?? 0)
         guard !inMomentum, speeds.count >= 5 else { return }
@@ -1078,6 +1090,7 @@ package struct WheelGesture {
             // A swipe's speed holds or rises for a slice before it falls; a piece of tail cut off
             // by a pause falls from its first slice, and must not flick the page on.
             liftSpeed = speededUp ? (recentSpeeds.first ?? 0) : 0
+            liftTime = speedTimes.suffix(5).first
         }
     }
 }

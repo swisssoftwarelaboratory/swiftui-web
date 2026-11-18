@@ -118,6 +118,9 @@ public protocol HostedScene: AnyObject {
     /// The same, with the event's time in seconds (the host's clock): a scene that reads a
     /// trackpad gesture out of its wheel events measures their gaps with it.
     func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double)
+    /// Whether a trackpad scroll coasts and bounces the iPhone's way instead of riding the OS's
+    /// momentum tail (a scene that has no such way ignores it).
+    var wheelCoastsLikeIPhone: Bool { get set }
     /// The same, applied once per frame (`WheelResampler`): `afterPause` when this frame's input
     /// begins after a pause in fast motion (`WheelPause`), which the frame's step hides.
     func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool)
@@ -356,6 +359,10 @@ extension HostedScene {
 extension HostedScene {
     public func commitAnimations(lateness: Double) {}
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double) { scrollWheel(by: delta, at: point) }
+    public var wheelCoastsLikeIPhone: Bool {
+        get { false }
+        set {}
+    }
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) { scrollWheel(by: delta, at: point, time: time) }
     /// Scenes without the API leave every scroll to `scrollWheel`.
     public func nativeScrollTarget(at point: CGPoint, direction: CGFloat) -> NativeScrollState? { nil }

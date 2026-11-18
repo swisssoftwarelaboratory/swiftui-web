@@ -109,7 +109,15 @@ public final class CanvasSceneHost {
         canvas = document.createElement!("canvas").object!
         canvas.style.object!.display = .string("block")
         canvas.style.object!.touchAction = .string("none")
-        if (window.location.object?.search.string ?? "").contains("scroll=wheel") {
+        // On the iPhone look, a trackpad scroll coasts and bounces the iPhone's way instead of
+        // riding Safari's momentum (new-website#278: Tim judged it closer to the iPhone than
+        // Safari's own scroller), through the scene's wheel path, so no native scroller.
+        // `?wheel=iphone` asks for it anywhere; `?wheel=safari` or `?wheel=events` keeps Safari's
+        // way on the iPhone look too.
+        let search = window.location.object?.search.string ?? ""
+        scene.wheelCoastsLikeIPhone = search.contains("wheel=iphone")
+            || (Self.requestedPlatform(window: window, container: container) == "ios" && !search.contains("wheel=safari") && !search.contains("wheel=events"))
+        if search.contains("scroll=wheel") || scene.wheelCoastsLikeIPhone {
             nativeScroller = nil
             _ = container.appendChild!(canvas)
         } else {

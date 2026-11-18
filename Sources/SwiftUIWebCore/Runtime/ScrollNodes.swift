@@ -58,6 +58,19 @@ package protocol _Scrollable: AnyObject {
     /// A new wheel gesture starts over it: a settle still running is stopped, and the gesture
     /// counts from where it was heading.
     func beginWheelGesture()
+
+    // The iPhone's coast and rubber band for a trackpad (`Runtime.wheelCoastsLikeIPhone`,
+    // new-website#278).
+    /// Whether a trackpad gesture along `axis` drives it the iPhone way.
+    func coastsWheelLikeIPhone(along axis: Axis) -> Bool
+    /// The finger moved `delta` points along `axis` (positive moves the content up and left);
+    /// past an end the content follows through the rubber band.
+    func iPhoneWheelMove(by delta: CGFloat, along axis: Axis)
+    /// The finger lifted at `velocity` (points per second, along the content): the iPhone's coast,
+    /// bouncing at an end, or the band springing back.
+    func iPhoneWheelLift(velocity: CGFloat)
+    /// An event of the OS's own momentum tail, swallowed while the coast runs.
+    func iPhoneWheelTail(magnitude: CGFloat)
     /// Its furthest vertical offset when a host's native scroller may drive it
     /// (`Runtime.nativeScrollTarget`); nil when it does not scroll vertically.
     var nativeScrollMaximum: CGFloat? { get }
@@ -93,6 +106,10 @@ extension _Scrollable {
     package var settlesOnRelease: Bool { false }
     package var scrollAxes: Axis.Set { [.horizontal, .vertical] }
     package func beginWheelGesture() {}
+    package func coastsWheelLikeIPhone(along axis: Axis) -> Bool { false }
+    package func iPhoneWheelMove(by delta: CGFloat, along axis: Axis) {}
+    package func iPhoneWheelLift(velocity: CGFloat) {}
+    package func iPhoneWheelTail(magnitude: CGFloat) {}
     package var nativeScrollMaximum: CGFloat? { nil }
 }
 
@@ -284,6 +301,16 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         return CGPoint(x: min(max(0, offset.x), maximum.x), y: min(max(0, offset.y), maximum.y))
     }
 
+    /// Clamped at layout, except along a trackpad gesture's axis while the iPhone's band holds
+    /// the content past an end: a layout mid-bounce must not snap it back.
+    private func layoutClamped(_ offset: CGPoint) -> CGPoint {
+        var result = clamped(offset)
+        if wheelBandActive {
+            if wheelAxis == .horizontal { result.x = offset.x } else { result.y = offset.y }
+        }
+        return result
+    }
+
     /// The offset and size the content was last placed for (see `layoutContents`).
     private var placedViewport: (offset: CGPoint, size: CGSize)?
 
@@ -315,7 +342,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             }
             if environment._scrollIndicatorsFlashOnAppear { showIndicators() }
         }
-        contentOffset = clamped(contentOffset)
+        contentOffset = layoutClamped(contentOffset)
         placeContent(proposal: contentProposal)
         materializeLazyContent(proposal: contentProposal)
         layoutRefreshIndicator()
@@ -398,7 +425,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
             passes += 1
             contentSize = child.sizeThatFits(proposal)
             lastContentSize = contentSize
-            contentOffset = clamped(contentOffset)
+            contentOffset = layoutClamped(contentOffset)
             placeContent(proposal: proposal)
         }
     }
@@ -805,6 +832,141 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         runtime.animate(self)
     }
 
+    // MARK: The iPhone's coast and rubber band for a trackpad (new-website#278)
+
+    /// The finger's raw position along `wheelAxis` while a trackpad gesture drives the content
+    /// the iPhone way: the offset it would have without the band.
+    private var wheelTravel: CGFloat?
+    private var wheelAxis: Axis = .vertical
+    /// The coast, bounce or band return after the finger lifted.
+    private var wheelMotion: Motion?
+    /// Seconds since the swallowed tail's last event, and that event's size.
+    private var tailQuiet = 0.0
+    private var tailLastMagnitude: CGFloat = 0
+    /// Seconds a held gesture has had no event.
+    private var heldQuiet = 0.0
+    private var wheelBandActive: Bool { wheelTravel != nil || wheelMotion != nil }
+
+    package func coastsWheelLikeIPhone(along axis: Axis) -> Bool {
+        isScrollEnabled && !settlesOnRelease && axes.contains(Axis.Set(axis)) && !(axis == .horizontal && mirrorsPlacements)
+    }
+
+    private var wheelDimension: Double { Double(max(1, wheelAxis == .horizontal ? frame.width : frame.height)) }
+    private var wheelMaximum: CGFloat { wheelAxis == .horizontal ? maximumOffset.x : maximumOffset.y }
+    private var wheelOffset: CGFloat { wheelAxis == .horizontal ? contentOffset.x : contentOffset.y }
+
+    /// Where the content shows for a finger at `travel`: past an end, UIScrollView's band.
+    private func bandedOffset(forTravel travel: CGFloat) -> CGFloat {
+        let maximum = wheelMaximum
+        if travel < 0 { return CGFloat(RubberBand.offset(forOvershoot: Double(travel), dimension: wheelDimension)) }
+        if travel > maximum { return maximum + CGFloat(RubberBand.offset(forOvershoot: Double(travel - maximum), dimension: wheelDimension)) }
+        return travel
+    }
+
+    /// The finger position that shows the content at `offset` (picking up stretched content).
+    private func travel(forOffset offset: CGFloat) -> CGFloat {
+        let maximum = wheelMaximum
+        if offset < 0 { return CGFloat(RubberBand.overshoot(forOffset: Double(offset), dimension: wheelDimension)) }
+        if offset > maximum { return maximum + CGFloat(RubberBand.overshoot(forOffset: Double(offset - maximum), dimension: wheelDimension)) }
+        return offset
+    }
+
+    private func setWheelOffset(_ value: CGFloat) {
+        var offset = contentOffset
+        if wheelAxis == .horizontal { offset.x = value } else { offset.y = value }
+        guard offset != contentOffset else { return }
+        contentOffset = offset
+        runtime.noteScrolled(self)
+        runtime.requestScrollFrame()
+        updatePositionBinding()
+    }
+
+    package func iPhoneWheelMove(by delta: CGFloat, along axis: Axis) {
+        if wheelTravel == nil || wheelAxis != axis {
+            // A new gesture: a coast or bounce in flight stops where it is, as under a finger.
+            wheelMotion = nil
+            velocity = .zero
+            settle = nil
+            wheelIdle = 0
+            wheelAxis = axis
+            wheelTravel = travel(forOffset: wheelOffset)
+            trackingStartOffset = contentOffset
+        }
+        let travel = (wheelTravel ?? 0) + delta
+        wheelTravel = travel
+        heldQuiet = 0
+        setWheelOffset(bandedOffset(forTravel: travel))
+        phase = .interacting
+        indicatorHold = PlatformMetrics.scrollerHoldSeconds
+        runtime.animate(self)
+    }
+
+    package func iPhoneWheelLift(velocity liftVelocity: CGFloat) {
+        guard let travel = wheelTravel else { return }
+        wheelTravel = nil
+        // Past an end the content moves slower than the finger, by the band's slope there: it
+        // leaves at its own speed, not the finger's.
+        var liftVelocity = liftVelocity
+        let overshoot = travel < 0 ? -travel : max(0, travel - wheelMaximum)
+        if overshoot > 0 {
+            let c = RubberBand.constant, d = wheelDimension
+            let stretch = Double(overshoot) * c / d + 1
+            liftVelocity *= CGFloat(c / (stretch * stretch))
+        }
+        tailQuiet = 0
+        tailLastMagnitude = 0
+        var motion = Motion(position: Double(wheelOffset))
+        // iOS's coast (0.998 a millisecond); at an end, or already past one, the band's spring.
+        motion.coast(DecayModel(rate: environment.platformProfile.metrics.scrollDecelerationRate),
+                     within: 0...Double(wheelMaximum), edge: .rubberBandReturn, velocity: Double(liftVelocity))
+        if motion.isMoving {
+            wheelMotion = motion
+            phase = .decelerating
+            runtime.animate(self)
+        } else {
+            wheelMotion = nil
+            phase = .idle
+        }
+    }
+
+    package func iPhoneWheelTail(magnitude: CGFloat) {
+        tailQuiet = 0
+        tailLastMagnitude = magnitude
+    }
+
+    /// Advances a held gesture's quiet time and the coast after a lift; true while either runs.
+    private func advanceIPhoneWheel(elapsed: Double) -> Bool {
+        if wheelTravel != nil {
+            // No event for a tenth of a second and no tail: the fingers stopped, then lifted.
+            heldQuiet += elapsed
+            if heldQuiet < 0.1 { return true }
+            iPhoneWheelLift(velocity: 0)
+        }
+        guard var motion = wheelMotion else { return false }
+        tailQuiet += elapsed
+        // Fingers back on the trackpad cut Safari's tail short while it still ran fast: the
+        // coast stops there, as under a finger landing on the glass. A tail that thins out to
+        // its last point or two ends by itself and leaves the coast going.
+        if tailLastMagnitude >= 3, tailQuiet >= 0.08, case .decay = motion.driver {
+            wheelMotion = nil
+            phase = .idle
+            return false
+        }
+        motion.step(elapsed)
+        let maximum = Double(wheelMaximum)
+        // A spring at rest sits exactly on its end.
+        let position = motion.isMoving ? motion.position : min(max(0, motion.position), maximum)
+        setWheelOffset(CGFloat(position))
+        indicatorHold = PlatformMetrics.scrollerHoldSeconds
+        if motion.isMoving {
+            wheelMotion = motion
+            return true
+        }
+        wheelMotion = nil
+        phase = .idle
+        return false
+    }
+
     package func showIndicators() {
         let shows = showsIndicators
         guard shows.horizontal || shows.vertical else { return }
@@ -820,11 +982,18 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
         runtime.animate(self)
     }
 
-    package var isDecelerating: Bool { velocity != .zero || settle != nil }
+    package var isDecelerating: Bool { velocity != .zero || settle != nil || wheelMotion != nil }
 
     package func stopMomentum() {
         velocity = .zero
         settle = nil
+        if wheelBandActive {
+            // A finger landing mid-bounce takes the content where it may be held.
+            wheelMotion = nil
+            wheelTravel = nil
+            let inside = clamped(contentOffset)
+            if inside != contentOffset { contentOffset = inside; runtime.noteScrolled(self); runtime.requestScrollFrame() }
+        }
         indicatorHold = PlatformMetrics.scrollerHoldSeconds
     }
 
@@ -879,6 +1048,7 @@ package final class ScrollNode<Content: View>: LayoutNode<ScrollView<Content>>, 
                 phase = .idle
             }
         }
+        if advanceIPhoneWheel(elapsed: elapsed) { animating = true }
         if velocity != .zero {
             // Exact friction over the real frame time (`DecayModel`): the same coast at any
             // frame rate.
@@ -1226,8 +1396,13 @@ extension Runtime {
             for node in nodes { node.beginWheelGesture() }
             gesture = WheelGesture(axis: axis, nodes: nodes, lastTime: now, lastMagnitude: magnitude)
             gesture.displacement = axis == .horizontal ? delta.width : delta.height
+            if wheelCoastsLikeIPhone { gesture.coaster = nodes.first { $0.coastsWheelLikeIPhone(along: axis) } }
         }
         defer { wheelGesture = gesture }
+        if let coaster = gesture.coaster {
+            iPhoneWheelEvent(&gesture, coaster: coaster, delta: delta, magnitude: magnitude, at: now)
+            return
+        }
         // The momentum of a settled gesture belongs to the view that settled.
         if gesture.settled { return }
         let locked = gesture.axis == .horizontal ? CGSize(width: delta.width, height: 0) : CGSize(width: 0, height: delta.height)
@@ -1248,6 +1423,38 @@ extension Runtime {
             mover.endTracking(velocity: gesture.axis == .horizontal ? CGSize(width: speed, height: 0) : CGSize(width: 0, height: speed))
             requestScrollFrame()
         }
+    }
+
+    /// A trackpad gesture driving a scroll view the iPhone way (new-website#278): the finger
+    /// moves the content one for one and through the rubber band past an end; where the OS's
+    /// momentum tail begins (`WheelGesture.inMomentum`), the finger has lifted, and iOS's own
+    /// coast takes over from the finger's speed then, bouncing at an end. The rest of Safari's
+    /// tail, which follows WebKit's curve rather than the iPhone's, is swallowed.
+    private func iPhoneWheelEvent(_ gesture: inout WheelGesture, coaster: ViewNode & _Scrollable, delta: CGSize, magnitude: CGFloat, at now: Double) {
+        if gesture.settled {
+            coaster.iPhoneWheelTail(magnitude: magnitude)
+            return
+        }
+        let along = gesture.axis == .horizontal ? delta.width : delta.height
+        if along != 0 {
+            coaster.iPhoneWheelMove(by: along, along: gesture.axis)
+            coaster.showIndicators()
+        }
+        guard gesture.inMomentum else { return }
+        gesture.settled = true
+        // The finger's speed when the tail began, slowed by iOS's friction for the time the
+        // tail took to recognise: the coast is where an iPhone's would be by now. A gesture that
+        // never sped up is a piece of tail split off by a pause (a busy page's late events): the
+        // motion goes on at the speed it has now, where paging takes it as no flick at all.
+        let speed: Double
+        if gesture.speededUp {
+            let since = max(0, now - (gesture.liftTime ?? now))
+            speed = Double(gesture.liftSpeed) * _pow(PlatformMetrics.scrollDecelerationRate, since * 1000)
+        } else {
+            speed = Double(gesture.speeds.last ?? 0)
+        }
+        coaster.iPhoneWheelLift(velocity: CGFloat(gesture.displacement < 0 ? -speed : speed))
+        requestScrollFrame()
     }
 
     /// A wheel event with its time (seconds, the host's clock): gesture gaps are measured
