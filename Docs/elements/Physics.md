@@ -40,6 +40,17 @@ begins an animation at its commit. Without it a chat opening under `.smooth(dura
 was 68 % open in its first frame after a slow update (new-website#262). Headless tests that don't
 call it keep the old timing.
 
+A view's own animation (a tween, a transition, an animation completion) waits one frame more:
+on iOS the first frame that shows a change and the frame after it both show where it starts,
+and the curve runs from the second. Measured on Core Animation's presentation layers in the
+iOS 27 simulator (60 frames a second): a card inserted with `.scale(0.2).combined(with: .opacity)`
+under `.smooth(duration: 0.35)` reads 0, 0, 0.032, 0.116, 0.223 of the way on its first five
+frames, the same after a 150 ms first frame and for a plain `scaleEffect` and `opacity` change
+(new-website#551). So `commitAnimations` marks the animations the painted frame began and the
+next `advanceAnimations` starts them at its own clock, once (`startHeldAnimations`). A spring
+that takes over one in flight carries its speed on at once, and navigation and sheet slides
+(UIKit's motion, `_StartsOnScreen`) start when their first frame is shown, as before.
+
 ## What runs on it
 
 - **Push and pop** (`NavigationStackNode`): the slide is `Animation(spring: .navigation)`, UIKit's
@@ -77,5 +88,5 @@ the start time); the navigation spring against a system sheet; the rubber band's
 190 pt on an 852 pt list and the spring back; decay 0.998 against a coast (0.997 and 0.999 fit
 four times worse); a spring and a bouncing coast reaching the same state at 30, 60, 120 frames
 a second and a ragged mix; a retargeted `Motion` and `Tween` keeping their velocity; the
-finger's speed on uneven frames and after a rest; and a slow first frame not eating into an
-animation.
+finger's speed on uneven frames and after a rest; a slow first frame not eating into an
+animation; and a view animation's first frames against iOS's (0, 0, then the curve).

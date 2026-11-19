@@ -154,7 +154,7 @@ public final class Runtime {
     /// Completion callbacks claimed from transactions, waiting for the next layout to start
     /// their animation's clock.
     package var pendingAnimationCompletions: [_AnimationCompletion] = []
-    package var activeAnimationCompletions: [(entry: _AnimationCompletion, animation: Animation?, start: Double)] = []
+    package var activeAnimationCompletions: [(entry: _AnimationCompletion, animation: Animation?, start: Double, held: Bool)] = []
     /// The platform whose look the tree reproduces, set by hosts (the canvas host picks iOS on a
     /// touch device, macOS elsewhere; `Docs/elements/iOS.md`). A subtree can still select the
     /// other one through the `platformProfile` environment value.
@@ -244,6 +244,8 @@ public final class Runtime {
     package var upcomingLayoutPass: UInt64 { inLayoutPass ? fullLayoutCount : fullLayoutCount + 1 }
     package var activeAnimationScopes = 0
     package var animatingNodes: [WeakNode] = []
+    /// View animations begun at `clock` that start at the next frame's (`startHeldAnimations`).
+    package var startingNextFrame: (clock: Double, nodes: [WeakNode])?
     /// Paint-only animations in flight (a navigation stack's slide): frames keep coming through
     /// the frame subscribers, sizes stay valid.
     package var paintAnimations = 0
@@ -659,7 +661,7 @@ public final class Runtime {
         updateAnimation = pendingAnimation
         if !pendingAnimationCompletions.isEmpty {
             // The animation of these completions starts now; without one they complete at once.
-            for entry in pendingAnimationCompletions { activeAnimationCompletions.append((entry, pendingAnimation, animationClock)) }
+            for entry in pendingAnimationCompletions { activeAnimationCompletions.append((entry, pendingAnimation, animationClock, false)) }
             pendingAnimationCompletions.removeAll()
             if pendingAnimation == nil { fireAnimationCompletions(now: animationClock) }
         }
