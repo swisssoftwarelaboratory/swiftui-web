@@ -256,14 +256,54 @@ import SwiftUIWebHeadless
             withAnimation(.linear(duration: 1)) { model.wide = true }
             r.layout(in: CGSize(width: 320, height: 200))
             // The frame that began it took `lateness` to reach the screen; the next comes a
-            // sixtieth of a second after that.
+            // sixtieth of a second after that and still shows the start (as on iOS), the one
+            // after it a tenth of a second later.
             r.commitAnimations(lateness: lateness)
-            r.advanceAnimations(elapsed: lateness + 0.1)
+            r.advanceAnimations(elapsed: lateness + 1.0 / 60)
+            r.commitAnimations(lateness: 0.002)
+            r.advanceAnimations(elapsed: 0.1)
             return r.render(scale: 1).commands.map(\.description).first { $0.hasPrefix("fillRect") } ?? ""
         }
         // A tenth of a second in, however long the first frame took.
         #expect(painted(lateness: 0.25) == painted(lateness: 0))
         #expect(painted(lateness: 0).contains("fillRect(105, 80, 110, 40)"))
+    }
+
+    /// The chat card's opening in Paulo's app (`.smooth(duration: 0.35)`, new-website#551): how far
+    /// along each 60 Hz frame is, read from Core Animation's presentation layers in the iOS 27
+    /// simulator. The first frame that shows the change and the next both show the start.
+    static let smoothOpening: [Double] = [0, 0, 0.0316, 0.1161, 0.2226, 0.3333, 0.4385, 0.5334, 0.6162, 0.6869, 0.7461, 0.7952, 0.8355, 0.8683]
+
+    struct Stretching: View {
+        @Bindable var model: Model
+        var body: some View { Color.red.frame(width: model.wide ? 1100 : 100, height: 40) }
+    }
+
+    @Test func aViewAnimationStartsOnTheFrameAfterItsFirstLikeIOS() {
+        let model = Model()
+        let r = Runtime()
+        r.mount(Stretching(model: model))
+        r.layout(in: CGSize(width: 1200, height: 200))
+        var widths: [Double] = []
+        func paint() {
+            r.layout(in: CGSize(width: 1200, height: 200))
+            let rect = r.render(scale: 1).commands.map(\.description).first { $0.hasPrefix("fillRect") } ?? ""
+            let numbers = rect.drop { $0 != "(" }.dropFirst().prefix { $0 != ")" }.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            widths.append(numbers.count == 4 ? numbers[2] : .nan)
+        }
+        // The change's first frame, then a frame every sixtieth of a second, each shown a little
+        // after its clock moved.
+        withAnimation(.smooth(duration: 0.35)) { model.wide = true }
+        paint()
+        for _ in 1..<Self.smoothOpening.count {
+            r.commitAnimations(lateness: 0.004)
+            r.advanceAnimations(elapsed: 1.0 / 60)
+            paint()
+        }
+        for (width, measured) in zip(widths, Self.smoothOpening) {
+            // Within a hundredth of the way (whole points on 1000 pt of growth) of iOS.
+            #expect(abs((width - 100) / 1000 - measured) < 0.01, "\(widths)")
+        }
     }
 }
 #endif

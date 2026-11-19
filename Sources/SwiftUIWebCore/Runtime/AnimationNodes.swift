@@ -12,6 +12,8 @@ package struct Tween {
     package let to: [Double]
     package let animation: Animation
     package var start: Double
+    /// Whether its start already waited for the frame after its first (`startHeldAnimations`).
+    package var held = false
     /// Units per second per value at the start, for a spring; nil runs the animation's curve.
     package let velocity: [Double]?
     /// Seconds of animation time (before speed) after which a velocity-carrying spring rests.
@@ -91,6 +93,8 @@ package struct TransitionState {
     package let animation: Animation
     package var start: Double
     package var onFinish: (@MainActor () -> Void)?
+    /// Whether its start already waited for the frame after its first (`startHeldAnimations`).
+    package var held = false
 
     /// How much of the removed-end effects applies now (1 = fully removed look).
     package func factor(at time: Double) -> Double {
@@ -128,6 +132,7 @@ extension Runtime {
     @discardableResult
     public func advanceAnimations(elapsed: Double) -> Bool {
         animationClock += max(0, elapsed)
+        startHeldAnimations()
         let now = animationClock
         var remaining: [WeakNode] = []
         var finished: [@MainActor () -> Void] = []
@@ -184,24 +189,48 @@ extension Runtime {
         for entry in due { entry.completion() }
     }
 
-    /// Starts the animations begun since the clock last ticked `lateness` seconds later: the
-    /// moment their first frame reaches the screen. The time a slow update, layout and paint
-    /// took is not part of the motion (new-website#262: a chat opening 68 % of the way in its
-    /// first frame after a slow one).
+    /// Starts the animations begun since the clock last ticked. A navigation slide or sheet
+    /// (a frame subscriber, UIKit's motion) starts `lateness` seconds later: the moment its first
+    /// frame reached the screen; the time a slow update, layout and paint took is not part of the
+    /// motion (new-website#262: a chat opening 68 % of the way in its first frame after a slow
+    /// one). A view's own animation (a tween, a transition, a completion) starts one frame later
+    /// still, at the next frame's clock: on iOS the first frame that shows a change and the frame
+    /// after it both show where it starts, and the curve runs from the second (new-website#551,
+    /// measured on Core Animation's presentation layers in the iOS 27 simulator, 60 frames a
+    /// second, the same with a 150 ms first frame).
     package func beginAnimationsOnScreen(lateness: Double) {
-        guard lateness > 0 else { return }
         let now = animationClock
-        for entry in frameSubscribers { (entry.subscriber as? _StartsOnScreen)?.startOnScreen(now: now, lateness: lateness) }
-        for entry in animatingNodes {
-            guard let presentation = entry.node?.presentation else { continue }
-            if presentation.frame?.start == now { presentation.frame?.start += lateness }
-            if presentation.opacity?.start == now { presentation.opacity?.start += lateness }
-            if presentation.color?.start == now { presentation.color?.start += lateness }
-            if presentation.effect?.start == now { presentation.effect?.start += lateness }
-            if presentation.transition?.start == now { presentation.transition?.start += lateness }
+        if lateness > 0 {
+            for entry in frameSubscribers { (entry.subscriber as? _StartsOnScreen)?.startOnScreen(now: now, lateness: lateness) }
         }
-        for index in activeAnimationCompletions.indices where activeAnimationCompletions[index].start == now {
-            activeAnimationCompletions[index].start += lateness
+        startingNextFrame = (clock: now, nodes: animatingNodes)
+    }
+
+    /// The view animations `beginAnimationsOnScreen` holds for one frame: those that started at
+    /// `clock` start at the clock the next frame moved to.
+    func startHeldAnimations() {
+        guard let held = startingNextFrame else { return }
+        startingNextFrame = nil
+        let then = held.clock, now = animationClock
+        // A spring that took over one in flight carries its speed on at once (not measured as
+        // waiting on iOS; a pause would show as a stall).
+        func restart(_ tween: inout Tween?) {
+            guard var t = tween, t.start == then, !t.held, t.velocity == nil else { return }
+            t.start = now; t.held = true; tween = t
+        }
+        for entry in held.nodes {
+            guard let presentation = entry.node?.presentation else { continue }
+            restart(&presentation.frame)
+            restart(&presentation.opacity)
+            restart(&presentation.color)
+            restart(&presentation.effect)
+            if var transition = presentation.transition, transition.start == then, !transition.held {
+                transition.start = now; transition.held = true; presentation.transition = transition
+            }
+        }
+        for index in activeAnimationCompletions.indices where activeAnimationCompletions[index].start == then && !activeAnimationCompletions[index].held {
+            activeAnimationCompletions[index].start = now
+            activeAnimationCompletions[index].held = true
         }
     }
 
