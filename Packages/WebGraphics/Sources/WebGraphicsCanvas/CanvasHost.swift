@@ -396,23 +396,20 @@ public final class CanvasSceneHost {
     /// A JSON value from the page as the property-list value Foundation would hand an app
     /// (dictionaries, arrays, strings, numbers, booleans); nil for null and undefined.
     static func plistValue(_ value: JSValue) -> Any? {
-        switch value {
-        case .boolean(let flag): return flag
-        case .string(let text): return String(text)
-        case .number(let number): return number.rounded() == number && abs(number) < 1e15 ? Int(number) as Any : number
-        case .object(let object):
-            if JSObject.global.Array.function?.isArray?(value).boolean == true {
-                return (0..<Int(object.length.number ?? 0)).compactMap { plistValue(object[$0]) }
-            }
-            guard let keys = JSObject.global.Object.function?.keys?(value).object else { return nil }
-            var dictionary: [String: Any] = [:]
-            for index in 0..<Int(keys.length.number ?? 0) {
-                guard let key = keys[index].string, let entry = plistValue(object[dynamicMember: key]) else { continue }
-                dictionary[key] = entry
-            }
-            return dictionary
-        default: return nil
+        if let flag = value.boolean { return flag }
+        if let text = value.string { return text }
+        if let number = value.number { return number.rounded() == number && abs(number) < 1e15 ? Int(number) as Any : number }
+        guard let object = value.object else { return nil }
+        if JSObject.global.Array.function?.isArray?(value).boolean == true {
+            return (0..<Int(object.length.number ?? 0)).compactMap { plistValue(object[$0]) }
         }
+        guard let keys = JSObject.global.Object.function?.keys?(value).object else { return nil }
+        var dictionary: [String: Any] = [:]
+        for index in 0..<Int(keys.length.number ?? 0) {
+            guard let key = keys[index].string, let entry = plistValue(object[dynamicMember: key]) else { continue }
+            dictionary[key] = entry
+        }
+        return dictionary
     }
 
     /// The catalog `scripts/assets.py --js` published as `window.__swiftuiwebAssets`, or an empty
