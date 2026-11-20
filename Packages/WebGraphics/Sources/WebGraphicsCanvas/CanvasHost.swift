@@ -167,6 +167,11 @@ public final class CanvasSceneHost {
         scene.assetCatalog = Self.assetCatalog(from: window.__swiftuiwebAssets)
         // The app's languages reach `Bundle.main` (EnvironmentOverrides lists them, decision 0021).
         Bundle._hostLocalizations = (languages: scene.assetCatalog.localizations, source: scene.assetCatalog.sourceLanguage)
+        // The app's Info dictionary as Xcode built it (scripts/info_plist.py, new-website#663).
+        if let info = Self.plistValue(window.__swiftuiwebAssets.object?.info ?? .undefined) as? [String: Any], !info.isEmpty {
+            Bundle._info = info
+            if let identifier = info["CFBundleIdentifier"] as? String { Bundle._identifier = identifier }
+        }
         loadFonts(scene.assetCatalog, base: window.__swiftuiwebAssets.object?.base.string ?? "")
         scene.onNeedsFrame = { [weak self] in self?.scheduleFrame() }
         // The drawn keyboard's edits go through the field's input element (new-website#648).
@@ -249,12 +254,17 @@ public final class CanvasSceneHost {
         // under the well, opened inside the press's gesture; `input` events feed the well while
         // the chooser is open, `change` ends it. The input has no alpha: the well's stays.
         scene.colorPanelHandler = { [weak self] request in self?.showColorInput(request) ?? false }
-        // The system appearance, now and when it changes.
+        // The system appearance, now and when it changes: an app whose Info.plist sets
+        // `UIUserInterfaceStyle` to Light or Dark keeps that one, as iOS keeps it whatever the
+        // device's setting, its keyboard, alerts and sheets included (new-website#663). A window's
+        // `overrideUserInterfaceStyle` and `preferredColorScheme` still win over it, as on iOS.
+        let appStyle = Self.appInterfaceStyle(Bundle.main.object(forInfoDictionaryKey: "UIUserInterfaceStyle"))
+        if let appStyle { scene.hostColorScheme = appStyle }
         if let media = window.matchMedia?("(prefers-color-scheme: dark)").object {
-            scene.hostColorScheme = (media.matches.boolean ?? false) ? .dark : .light
+            scene.hostColorScheme = appStyle ?? ((media.matches.boolean ?? false) ? .dark : .light)
             let listener = JSClosure { [weak self] arguments in
                 MainActor.assumeIsolated {
-                    self?.scene.hostColorScheme = (arguments.first?.matches.boolean ?? false) ? .dark : .light
+                    self?.scene.hostColorScheme = appStyle ?? ((arguments.first?.matches.boolean ?? false) ? .dark : .light)
                     self?.scheduleFrame()
                 }
                 return .undefined
@@ -371,6 +381,38 @@ public final class CanvasSceneHost {
             }
         }
         return forced?.lowercased()
+    }
+
+    /// The scheme an Info.plist's `UIUserInterfaceStyle` holds the app to: Light or Dark; nil for
+    /// Automatic, an unknown value or none, where the app follows the device.
+    static func appInterfaceStyle(_ value: Any?) -> ColorScheme? {
+        switch (value as? String)?.lowercased() {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
+    }
+
+    /// A JSON value from the page as the property-list value Foundation would hand an app
+    /// (dictionaries, arrays, strings, numbers, booleans); nil for null and undefined.
+    static func plistValue(_ value: JSValue) -> Any? {
+        switch value {
+        case .boolean(let flag): return flag
+        case .string(let text): return String(text)
+        case .number(let number): return number.rounded() == number && abs(number) < 1e15 ? Int(number) as Any : number
+        case .object(let object):
+            if JSObject.global.Array.function?.isArray?(value).boolean == true {
+                return (0..<Int(object.length.number ?? 0)).compactMap { plistValue(object[$0]) }
+            }
+            guard let keys = JSObject.global.Object.function?.keys?(value).object else { return nil }
+            var dictionary: [String: Any] = [:]
+            for index in 0..<Int(keys.length.number ?? 0) {
+                guard let key = keys[index].string, let entry = plistValue(object[dynamicMember: key]) else { continue }
+                dictionary[key] = entry
+            }
+            return dictionary
+        default: return nil
+        }
     }
 
     /// The catalog `scripts/assets.py --js` published as `window.__swiftuiwebAssets`, or an empty
