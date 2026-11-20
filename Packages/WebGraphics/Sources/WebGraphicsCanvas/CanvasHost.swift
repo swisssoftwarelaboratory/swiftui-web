@@ -167,6 +167,12 @@ public final class CanvasSceneHost {
         scene.assetCatalog = Self.assetCatalog(from: window.__swiftuiwebAssets)
         // The app's languages reach `Bundle.main` (EnvironmentOverrides lists them, decision 0021).
         Bundle._hostLocalizations = (languages: scene.assetCatalog.localizations, source: scene.assetCatalog.sourceLanguage)
+        // The app's Info dictionary as its Xcode project builds it (`scripts/assets.py`): an
+        // alert naming the app reads its display name from `Bundle.main` (new-website#649).
+        if let info = Self.infoDictionary(from: window.__swiftuiwebAssets) {
+            Bundle._info = info
+            Bundle._identifier = info["CFBundleIdentifier"] as? String
+        }
         loadFonts(scene.assetCatalog, base: window.__swiftuiwebAssets.object?.base.string ?? "")
         scene.onNeedsFrame = { [weak self] in self?.scheduleFrame() }
         // An image the painter had to fetch has arrived: paint the frame again (and let the
@@ -423,6 +429,20 @@ public final class CanvasSceneHost {
             for index in 0..<Int(list.length.number ?? 0) { if let tag = list[index].string { localizations.append(tag) } }
         }
         return AssetCatalog(images: images, colors: colors, fonts: fonts, localizations: localizations, sourceLanguage: manifest.sourceLanguage.string)
+    }
+
+    /// The manifest's `info`: its strings, numbers and booleans, nil when the build recorded none.
+    private static func infoDictionary(from manifest: JSValue) -> [String: Any]? {
+        guard let info = manifest.info.object, let keys = JSObject.global.Object.function!.keys!(info).object else { return nil }
+        var result: [String: Any] = [:]
+        for index in 0..<Int(keys.length.number ?? 0) {
+            guard let key = keys[index].string else { continue }
+            let value = info[dynamicMember: key]
+            if let string = value.string { result[key] = string }
+            else if let flag = value.boolean { result[key] = flag }
+            else if let number = value.number { result[key] = number }
+        }
+        return result.isEmpty ? nil : result
     }
 
     /// Loads the catalog's font files as `FontFace`s under their PostScript and family names,

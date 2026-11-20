@@ -403,6 +403,87 @@ def find_fonts(source):
     return found
 
 
+def _parse_openstep(text):
+    """An Xcode `project.pbxproj` (an old-style property list): dictionaries, arrays and strings."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
+    i, n = 0, len(text)
+    def skip():
+        nonlocal i
+        while i < n and text[i] in " \t\r\n": i += 1
+    def value():
+        nonlocal i
+        skip()
+        c = text[i]
+        if c == "{":
+            i += 1; d = {}
+            while True:
+                skip()
+                if text[i] == "}": i += 1; return d
+                k = value(); skip(); i += 1  # =
+                d[k] = value(); skip()
+                if text[i] == ";": i += 1
+        if c == "(":
+            i += 1; a = []
+            while True:
+                skip()
+                if text[i] == ")": i += 1; return a
+                a.append(value()); skip()
+                if text[i] == ",": i += 1
+        if c == '"':
+            i += 1; out = []
+            while text[i] != '"':
+                if text[i] == "\\": i += 1; out.append({"n": "\n", "t": "\t"}.get(text[i], text[i]))
+                else: out.append(text[i])
+                i += 1
+            i += 1; return "".join(out)
+        start = i
+        while i < n and text[i] not in " \t\r\n;,=)}": i += 1
+        return text[start:i]
+    return value()
+
+
+def find_info(source):
+    """The app's Info dictionary as its bundle holds it on iOS (`Bundle.main.infoDictionary`): the
+    application target of the first Xcode project under `source`, its generated keys
+    (`INFOPLIST_KEY_*`, the bundle's name, identifier and versions) under its `INFOPLIST_FILE`'s
+    own. Only strings, numbers and booleans travel; an app without a project has none."""
+    import plistlib
+    for pbxproj in sorted(_rglob(source, "project.pbxproj")):
+        if any(part in SKIPPED_DIRS for part in pbxproj.relative_to(source).parts): continue
+        try: objects = _parse_openstep(pbxproj.read_text())["objects"]
+        except Exception as error: warn(f"{pbxproj}: {error}"); continue
+        root = pbxproj.parent.parent
+        def settings(list_id):
+            configurations = [objects[c] for c in objects.get(list_id, {}).get("buildConfigurations", [])]
+            chosen = next((c for c in configurations if c.get("name") == "Release"), configurations[0] if configurations else {})
+            return chosen.get("buildSettings", {})
+        project = next((o for o in objects.values() if o.get("isa") == "PBXProject"), {})
+        for target in objects.values():
+            if target.get("isa") != "PBXNativeTarget" or target.get("productType") != "com.apple.product-type.application": continue
+            build = dict(settings(project.get("buildConfigurationList")))
+            build.update(settings(target.get("buildConfigurationList")))
+            build.setdefault("TARGET_NAME", target.get("name", ""))
+            def expand(value):
+                return re.sub(r"\$[({](\w+)(?::[^)}]*)?[)}]", lambda m: expand(build.get(m.group(1), "")), value) if isinstance(value, str) else value
+            info = {}
+            for key, name in [("PRODUCT_NAME", "CFBundleName"), ("PRODUCT_BUNDLE_IDENTIFIER", "CFBundleIdentifier"),
+                              ("MARKETING_VERSION", "CFBundleShortVersionString"), ("CURRENT_PROJECT_VERSION", "CFBundleVersion")]:
+                if key in build: info[name] = expand(build[key])
+            for key, value in build.items():
+                if key.startswith("INFOPLIST_KEY_") and isinstance(value, str):
+                    value = expand(value)
+                    info[key[len("INFOPLIST_KEY_"):]] = {"YES": True, "NO": False}.get(value, value)
+            plist = build.get("INFOPLIST_FILE")
+            if plist and (root / expand(plist)).exists():
+                try: own = plistlib.loads((root / expand(plist)).read_bytes())
+                except Exception as error: warn(f"{plist}: {error}"); own = {}
+                for key, value in own.items():
+                    if isinstance(value, (str, int, float, bool)): info[key] = expand(value)
+            return info
+    return {}
+
+
 def find_catalogs(source):
     if source.suffix == ".xcassets": return [source]
     found = []
@@ -452,7 +533,8 @@ def main():
     manifest = {"version": 1, "catalogs": [p.name for p in catalogs],
                 "images": dict(sorted(catalog.images.items())), "colors": dict(sorted(catalog.colors.items())),
                 "fonts": dict(sorted(fonts.items())),
-                "localizations": localizations["languages"], "sourceLanguage": localizations["source"]}
+                "localizations": localizations["languages"], "sourceLanguage": localizations["source"],
+                "info": find_info(source)}
     text = json.dumps(manifest, indent=2, sort_keys=True)
     if args.json:
         Path(args.json).parent.mkdir(parents=True, exist_ok=True)
