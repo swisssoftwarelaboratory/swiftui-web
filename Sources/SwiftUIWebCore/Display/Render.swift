@@ -32,6 +32,7 @@ extension Runtime {
         }
         toolbar?.paint(into: &list, context: context)
         paintPresentations(into: &list, context: context)
+        if systemKeyboard.isVisible { systemKeyboard.paint(into: &list, context: context) }
         paintFocusRing(into: &list, context: context)
         paintTooltip(into: &list, context: context)
         // The dragged copy paints its views a second time, elsewhere: never as their segments.

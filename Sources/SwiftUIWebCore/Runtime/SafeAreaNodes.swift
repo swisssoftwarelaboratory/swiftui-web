@@ -217,14 +217,28 @@ package final class IgnoresSafeAreaNode<Content: View>: UnaryLayoutModifierNode<
     override package var paintsOutsideFrame: Bool { true }
     override package var changesChildSize: Bool { true }
 
-    /// The unsafe depth beyond each ignored edge (zero on the others).
+    /// How deep the regions the modifier keeps reach from the screen's edges: the content
+    /// grows up to them and no further (new-website#648, measured in the iOS 27 simulator:
+    /// `ignoresSafeArea(.keyboard)` under a 328 pt keyboard stops at the home indicator's 34,
+    /// `ignoresSafeArea(.container)` under it stays at the keyboard's top and still reports 328).
+    private var kept: EdgeInsets {
+        let regions = modifier.regions
+        let container = regions.contains(.container) ? EdgeInsets() : containerSafeAreaDepth
+        let keyboard = regions.contains(.keyboard) ? EdgeInsets() : keyboardSafeAreaDepth
+        return EdgeInsets(top: max(container.top, keyboard.top), leading: max(container.leading, keyboard.leading),
+                          bottom: max(container.bottom, keyboard.bottom), trailing: max(container.trailing, keyboard.trailing))
+    }
+
+    /// The unsafe depth beyond each ignored edge the content grows into (zero on the others):
+    /// the reach beyond the edge less what the kept regions still hold.
     private var ignored: EdgeInsets {
         var insets = safeAreaExtension
+        let kept = self.kept
         let edges = modifier.edges
-        if !edges.contains(.top) { insets.top = 0 }
-        if !edges.contains(.bottom) { insets.bottom = 0 }
-        if !edges.contains(.leading) { insets.leading = 0 }
-        if !edges.contains(.trailing) { insets.trailing = 0 }
+        insets.top = edges.contains(.top) ? max(0, insets.top - kept.top) : 0
+        insets.bottom = edges.contains(.bottom) ? max(0, insets.bottom - kept.bottom) : 0
+        insets.leading = edges.contains(.leading) ? max(0, insets.leading - kept.leading) : 0
+        insets.trailing = edges.contains(.trailing) ? max(0, insets.trailing - kept.trailing) : 0
         return insets
     }
 
@@ -268,13 +282,31 @@ package final class IgnoresSafeAreaNode<Content: View>: UnaryLayoutModifierNode<
                        y: offset(child.height, size.height, insets.top, insets.bottom))
     }
 
+    /// The content keeps, on each ignored edge, only what the kept regions hold: none for
+    /// `ignoresSafeArea()`, the keyboard's for `.container` (a reader there sees 328 with the
+    /// keyboard up, 0 with it down), the container's for `.keyboard`.
     override package func assignSafeArea(to child: ViewNode) {
         super.assignSafeArea(to: child)
-        let edges = modifier.edges
-        if edges.contains(.top) { child.safeAreaOverlap.top = 0; child.safeAreaExtension.top = 0 }
-        if edges.contains(.bottom) { child.safeAreaOverlap.bottom = 0; child.safeAreaExtension.bottom = 0 }
-        if edges.contains(.leading) { child.safeAreaOverlap.leading = 0; child.safeAreaExtension.leading = 0 }
-        if edges.contains(.trailing) { child.safeAreaOverlap.trailing = 0; child.safeAreaExtension.trailing = 0 }
+        let edges = modifier.edges, regions = modifier.regions
+        let kept = self.kept, reach = safeAreaExtension
+        func clear(_ overlap: inout CGFloat, _ extension: inout CGFloat, _ container: inout CGFloat, _ keyboard: inout CGFloat, kept: CGFloat, reach: CGFloat) {
+            overlap = min(overlap, max(0, kept - reach))
+            `extension` = reach > 0 ? min(kept, reach) : 0
+            if regions.contains(.container) { container = 0 }
+            if regions.contains(.keyboard) { keyboard = 0 }
+        }
+        if edges.contains(.top) {
+            clear(&child.safeAreaOverlap.top, &child.safeAreaExtension.top, &child.containerSafeAreaDepth.top, &child.keyboardSafeAreaDepth.top, kept: kept.top, reach: reach.top)
+        }
+        if edges.contains(.bottom) {
+            clear(&child.safeAreaOverlap.bottom, &child.safeAreaExtension.bottom, &child.containerSafeAreaDepth.bottom, &child.keyboardSafeAreaDepth.bottom, kept: kept.bottom, reach: reach.bottom)
+        }
+        if edges.contains(.leading) {
+            clear(&child.safeAreaOverlap.leading, &child.safeAreaExtension.leading, &child.containerSafeAreaDepth.leading, &child.keyboardSafeAreaDepth.leading, kept: kept.leading, reach: reach.leading)
+        }
+        if edges.contains(.trailing) {
+            clear(&child.safeAreaOverlap.trailing, &child.safeAreaExtension.trailing, &child.containerSafeAreaDepth.trailing, &child.keyboardSafeAreaDepth.trailing, kept: kept.trailing, reach: reach.trailing)
+        }
     }
 
     override package var nodeDescription: String { "IgnoresSafeArea" }

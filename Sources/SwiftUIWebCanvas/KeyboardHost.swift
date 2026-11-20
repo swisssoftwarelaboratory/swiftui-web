@@ -20,6 +20,9 @@ import UIKitWebCore
 @MainActor
 enum KeyboardHost {
     nonisolated(unsafe) private static var listeners: [JSClosure] = []
+    /// The runtime draws the keyboard and sets the frame itself (new-website#648): the browser's
+    /// viewports say nothing then.
+    nonisolated(unsafe) static var drawsKeyboard = false
 
     static func install() {
         let window = JSObject.global
@@ -73,6 +76,7 @@ enum KeyboardHost {
     /// The screen is the page: a SwiftUI app's canvas fills the window (`UIScreen.main.bounds`
     /// is not kept to the window for a SwiftUI app — recorded under uk-app-delegate-adaptor).
     static func apply(_ reading: _ViewportReading) {
+        guard !drawsKeyboard else { return }
         let width = JSObject.global.innerWidth.number ?? 0
         UIKitScene.shared.keyboardFrame = _KeyboardFrameEstimator.frame(for: reading, screenSize: CGSize(width: width, height: reading.windowHeight))
     }

@@ -186,3 +186,40 @@ their iOS 26 goldens; alerts, dialogs, the cover and the edit-mode selection com
 (`Docs/elements/UIKit/UIFont.md`), it draws the Mac switch and slider knob, a Mac window's greys
 in the dark appearance with premultiplied PNGs, and the compact date picker, tab bars and sheets
 as an iPad would. Nothing from it is committed; `meta.json`'s `host` names the producer.
+
+## The drawn keyboard (iOS 27 simulator, iPhone 16, new-website#648, 2026-11-20)
+
+On the iPhone look in a browser on a computer (no coarse pointer; `?keyboard=none` leaves it
+out), a focused text field or editor brings up the iOS 27 keyboard drawn by the runtime
+(`Runtime/Keyboard/`). A phone's browser keeps its own.
+
+- **Look:** 328 pt tall (UIKit's end frame y 524), top corners 34, suggestions band 53, four rows
+  of 42 pt keys at 53.33, 107.33, 161.33 and 215.33. Full rows start at 7 (11 keys 28.33 wide
+  35 apart, 10 keys 32 wide 38.67 apart), shorter rows centred; shift 7 / 43.33, delete
+  342.67 / 43.67, bottom row 123 7 / 41.33, emoji 55 / 41.67, space 103.33 / 186.33, return
+  296.33 / 90. Colours sampled from the simulator: panel #E2E3E8 / #202020, keys white / #444,
+  held key #DFDFDF / #676767, the bubble (52 × 64, 4 above the key) white / #505050. Our own
+  drawn icons; the return key follows `submitLabel` (Send an arrow up on blue).
+- **Layouts:** from the app's language (`Bundle.main.preferredLocalizations`, or the host's
+  `softwareKeyboardLanguage`): German is Swiss German QWERTZ with Ü Ö Ä, French Swiss French
+  (QWERTZ, one accent key after L whose mark follows the letter before the caret: ´ after e,
+  ` after a, ^ after u o i, ’ after a consonant, put on the letter when it takes it), anything
+  else US English. 123 and #+= pages; an emoji page in the viewer's emoji font.
+- **Finger:** a press dims the key and shows its bubble, which follows the finger across keys;
+  lifting types the key, off the keys nothing. Holding a letter with accents (0.45 s) opens
+  the accent row; holding delete repeats (after 0.5 s, every 0.1 s). Capitals at a sentence's
+  start (or as `textInputAutocapitalization` asks), shift toggles, a double tap locks, a double
+  space types ". ", space goes back to the letters.
+- **The viewer's keyboard:** types through the input element as before; the drawn key it
+  matches is held with its bubble while the real key is down (a character on another page
+  brings that page up).
+- **Motion and layout:** slides on UIKit's keyboard spring (`SpringModel.navigation`, critical at
+  ω ≈ 18). The keyboard is the safe area's keyboard region: regions combine as the deeper one,
+  a reader reports the depth from the screen's edge, and `ignoresSafeArea` drops only the
+  regions it names (`.container` keeps the keyboard: a reader there reports 328 with the frame
+  ending at the keyboard's top; `.keyboard` is as if it never came up). Layout takes the final
+  values at once and the frames move on the keyboard's spring. UIKit's notifications follow
+  (end frame, 0.3833 s, curve 7). Tests: `KeyboardSafeAreaTests`, `SystemKeyboardTests`.
+- **Not yet:** guesses in the suggestions band (it shows the typed word only), dictation (the
+  mic does nothing), number pads (a numeric `keyboardType` opens the 123 page), sheets avoiding
+  the keyboard.
