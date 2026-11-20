@@ -361,6 +361,17 @@ public final class CanvasSceneHost {
     }
 
     /// The platform a page forces with `data-platform` on the container or `?platform=` in its URL.
+    /// `?slowAnimations=<n>`: every animation runs n times slower, as the simulator's Slow
+    /// Animations does, to look at motion frame by frame (new-website#649). 1 without it.
+    lazy var animationSlowdown: Double = {
+        guard let search = JSObject.global.location.object?.search.string else { return 1 }
+        for pair in search.dropFirst().split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            if parts.count == 2, parts[0] == "slowAnimations", let value = Double(parts[1]), value > 0 { return value }
+        }
+        return 1
+    }()
+
     static func requestedPlatform(window: JSObject, container: JSObject) -> String? {
         var forced = container.dataset.object?.platform.string
         if forced == nil, let search = window.location.object?.search.string {
@@ -942,7 +953,7 @@ public final class CanvasSceneHost {
         // to move by the whole gap, and the work before the paint is not part of the motion.
         if let painted = lastPaintTime, lastFrameTime != nil { scene.commitAnimations(lateness: max(0, elapsed - (time - painted))) }
         lastPaintTime = nil
-        let animating = scene.advanceFrame(elapsed: elapsed)
+        let animating = scene.advanceFrame(elapsed: elapsed / animationSlowdown)
         lastFrameTime = time
         guard needsLayout || scene.needsFrame else {
             // An animation in a phase that changes nothing on screen (the indicator hold) still

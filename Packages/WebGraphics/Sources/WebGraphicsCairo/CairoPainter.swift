@@ -73,7 +73,8 @@ public final class CairoPainter {
     public func paint(_ list: DisplayList, into context: OpaquePointer) {
         var groups: [Group] = []
         for command in list.commands {
-            switch command {
+            // No lens here: its blur alone.
+            switch command.asBackdropBlur {
             case .save: cairo_save(context)
             case .restore: cairo_restore(context)
             case .clipRect(let rect):
