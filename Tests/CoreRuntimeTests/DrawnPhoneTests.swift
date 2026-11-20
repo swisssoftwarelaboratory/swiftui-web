@@ -173,6 +173,27 @@ import SwiftUIWebHeadless
         settle(r)
         #expect(state(r)["mode"] == "app")
         #expect(state(r)["cover"] == "-8520")
+        // Let go still at half way, it goes back up (as in the iOS 27 simulator).
+        drag(r, from: CGPoint(x: 300, y: 20), to: CGPoint(x: 300, y: 426), duration: 0.5, hold: 0.3)
+        settle(r)
+        #expect(state(r)["mode"] == "app")
+    }
+
+    @Test mutating func unlockingNeedsAlmostHalfWayOrAFlick() {
+        let model = Model()
+        let r = phone(model)
+        r.phoneSideButtonPressed()
+        settle(r)
+        r.phoneSideButtonPressed()
+        settle(r)
+        // Still at 35 %: falls back (iOS fell back at 39 %).
+        drag(r, from: CGPoint(x: 196, y: 830), to: CGPoint(x: 196, y: 830 - 298), duration: 0.5, hold: 0.3)
+        settle(r)
+        #expect(state(r)["mode"] == "locked")
+        // Still at 50 %: opens.
+        drag(r, from: CGPoint(x: 196, y: 830), to: CGPoint(x: 196, y: 830 - 426), duration: 0.6, hold: 0.3)
+        settle(r)
+        #expect(state(r)["mode"] == "app")
     }
 
     @Test mutating func aTapInTheBottomEdgeStillReachesTheApp() {

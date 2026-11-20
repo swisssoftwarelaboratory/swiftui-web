@@ -34,10 +34,13 @@ extension DrawnPhone {
         let amount = CGFloat(coverAmount)
         // What lies under the cover: the home screen, the app's card over it. Everything under
         // zooms in a touch as the lock screen lifts (not under the pull-down).
-        let underZoom = coverIsPullDown ? 1 : 1 + 0.06 * amount
+        let underZoom = coverIsPullDown ? 1 : 1 + 0.12 * amount
+        let underFade = coverIsPullDown ? 1 : Double(1 - amount)
         let underSeen = !(amount >= 1 && !cover.isMoving && wake.position == 0)
         if underSeen {
             list.append(.save)
+            if underFade < 1 { list.append(.fillRect(screen, Self.ink)) }
+            if underFade < 1 { list.append(.beginGroup(opacity: underFade)) }
             if underZoom != 1 { list.append(.concat(Self.zoom(underZoom, in: screen))) }
             let homeSeen = mode == .home || behind == .home || !cardShown || !appIsFull
             if homeSeen {
@@ -49,12 +52,18 @@ extension DrawnPhone {
                 list.append(.restore)
             }
             if cardShown { paintCard(app: app, into: &list) }
+            if underFade < 1 { list.append(.endGroup) }
             list.append(.restore)
         }
         if banner.position > Self.bannerAway + 1 { paintBanner(into: &list) }
         let darkStatus = statusBarIsDark(amount: amount)
         paintStatusBar(into: &list, dark: darkStatus && amount < 0.5)
-        if amount > 0 { paintCover(into: &list, screen: screen) }
+        if amount > 0 {
+            let fade = coverIsPullDown ? 1 : Double(amount)
+            if fade < 1 { list.append(.beginGroup(opacity: fade)) }
+            paintCover(into: &list, screen: screen)
+            if fade < 1 { list.append(.endGroup) }
+        }
         if amount >= 0.5 { paintStatusBar(into: &list, dark: true, clock: false) }
         let indicatorSeen = (mode == .app && cardShown && cardOpen > 0.98) || amount > 0
         if indicatorSeen {
@@ -141,8 +150,10 @@ extension DrawnPhone {
         list.append(.save)
         list.append(.concat(CGAffineTransform(translationX: 0, y: top)))
         let zoom = 1 + 0.05 * CGFloat(wake.position)
+        list.append(.save)
         if zoom != 1 { list.append(.concat(Self.zoom(zoom, in: screen))) }
-        list.append(.fillRect(screen, Self.lockGround))
+        list.append(.fillRect(screen.insetBy(dx: -20, dy: -20), Self.lockGround))
+        list.append(.restore)
         let date = font(size: 20, weight: .semibold)
         let time = font(size: 92, weight: .bold)
         drawCentered(clockText.date, font: date, centerX: screen.midX, baseline: 118, maxWidth: screen.width - 40, color: Self.ink, into: &list)

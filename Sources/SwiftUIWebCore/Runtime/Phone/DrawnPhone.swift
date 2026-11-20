@@ -121,11 +121,17 @@ package final class DrawnPhone {
     static let bannerTop: Double = 54
     static let bannerSeconds: Double = 6
 
-    // Springs: iOS's, from #628 (the prototype's starting values from iOS's known springs).
-    static let darken = SpringModel(response: 0.18, dampingFraction: 1)
-    static let brighten = SpringModel(response: 0.35, dampingFraction: 1)
-    static let wakeZoom = SpringModel(response: 0.5, dampingFraction: 1)
-    static let coverSpring = SpringModel(response: 0.4, dampingFraction: 1)
+    // Springs: #628's starting values, matched to the iOS 27 simulator where it could be filmed
+    // (swipe-harness/system-moves-651/FINDINGS.md). The lock goes black within one frame; the
+    // wake lights from 36 % on an eased critical spring while the wallpaper settles from 5 %
+    // larger; the lock screen and the pull-down slide on iOS's paging spring (critical, 0.365);
+    // the app grows out of its icon at response 0.45, damping 0.92. Its flight into the icon
+    // could not be fitted (frames missing) and keeps #628's 0.5 and 0.86.
+    static let brighten = SpringModel(response: 0.3, dampingFraction: 1)
+    static let wakeStart: Double = 0.64
+    static let wakeZoom = SpringModel(response: 0.3, dampingFraction: 1)
+    static let coverSpring = SpringModel(response: 0.365, dampingFraction: 1)
+    static let cardOpen = SpringModel(response: 0.45, dampingFraction: 0.92)
     static let cardSpring = SpringModel(response: 0.5, dampingFraction: 0.86)
     static let cardBack = SpringModel(response: 0.4, dampingFraction: 0.9)
     static let bannerIn = SpringModel(response: 0.5, dampingFraction: 0.78)
@@ -262,7 +268,7 @@ package final class DrawnPhone {
         drag = nil
         heldPress = nil
         mode = .off
-        dark.animate(to: 1, spring: Self.darken)
+        dark.hold(at: 1)
         lockDelay = 0.2
         changed()
     }
@@ -272,6 +278,7 @@ package final class DrawnPhone {
         coverIsPullDown = false
         lockDelay = nil
         cover.hold(at: 0)
+        dark.hold(at: Self.wakeStart)
         dark.animate(to: 0, spring: Self.brighten)
         wake.hold(at: 1)
         wake.animate(to: 0, spring: Self.wakeZoom)
@@ -321,7 +328,7 @@ package final class DrawnPhone {
         behind = .app
         if !cardShown || fromIcon && cardWidth.position < Self.iconSize + 1 { setCard(iconRect) }
         cardShown = true
-        cardTo(fullRect, spring: Self.cardSpring)
+        cardTo(fullRect, spring: Self.cardOpen)
         changed()
     }
 
@@ -401,7 +408,7 @@ package final class DrawnPhone {
             wakeUp()
             return true
         }
-        if dark.position > 0.5 { return true }
+        if dark.position > 0.5, mode != .locked { return true }
         func begin(_ kind: DragKind) -> Bool {
             var d = Drag(kind: kind, start: point, startTime: time, type: type)
             d.tracker.add(point, at: time)
@@ -505,9 +512,8 @@ package final class DrawnPhone {
     /// The app shrinks as the finger goes up and follows it sideways, its bottom under the finger.
     private func followLeave(dx: Double, dy: Double) {
         let up = max(0, -dy)
-        let progress = min(1, up / (height * 0.7))
-        let scale = 1 - 0.62 * progress
-        let w = width * scale, h = height * scale * (1 - 0.15 * progress)
+        let scale = max(0.2, 1 - up / 600)
+        let w = width * scale, h = height * scale
         cardWidth.hold(at: w)
         cardHeight.hold(at: h)
         cardX.hold(at: width / 2 + dx * 0.85)
@@ -535,14 +541,14 @@ package final class DrawnPhone {
                 backToApp(velocity: v)
             }
         case .pullDown:
-            if (cover.position > -height * 0.7 || v.height > 500) && v.height > -300 {
+            if (cover.position > -height * 0.4 || v.height > 500) && v.height > -300 {
                 openPullDown(velocity: Double(v.height))
             } else {
                 cover.animate(to: -height, spring: Self.coverSpring, velocity: Double(v.height))
                 if mode == .pullDown { mode = behind }
             }
         case .lift:
-            let goes = (cover.position < -height / 4 || v.height < -500) && v.height < 300
+            let goes = (cover.position < -height * 0.45 || v.height < -500) && v.height < 300
             if mode == .locked {
                 if goes { unlock(velocity: Double(v.height)) } else { relock(velocity: Double(v.height)) }
             } else {
