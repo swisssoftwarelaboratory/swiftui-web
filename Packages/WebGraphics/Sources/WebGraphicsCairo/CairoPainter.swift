@@ -75,6 +75,8 @@ public final class CairoPainter {
         for command in list.commands {
             // No lens here: its blur alone.
             switch command.asBackdropBlur {
+            case .backdropLens:
+                break   // drawn as its blur (`asBackdropBlur`)
             case .save: cairo_save(context)
             case .restore: cairo_restore(context)
             case .clipRect(let rect):

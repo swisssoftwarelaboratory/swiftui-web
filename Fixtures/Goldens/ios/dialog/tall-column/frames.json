@@ -5,13 +5,13 @@
       "height" : 52,
       "width" : 343,
       "x" : 16,
-      "y" : 567
+      "y" : 599
     },
     "column" : {
-      "height" : 796,
+      "height" : 764,
       "width" : 375,
       "x" : 0,
-      "y" : -129
+      "y" : -97
     },
     "scroll" : {
       "height" : 667,
@@ -31,13 +31,13 @@
           "height" : 52,
           "width" : 343,
           "x" : 16,
-          "y" : 567
+          "y" : 599
         },
         "column" : {
-          "height" : 796,
+          "height" : 764,
           "width" : 375,
           "x" : 0,
-          "y" : -129
+          "y" : -97
         },
         "scroll" : {
           "height" : 667,

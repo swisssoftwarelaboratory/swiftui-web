@@ -23285,6 +23285,384 @@
       "height" : 191,
       "lastBaseline" : 181.5,
       "width" : 0
+    },
+    "style:body|0.0|Row 0" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Row 4" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Row 5" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Row 6" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Row 7" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Row 8" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Row 9" : {
+      "firstBaseline" : 16,
+      "height" : 86.5,
+      "lastBaseline" : 82,
+      "width" : 0
+    },
+    "style:body|0.0|Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 152.5,
+      "lastBaseline" : 148,
+      "width" : 0
+    },
+    "style:body|311.0|Delete" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 49.5
+    },
+    "style:body|311.0|Row 0" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|311.0|Row 1" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 44.5
+    },
+    "style:body|311.0|Row 2" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body|311.0|Row 3" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|311.0|Row 4" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|311.0|Row 5" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body|311.0|Row 6" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|311.0|Row 7" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 46.5
+    },
+    "style:body|311.0|Row 8" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|311.0|Row 9" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|311.0|Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 63
+    },
+    "style:body|343.0|Delete" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 49.5
+    },
+    "style:body|343.0|Row 0" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|343.0|Row 1" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 44.5
+    },
+    "style:body|343.0|Row 2" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body|343.0|Row 3" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|343.0|Row 4" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|343.0|Row 5" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body|343.0|Row 6" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|343.0|Row 7" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 46.5
+    },
+    "style:body|343.0|Row 8" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|343.0|Row 9" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|343.0|Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 63
+    },
+    "style:body|375.0|Delete" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 49.5
+    },
+    "style:body|375.0|Row 0" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|375.0|Row 1" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 44.5
+    },
+    "style:body|375.0|Row 2" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body|375.0|Row 3" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|375.0|Row 4" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|375.0|Row 5" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body|375.0|Row 6" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|375.0|Row 7" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 46.5
+    },
+    "style:body|375.0|Row 8" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|375.0|Row 9" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body|375.0|Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 63
+    },
+    "style:body||Row 0" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body||Row 4" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body||Row 5" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47
+    },
+    "style:body||Row 6" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body||Row 7" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 46.5
+    },
+    "style:body||Row 8" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body||Row 9" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 47.5
+    },
+    "style:body||Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 63
+    },
+    "style:footnote|0.0|Version 1.0 (1)" : {
+      "firstBaseline" : 12.5,
+      "height" : 232,
+      "lastBaseline" : 228.5,
+      "width" : 0
+    },
+    "style:footnote|311.0|Version 1.0 (1)" : {
+      "firstBaseline" : 12.5,
+      "height" : 16,
+      "lastBaseline" : 12.5,
+      "width" : 85.5
+    },
+    "style:footnote|343.0|Version 1.0 (1)" : {
+      "firstBaseline" : 12.5,
+      "height" : 16,
+      "lastBaseline" : 12.5,
+      "width" : 85.5
+    },
+    "style:footnote|375.0|Version 1.0 (1)" : {
+      "firstBaseline" : 12.5,
+      "height" : 16,
+      "lastBaseline" : 12.5,
+      "width" : 85.5
+    },
+    "style:footnote||Version 1.0 (1)" : {
+      "firstBaseline" : 12.5,
+      "height" : 16,
+      "lastBaseline" : 12.5,
+      "width" : 85.5
+    },
+    "system:15:400:default|177.0|This can't be undone." : {
+      "firstBaseline" : 14.5,
+      "height" : 18,
+      "lastBaseline" : 14.5,
+      "width" : 148.5
+    },
+    "system:15:400:default|177.0|Your plan and history stay saved. Sign in again any time." : {
+      "firstBaseline" : 14.5,
+      "height" : 54,
+      "lastBaseline" : 50.5,
+      "width" : 177
+    },
+    "system:17:400:default|208.0|Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 63
+    },
+    "system:17:600:default|208.0|Sign out" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 66
+    },
+    "system:17:700:default|177.0|Delete it?" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 77
+    },
+    "system:17:700:default|177.0|Sign out?" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 76.5
     }
   },
   "fonts" : {
@@ -25180,7 +25558,7 @@
     }
   },
   "host" : "iPhoneSimulator 26.0 SwiftUIWeb SE",
-  "hostAdditions" : "iPhoneSimulator 27.0 SwiftUIWeb SE iOS-27-0: the ios\/sheet\/nav entries (2026-10-12); the rest from the iOS 26.0 run",
+  "hostAdditions" : "iPhoneSimulator 27.0 SwiftUIWeb SE iOS-27-0: the ios\/sheet\/nav entries (2026-10-12), the ios\/dialog\/wide-button, trailing-button and tall-column entries (2026-11-20); the rest from the iOS 26.0 run",
   "macOS" : "26.0.0",
   "platformProfile" : "iOS"
 }

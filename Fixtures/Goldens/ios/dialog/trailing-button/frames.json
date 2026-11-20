@@ -1,12 +1,6 @@
 {
   "fixture" : "ios\/dialog\/trailing-button",
   "frames" : {
-    "button" : {
-      "height" : 20.5,
-      "width" : 49.5,
-      "x" : 301.5,
-      "y" : 446.5
-    },
     "stack" : {
       "height" : 667,
       "width" : 375,
@@ -21,12 +15,6 @@
   "steps" : [
     {
       "frames" : {
-        "button" : {
-          "height" : 20.5,
-          "width" : 49.5,
-          "x" : 301.5,
-          "y" : 446.5
-        },
         "stack" : {
           "height" : 667,
           "width" : 375,

@@ -37,6 +37,8 @@ public final class CoreGraphicsPainter {
         for command in list.commands {
             // No lens here: its blur alone.
             switch command.asBackdropBlur {
+            case .backdropLens:
+                break   // drawn as its blur (`asBackdropBlur`)
             case .beginFilter(let filter, let bounds):
                 // The group paints into a bitmap covering the content's device-space box (a
                 // soft blur reaches three sigma further); `endGroup` filters it and draws it back.
