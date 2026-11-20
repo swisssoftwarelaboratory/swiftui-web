@@ -418,6 +418,8 @@ def main():
     parser.add_argument("--out", help="directory to copy the image files into")
     parser.add_argument("--json", help="write the manifest as JSON to this file")
     parser.add_argument("--js", help="write the manifest as a script setting window.__swiftuiwebAssets")
+    parser.add_argument("--product", help="the app's Xcode target, whose Info dictionary the manifest carries")
+    parser.add_argument("--debug", action="store_true", help="read the target's Debug build settings, not Release")
     args = parser.parse_args()
     source = Path(args.source).resolve()
     out = Path(args.out).resolve() if args.out else None
@@ -441,6 +443,11 @@ def main():
         metrics["file"] = ("Fonts/" + path.name) if out else relative.as_posix()
         fonts[metrics["postScriptName"]] = metrics
     localizations = find_localizations(source)
+    # The app's Info dictionary as Xcode builds it (scripts/info_plist.py, new-website#663):
+    # `Bundle.main.infoDictionary`, and the host's colour scheme for an app set to Light or Dark.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from info_plist import info_dictionary
+    info = info_dictionary(source, args.product, "Debug" if args.debug else "Release")
     # The string tables beside the images: `<lang>.lproj/<Table>.strings.json`, which the
     # bundle reads when a string is looked up (WebFoundation's Bundle.swift).
     if out:
@@ -452,7 +459,7 @@ def main():
     manifest = {"version": 1, "catalogs": [p.name for p in catalogs],
                 "images": dict(sorted(catalog.images.items())), "colors": dict(sorted(catalog.colors.items())),
                 "fonts": dict(sorted(fonts.items())),
-                "localizations": localizations["languages"], "sourceLanguage": localizations["source"]}
+                "localizations": localizations["languages"], "sourceLanguage": localizations["source"], "info": info}
     text = json.dumps(manifest, indent=2, sort_keys=True)
     if args.json:
         Path(args.json).parent.mkdir(parents=True, exist_ok=True)
