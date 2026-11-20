@@ -10,12 +10,13 @@ import Foundation
 extension SystemKeyboard {
     struct Palette {
         var panel, key, keyDown, ink, tag, divider, bubble, accentOn: RGBA
+        var edge = RGBA(r: 0, g: 0, b: 0, a: 0.1)
         var blue = RGBA(r: 0, g: 122, b: 255, a: 1)
         var blueDown = RGBA(r: 51, g: 149, b: 255, a: 1)
 
         static let light = Palette(panel: RGBA(r: 226, g: 227, b: 232, a: 1), key: RGBA(r: 255, g: 255, b: 255, a: 1),
                                    keyDown: RGBA(r: 223, g: 223, b: 223, a: 1), ink: RGBA(r: 0, g: 0, b: 0, a: 1),
-                                   tag: RGBA(r: 142, g: 142, b: 147, a: 1), divider: RGBA(r: 201, g: 202, b: 206, a: 1),
+                                   tag: RGBA(r: 166, g: 166, b: 171, a: 1), divider: RGBA(r: 201, g: 202, b: 206, a: 1),
                                    bubble: RGBA(r: 255, g: 255, b: 255, a: 1), accentOn: RGBA(r: 0, g: 122, b: 255, a: 1))
         static let dark = Palette(panel: RGBA(r: 32, g: 32, b: 32, a: 1), key: RGBA(r: 68, g: 68, b: 68, a: 1),
                                   keyDown: RGBA(r: 103, g: 103, b: 103, a: 1), ink: RGBA(r: 255, g: 255, b: 255, a: 1),
@@ -48,7 +49,10 @@ extension SystemKeyboard {
         let width = frame.width
         // The panel runs past the screen's bottom so a spring's overshoot never shows a gap.
         let panel = CGRect(x: 0, y: 0, width: width, height: height + 60)
-        list.append(.fillPath(Path(roundedRect: ctx.absoluteRect(panel), cornerRadii: RectangleCornerRadii(topLeading: KeyboardMetrics.cornerRadius, topTrailing: KeyboardMetrics.cornerRadius), style: .continuous), p.panel))
+        let panelPath = Path(roundedRect: ctx.absoluteRect(panel), cornerRadii: RectangleCornerRadii(topLeading: KeyboardMetrics.cornerRadius, topTrailing: KeyboardMetrics.cornerRadius), style: .continuous)
+        list.append(.fillPath(panelPath, p.panel))
+        // The faint edge along the top the simulator shows.
+        list.append(.strokePath(panelPath, style: StrokeStyle(lineWidth: 0.5), p.edge))
         paintSuggestions(p, context: ctx, into: &list)
         let held = finger?.accents == nil ? (finger?.key ?? hardwareKey) : finger?.key
         let keys = self.keys
@@ -100,7 +104,7 @@ extension SystemKeyboard {
         let at = context.absolutePoint(center)
         switch key.kind {
         case .character(let character):
-            drawCentered(label(for: character), font: font(showsEmoji ? 28 : 25), center: center, color: p.ink, context: context, into: &list)
+            drawCentered(label(for: character), font: font(showsEmoji ? 28 : 23.5), center: center, color: p.ink, context: context, into: &list)
         case .shift:
             Self.shift(list: &list, center: at, state: shift, color: p.ink)
         case .delete:
@@ -113,7 +117,7 @@ extension SystemKeyboard {
         case .accent:
             drawCentered(accentKeyMark, font: font(25), center: CGPoint(x: center.x, y: center.y + 4), color: p.ink, context: context, into: &list)
         case .space:
-            let tag = font(11, weight: .medium)
+            let tag = font(10.5)
             let tagWidth = runtime.textEngine.layout(language.tag, font: tag, width: nil).size.width
             list.append(.drawText(language.tag, DisplayFont(tag), origin: context.absolutePoint(CGPoint(x: key.frame.maxX - 8 - tagWidth, y: key.frame.maxY - 5)), p.tag))
         case .return:
@@ -195,13 +199,13 @@ extension SystemKeyboard {
     }
 
     static func emojiFace(list: inout DisplayList, center c: CGPoint, color: RGBA) {
-        list.append(.strokePath(Path(ellipseIn: CGRect(x: c.x - 11, y: c.y - 11, width: 22, height: 22)), style: stroke(1.6), color))
-        list.append(.fillPath(Path(ellipseIn: CGRect(x: c.x - 5.3, y: c.y - 5.2, width: 3, height: 3.4)), color))
-        list.append(.fillPath(Path(ellipseIn: CGRect(x: c.x + 2.3, y: c.y - 5.2, width: 3, height: 3.4)), color))
+        list.append(.strokePath(Path(ellipseIn: CGRect(x: c.x - 9.5, y: c.y - 9.5, width: 19, height: 19)), style: stroke(1.4), color))
+        list.append(.fillPath(Path(ellipseIn: CGRect(x: c.x - 4.6, y: c.y - 4.6, width: 2.6, height: 3)), color))
+        list.append(.fillPath(Path(ellipseIn: CGRect(x: c.x + 2, y: c.y - 4.6, width: 2.6, height: 3)), color))
         let mouth = Path { p in
-            p.move(to: CGPoint(x: c.x - 6, y: c.y + 1.5))
-            p.addLine(to: CGPoint(x: c.x + 6, y: c.y + 1.5))
-            p.addArc(center: CGPoint(x: c.x, y: c.y + 1.5), radius: 6, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+            p.move(to: CGPoint(x: c.x - 5, y: c.y + 1.2))
+            p.addLine(to: CGPoint(x: c.x + 5, y: c.y + 1.2))
+            p.addArc(center: CGPoint(x: c.x, y: c.y + 1.2), radius: 5, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
             p.closeSubpath()
         }
         list.append(.fillPath(mouth, color))
@@ -235,12 +239,12 @@ extension SystemKeyboard {
     /// The return key's glyph for the field's `submitLabel`: the arrow up for Send, a magnifier
     /// for Search, a tick for Done, the bent return arrow otherwise.
     static func returnGlyph(_ kind: UIReturnKeyType, list: inout DisplayList, center c: CGPoint, color: RGBA) {
-        let style = stroke(2)
+        let style = stroke(1.6)
         switch kind {
         case .send:
             let arrow = Path { p in
-                p.move(to: CGPoint(x: c.x, y: c.y + 9)); p.addLine(to: CGPoint(x: c.x, y: c.y - 9))
-                p.move(to: CGPoint(x: c.x - 7, y: c.y - 2)); p.addLine(to: CGPoint(x: c.x, y: c.y - 9)); p.addLine(to: CGPoint(x: c.x + 7, y: c.y - 2))
+                p.move(to: CGPoint(x: c.x, y: c.y + 8)); p.addLine(to: CGPoint(x: c.x, y: c.y - 8))
+                p.move(to: CGPoint(x: c.x - 6.5, y: c.y - 1.5)); p.addLine(to: CGPoint(x: c.x, y: c.y - 8)); p.addLine(to: CGPoint(x: c.x + 6.5, y: c.y - 1.5))
             }
             list.append(.strokePath(arrow, style: style, color))
         case .search, .google, .yahoo:
