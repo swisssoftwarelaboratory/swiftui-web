@@ -196,6 +196,26 @@ public final class Runtime {
     /// The host's safe area (a `UIHostingController` under a navigation bar; a browser page has
     /// none): the root view is laid out inside it unless it extends into it, as under a
     /// `safeAreaPadding` (ios/representable/hostingsafearea).
+    /// The drawn iPhone keyboard (Keyboard/SystemKeyboard.swift, new-website#648), drawn while
+    /// `drawsSoftwareKeyboard` and the iPhone look are on.
+    package lazy var systemKeyboard = SystemKeyboard(runtime: self)
+    /// Set by a host with no on-screen keyboard of its own (the iPhone look on a computer).
+    public var drawsSoftwareKeyboard = false
+    /// The host's edit of the focused input element for the drawn keyboard.
+    public var softwareKeyboardEditHandler: (@MainActor @Sendable (SoftwareKeyboardEdit, Int) -> Bool)?
+    /// The drawn keyboard's frame as it starts to move up (its end frame) or nil as it starts
+    /// down: the host posts UIKit's keyboard notifications from it.
+    public var onKeyboardFrameChange: SoftwareKeyboardFrameHandler?
+    /// The keyboard's height above the screen's bottom: the safe area's keyboard region.
+    package var keyboardInset: CGFloat = 0 {
+        didSet { if keyboardInset != oldValue { requestLayout(invalidatingSizes: true) } }
+    }
+    /// The drawn keyboard's language ("de-CH"), when the host knows it better than the app's
+    /// bundle and the viewer's languages do.
+    public var softwareKeyboardLanguage: String?
+    /// Whether the press in flight is on the drawn keyboard.
+    package var keyboardOwnsPointer = false
+
     public var safeAreaInsets = EdgeInsets() {
         didSet { if safeAreaInsets != oldValue { requestLayout(invalidatingSizes: true) } }
     }
@@ -785,7 +805,7 @@ public final class Runtime {
         layoutToolbar(in: size)
         let top = toolbar?.frame.height ?? 0
         let content = CGSize(width: size.width, height: max(0, size.height - top))
-        let insets = safeAreaInsets
+        let insets = effectiveSafeAreaInsets
         let safe = CGRect(x: insets.leading, y: top + insets.top, width: max(0, content.width - insets.leading - insets.trailing),
                           height: max(0, content.height - insets.top - insets.bottom))
         for node in root.layoutChildren {
@@ -860,7 +880,11 @@ package final class RootNode: ViewNode {
     }
 
     /// The host's safe area is the root view's.
-    override package func providedSafeAreaInsets(for child: ViewNode) -> EdgeInsets { runtime.safeAreaInsets }
+    override package func providedSafeAreaInsets(for child: ViewNode) -> EdgeInsets { runtime.effectiveSafeAreaInsets }
+    /// The device's region and the keyboard's.
+    override package func providedRegionSafeAreaInsets(for child: ViewNode) -> (container: EdgeInsets, keyboard: EdgeInsets) {
+        (runtime.safeAreaInsets, runtime.keyboardSafeAreaInsets)
+    }
 
     /// The area a presentation's content is being placed in (`Runtime.place(_:in:insets:)`):
     /// its bounds in the window and the unsafe depth at each of its edges.

@@ -37,7 +37,8 @@ extension UIKitScene {
     /// The on-screen keyboard's frame in the screen's space, or nil while it is away. A host
     /// sets it (the browser's keyboard shrinks the visual viewport; `nil` on a desktop); the
     /// notifications go out as UIKit posts them, with the begin and end frames (the hidden
-    /// keyboard sits just below the screen), a 0.25 s duration and the ease-in-out curve.
+    /// keyboard sits just below the screen), the 0.3833 s duration and curve 7 the iOS 27 simulator
+    /// reports for its keyboard (new-website#648).
     public var keyboardFrame: CGRect? {
         get { storedKeyboardFrame }
         set {
@@ -51,7 +52,7 @@ extension UIKitScene {
             let info: [AnyHashable: Any] = [
                 UIResponder.keyboardFrameBeginUserInfoKey: NSValue(cgRect: begin),
                 UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: end),
-                UIResponder.keyboardAnimationDurationUserInfoKey: NSNumber(value: 0.25),
+                UIResponder.keyboardAnimationDurationUserInfoKey: NSNumber(value: 0.3833),
                 UIResponder.keyboardAnimationCurveUserInfoKey: NSNumber(value: 7),
                 UIResponder.keyboardIsLocalUserInfoKey: NSNumber(value: true),
             ]

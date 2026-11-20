@@ -177,6 +177,8 @@ public final class CanvasSceneHost {
         Bundle._hostLocalizations = (languages: scene.assetCatalog.localizations, source: scene.assetCatalog.sourceLanguage)
         loadFonts(scene.assetCatalog, base: window.__swiftuiwebAssets.object?.base.string ?? "")
         scene.onNeedsFrame = { [weak self] in self?.scheduleFrame() }
+        // The drawn keyboard's edits go through the field's input element (new-website#648).
+        scene.softwareKeyboardEditHandler = { [weak self] edit, id in self?.applySoftwareKeyboardEdit(edit, to: id) ?? false }
         if drawsPhone { installPhone() }
         // An image the painter had to fetch has arrived: paint the frame again (and let the
         // scene's image views move to their loaded or failed phase).
@@ -279,7 +281,12 @@ public final class CanvasSceneHost {
             self.scheduleFrame()
         }
         on(window, "focus") { [weak self] _ in self?.scene.hostIsFocused = true; self?.scheduleFrame() }
-        on(window, "blur") { [weak self] _ in self?.scene.hostIsFocused = false; self?.scheduleFrame() }
+        on(window, "blur") { [weak self] _ in
+            self?.scene.hostIsFocused = false
+            self?.heldKeyCodes.removeAll()
+            self?.scene.softwareKeyboardHardwareKeysUp()
+            self?.scheduleFrame()
+        }
         if let location = window.location.object, let href = location.href.string, let hash = location["hash"].string, !hash.isEmpty {
             scene.handleOpenURL(href)
         }
@@ -1890,6 +1897,22 @@ public final class CanvasSceneHost {
                     self.scheduleFrame()
                 }
             }
+            // The drawn keyboard holds the key the viewer's own keyboard holds (new-website#648).
+            on(element, "keydown") { [weak self] e in
+                guard let self, e.metaKey.boolean != true, e.ctrlKey.boolean != true, let key = e.key.string else { return }
+                if let code = e.code.string { self.heldKeyCodes.insert(code) }
+                self.scene.softwareKeyboardHardwareKeyDown(key)
+                self.scheduleFrame()
+            }
+            on(element, "keyup") { [weak self] e in
+                guard let self else { return }
+                if let code = e.code.string { self.heldKeyCodes.remove(code) }
+                if self.heldKeyCodes.isEmpty || e.key.string == "Meta" {
+                    self.heldKeyCodes.removeAll()
+                    self.scene.softwareKeyboardHardwareKeysUp()
+                    self.scheduleFrame()
+                }
+            }
             on(element, "keydown") { [weak self] e in
                 guard let self, e.key.string == "Enter" else { return }
                 // A text field submits on Return, even a multi-line one; an editor keeps the newline.
@@ -1976,6 +1999,48 @@ public final class CanvasSceneHost {
     }
 
     private var installedInputStyleRule = false
+    /// The real keys held down in a text input (DOM `code`s), for the drawn keyboard.
+    private var heldKeyCodes = Set<String>()
+
+    /// Makes an edit of the drawn keyboard on the field's input element, as typing would: the
+    /// element's own `input` event carries it to the scene with the caret (new-website#648).
+    private func applySoftwareKeyboardEdit(_ edit: SoftwareKeyboardEdit, to id: Int) -> Bool {
+        guard let element = overlayButtons[id], overlayState[id]?.textInput != nil else { return false }
+        let value = element.value.string ?? ""
+        let utf16 = Array(value.utf16)
+        var start = min(Int(element.selectionStart.number ?? Double(utf16.count)), utf16.count)
+        let end = min(max(start, Int(element.selectionEnd.number ?? Double(start))), utf16.count)
+        var text = ""
+        var inputType = "insertText"
+        switch edit {
+        case .submit:
+            if overlayState[id]?.textInput?.submitsOnReturn ?? true {
+                scene.textFieldDidSubmit(id)
+                scheduleFrame()
+                return true
+            }
+            text = "\n"
+            inputType = "insertLineBreak"
+        case .insert(let inserted):
+            text = inserted
+        case .deleteBackward:
+            inputType = "deleteContentBackward"
+            if start == end {
+                // One whole character (an emoji, an accented letter) before the caret.
+                guard start > 0 else { return true }
+                let before = String(decoding: utf16[..<start], as: UTF16.self)
+                start -= before.last.map { String($0).utf16.count } ?? 1
+            }
+        }
+        _ = element.setRangeText?(text, start, end, "end")
+        let options = JSObject.global.Object.function!.new()
+        options.inputType = .string(inputType)
+        options.bubbles = .boolean(true)
+        if !text.isEmpty { options.data = .string(text) }
+        let event = JSObject.global.InputEvent.function.map { $0.new("input", options) } ?? JSObject.global.Event.function!.new("input", options)
+        _ = element.dispatchEvent?(event)
+        return true
+    }
 
     /// The overlay inputs' own selection highlight is invisible: the scene paints it.
     private func installInputStyleRule() {

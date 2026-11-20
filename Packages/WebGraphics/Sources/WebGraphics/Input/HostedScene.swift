@@ -40,6 +40,17 @@ public protocol HostedScene: AnyObject {
     /// and home indicator, which the root view is laid out inside unless it extends into it.
     /// Set by hosts that know it (a page in a phone's browser, a drawn phone around the app).
     var hostSafeAreaInsets: [CGFloat] { get set }
+    /// Whether the scene draws its own on-screen keyboard while a text field has focus (the
+    /// iPhone look on a computer, which has no on-screen keyboard of its own; new-website#648).
+    var drawsSoftwareKeyboard: Bool { get set }
+    /// The host's edit of the focused input element for the drawn keyboard (`SoftwareKeyboard`):
+    /// returns false when it could not, and the scene edits the field itself.
+    var softwareKeyboardEditHandler: (@MainActor @Sendable (SoftwareKeyboardEdit, Int) -> Bool)? { get set }
+    /// A real key went down (the DOM `key`), or every one is up: the drawn key follows.
+    func softwareKeyboardHardwareKeyDown(_ key: String)
+    func softwareKeyboardHardwareKeysUp()
+    /// Whether the drawn keyboard covers `point` (points).
+    func softwareKeyboardContains(_ point: CGPoint) -> Bool
     /// Whether the page is visible, and whether its window has focus (the scene phase).
     var hostIsVisible: Bool { get set }
     var hostIsFocused: Bool { get set }

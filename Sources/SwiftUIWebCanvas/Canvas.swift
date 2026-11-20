@@ -59,6 +59,15 @@ public final class CanvasHost {
         case "macos": runtime.hostPlatformProfile = .macOS
         default: runtime.hostPlatformProfile = host.hasCoarsePointer ? .iOS : .macOS
         }
+        // The iPhone look on a computer draws the iPhone's keyboard, which a computer has none
+        // of on screen (new-website#648); a phone's browser brings its own. `?keyboard=none`
+        // leaves it out. Its frame posts UIKit's keyboard notifications.
+        let search = JSObject.global.location.object?.search.string ?? ""
+        runtime.drawsSoftwareKeyboard = runtime.hostPlatformProfile.isIOS && !host.hasCoarsePointer && !search.contains("keyboard=none")
+        if runtime.drawsSoftwareKeyboard {
+            KeyboardHost.drawsKeyboard = true
+            runtime.onKeyboardFrameChange = { UIKitScene.shared.keyboardFrame = $0 }
+        }
         // Links open in a new tab; share links use Web Share where the browser offers it.
         let host = self.host
         OpenURLAction.systemHandler = { url in host.openURL(url.absoluteString) }
