@@ -68,6 +68,7 @@ extension Runtime {
         if let previous, previous != identifier { textInputNode(previous)?.focusChanged(false) }
         if let identifier, identifier != previous { textInputNode(identifier)?.focusChanged(true) }
         notifyFocusChanged()
+        systemKeyboardFocusChanged()
         setNeedsDisplay()
     }
 

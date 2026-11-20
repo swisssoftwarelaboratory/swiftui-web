@@ -379,6 +379,8 @@ package protocol _TextInputNode: AnyObject {
     func setMarkedRange(_ range: Range<Int>?)
     /// Keyboard focus arrived or left.
     func focusChanged(_ focused: Bool)
+    /// The text and the selection (UTF-16 offsets) the drawn keyboard edits (SystemKeyboardRuntime.swift).
+    var editingState: (text: String, selection: Range<Int>)? { get }
 }
 
 extension _TextInputNode {
@@ -401,6 +403,7 @@ extension Runtime {
             return
         }
         node.setText(text)
+        systemKeyboard.contextChanged()
     }
 
     /// Return pressed in the field with this identifier (an editor inserts a newline).
@@ -415,6 +418,7 @@ extension Runtime {
     /// The host's selection or caret moved in the field with this identifier (UTF-16 offsets).
     public func textField(_ semanticsIdentifier: Int, selectionStart start: Int, end: Int) {
         textInputNode(semanticsIdentifier)?.setSelection(start: start, end: end)
+        systemKeyboard.contextChanged()
     }
 
     /// The host's input method is composing in the field (pf-native-text).

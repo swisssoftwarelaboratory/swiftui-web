@@ -130,6 +130,9 @@ extension Runtime {
     public func pointerDown(at point: CGPoint, type: PointerType = .mouse, time: Double = 0) {
         lastPointerTime = time
         lastPointerType = type
+        // A press on the drawn keyboard is its own (new-website#648).
+        keyboardOwnsPointer = systemKeyboard.pointerDown(at: point)
+        if keyboardOwnsPointer { return }
         if pressActsAsFinger(type) { beginPan(at: point, time: time) }
         // A touch that stopped a decelerating scroll view belongs to it, not to a control.
         if pan?.active == true { return }
@@ -197,6 +200,10 @@ extension Runtime {
     public func pointerMoved(to point: CGPoint, time: Double = 0) {
         lastPointerTime = time
         pointerPosition = point
+        if keyboardOwnsPointer {
+            systemKeyboard.pointerMoved(to: point)
+            return
+        }
         continuePan(to: point, time: time)
         if dragSession != nil {
             updateDrag(to: point)
@@ -228,6 +235,11 @@ extension Runtime {
     /// and no pan took the touch.
     public func pointerUp(at point: CGPoint, time: Double = 0) {
         lastPointerTime = time
+        if keyboardOwnsPointer {
+            keyboardOwnsPointer = false
+            systemKeyboard.pointerUp(at: point)
+            return
+        }
         pendingDrag = nil
         if dragSession != nil {
             endDrag(at: point)

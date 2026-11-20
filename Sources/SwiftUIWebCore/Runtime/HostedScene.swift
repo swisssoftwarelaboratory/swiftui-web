@@ -18,6 +18,7 @@ extension Runtime: HostedScene {
         var animating = advanceScrollAnimations(elapsed: elapsed)
         if advanceAnimations(elapsed: elapsed) { animating = true }
         if !platformHosts.isEmpty, advancePlatformHosts(elapsed: elapsed) { animating = true }
+        if systemKeyboard.isUp || systemKeyboard.isVisible, systemKeyboard.advance(elapsed: elapsed) { animating = true }
         return animating
     }
 
