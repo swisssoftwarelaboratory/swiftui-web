@@ -1084,7 +1084,10 @@ extension Runtime {
                                     onDismissRequested: onDismissRequested)
         node.focusToRestore = focusedIdentifier.map { ($0, focusVisible) }
         presentations.append(node)
-        requestLayout()
+        // A presentation lays out over the window after the main tree and never changes its
+        // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
+        // a menu opening or closing in a debug build, new-website#649).
+        requestLayout(invalidatingSizes: false)
         return node
     }
 
@@ -1104,14 +1107,20 @@ extension Runtime {
            interactiveNode(semanticsIdentifier: restore.identifier) != nil {
             focus(semanticsIdentifier: restore.identifier, keyboard: restore.keyboard)
         }
-        requestLayout()
+        // A presentation lays out over the window after the main tree and never changes its
+        // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
+        // a menu opening or closing in a debug build, new-website#649).
+        requestLayout(invalidatingSizes: false)
     }
 
     /// A sheet that slid off: gone now.
     package func finishLeaving(_ node: PresentationNode) {
         leavingPresentations.removeAll { $0 === node }
         if node.isMounted { node.unmount() }
-        requestLayout()
+        // A presentation lays out over the window after the main tree and never changes its
+        // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
+        // a menu opening or closing in a debug build, new-website#649).
+        requestLayout(invalidatingSizes: false)
     }
 
     /// Dismisses the topmost presentation, if any (hosts call this for Escape). Returns whether one was.
@@ -1149,6 +1158,13 @@ extension Runtime {
                 return (hit, true)
             }
             if presentation.panel.contains(point) { return (nil, true) }
+            // iOS 27: a press beside a confirmation dialog closes it, as beside a popover (the
+            // simulator dismisses Paulo's Sign out sheet so, new-website#649); the press is used up.
+            if presentation.kind == .dialog, presentation.environment.platformProfile.metrics.dialogsArePopovers,
+               !presentation.options.interactiveDismissDisabled {
+                presentation.dismiss()
+                return (nil, true)
+            }
             if presentation.isModal { return (nil, true) }
             // A press beside a window leaves it open and goes on to what is under it.
             if presentation.kind.isWindow { continue }
