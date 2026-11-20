@@ -442,6 +442,9 @@ public final class Runtime {
 
     /// The interactive node a pointer is currently pressing, and the last pointer position.
     package var pressedNode: (ViewNode & _Interactive)?
+    /// The control the last press activated (released over it): an iOS confirmation dialog opens
+    /// on it rather than on the view its modifier sits on (new-website#649).
+    package weak var lastActivatedNode: ViewNode?
     /// The `focusable` view the press began on while an interactive ancestor took the press.
     package var focusPressNode: (ViewNode & _Interactive)?
     /// The text whose selection is showing (`textSelection(.enabled)`): a press elsewhere clears it.

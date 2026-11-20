@@ -251,7 +251,9 @@ extension Runtime {
             let localPoint = local(point, in: focusing)
             focusing.pressEnded(inside: focusing.contains(localPoint), at: localPoint)
         }
-        node.pressEnded(inside: released === node || (focusing != nil && released === focusing), at: local(point, in: node))
+        let inside = released === node || (focusing != nil && released === focusing)
+        if inside { lastActivatedNode = node }
+        node.pressEnded(inside: inside, at: local(point, in: node))
         for ancestor in simultaneous {
             let localPoint = local(point, in: ancestor)
             ancestor.pressEnded(inside: ancestor.contains(localPoint), at: localPoint)

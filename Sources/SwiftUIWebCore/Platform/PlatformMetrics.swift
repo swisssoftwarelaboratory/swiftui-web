@@ -807,6 +807,18 @@ package final class PlatformMetricsTable: @unchecked Sendable {
     package var listGroupedFirstHeaderTop: CGFloat = 10
     package var listGroupedFooterTop: CGFloat = 8                      // card bottom to the footer text (ios/list/footer)
     package var listGroupedFooterToHeader: CGFloat = 16                // a footer's slot to the next header's text (ios/list/footer-header)
+    // iOS 27 menus (new-website#649, Paulo's Training menu on the iPhone 16 simulator): a glass
+    // panel pinned over its source by the corner nearest the window's edge, labels' icons in a
+    // column of their own, sections apart by a gap with a hairline across it.
+    package var menusAreGlassPanels = false
+    package var menuSectionGap: CGFloat = 0
+    package var menuLabelIconSlot: CGFloat = 0
+    package var menuLabelIconGap: CGFloat = 0
+    package var menuLabelSize: CGFloat = 0                              // 0: the button label size
+    package var menuGlassFill = RGBA(r: 255, g: 255, b: 255, a: 0.8)
+    package var menuGlassSigma: CGFloat = 0
+    package var menuEdgeAlpha = 0.0
+    package var menuWindowMargin: CGFloat = 0
     package var menuIsPlainLabel = false                               // iOS: a menu button is its label in the accent colour (ios/menu/basic)
     package var menuDisabledLabelAlpha = 0.0                           // iOS: black at 67/255 when disabled
     package var listGroupedFooterBottom: CGFloat = 23.5                // the footer slot to the next card

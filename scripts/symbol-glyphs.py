@@ -89,7 +89,7 @@ MAPPING = {
     "plus.square": ("square-plus", 0), "minus.square": ("square-minus", 0), "bell.badge": ("bell-ring", 0),
     "star.leadinghalf.filled": ("star-half", 0), "arrow.up.right": ("arrow-up-right", 0), "arrow.down.left": ("arrow-down-left", 0),
     "arrow.turn.up.left": ("corner-up-left", 0), "repeat": ("repeat", 0), "shuffle": ("shuffle", 0), "backward.fill": ("rewind", 1),
-    "forward.fill": ("fast-forward", 1), "speaker.slash": ("volume-x", 0), "speaker.wave.1": ("volume-1", 0),
+    "forward.fill": ("fast-forward", 1), "forward": ("fast-forward", 0), "backward": ("rewind", 0), "speaker.slash": ("volume-x", 0), "speaker.wave.1": ("volume-1", 0),
     "forward.end.fill": ("skip-forward", 1), "backward.end.fill": ("skip-back", 1), "sidebar.right": ("panel-right", 0),
     "rectangle.split.3x1": ("columns-3", 0), "link.badge.plus": ("link-2", 0), "eraser": ("eraser", 0), "highlighter": ("highlighter", 0),
     "eyedropper": ("pipette", 0), "hexagon": ("hexagon", 0), "pentagon": ("pentagon", 0), "seal": ("badge", 0),

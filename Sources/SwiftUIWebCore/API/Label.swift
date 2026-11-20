@@ -108,6 +108,14 @@ struct _AutomaticLabelBody: View {
             } else {
                 configuration.icon.accessibilityHidden(false)
             }
+        } else if context == .menu {
+            // An iOS menu row: the icon centred in its own column in the tint, the title after it.
+            HStack(spacing: PlatformMetrics.menuLabelIconGap) {
+                configuration.icon
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: PlatformMetrics.menuLabelIconSlot)
+                configuration.title
+            }
         } else {
             TitleAndIconLabelStyle().makeBody(configuration: configuration)
         }
@@ -115,7 +123,7 @@ struct _AutomaticLabelBody: View {
 }
 
 /// Where a label sits, for the automatic style.
-package enum _AutomaticLabelContext: Sendable { case toolbar }
+package enum _AutomaticLabelContext: Sendable { case toolbar, menu }
 
 package struct AutomaticLabelContextKey: EnvironmentKey { package static let defaultValue: _AutomaticLabelContext? = nil }
 

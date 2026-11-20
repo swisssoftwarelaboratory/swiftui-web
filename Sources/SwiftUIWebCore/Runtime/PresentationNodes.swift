@@ -358,10 +358,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             let source = anchor?.frameInRoot ?? CGRect(x: window.width / 2, y: window.height / 2, width: 0, height: 0)
             let x = min(max(0, (source.midX - size.width / 2).rounded(.down)), max(0, window.width - size.width))
             if m.dialogCentredOnSource {
-                let margin = PlatformMetrics.sheetMargin
-                let y = min(max(margin, (source.midY - size.height / 2).rounded()), max(margin, window.height - size.height - margin))
-                panel = CGRect(x: x, y: y, width: size.width, height: size.height)
-                arrow = nil
+                (panel, arrow) = Self.popoverPlacement(size: size, source: source, window: window, safe: runtime.safeAreaInsets, metrics: m)
                 contentFrame = panel
                 target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(size), by: runtime.root)
                 return
@@ -477,6 +474,17 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             case .trailing: tip = CGPoint(x: source.minX, y: source.midY)
             }
             arrow = (edge, tip)
+        case .menu where m.menusAreGlassPanels:
+            // iOS 27: the panel covers its source, pinned by the source's corner nearest the
+            // window's edges (Paulo's ••• button top right: the panel's top-right corner on the
+            // button's), kept inside the window's safe area.
+            let size = target.sizeThatFits(ProposedViewSize(width: nil, height: nil))
+            let source = anchor?.frameInRoot ?? anchorPoint.map { CGRect(origin: $0, size: .zero) } ?? .zero
+            panel = Self.menuPlacement(size: size, source: source, window: window, safe: runtime.safeAreaInsets, margin: m.menuWindowMargin)
+            arrow = nil
+            contentFrame = panel
+            target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(size), by: runtime.root)
+            return
         case .menu:
             let size = target.sizeThatFits(ProposedViewSize(width: nil, height: nil))
             let source = anchor?.frameInRoot ?? anchorPoint.map { CGRect(origin: $0, size: .zero) } ?? .zero
@@ -537,6 +545,64 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(contentFrame.size), by: runtime.root)
     }
 
+    /// An iOS menu's panel over its source: the corner of the source nearest the window's
+    /// edges is the panel's, the panel then kept inside the safe area less `margin`.
+    package static func menuPlacement(size: CGSize, source: CGRect, window: CGSize, safe: EdgeInsets, margin: CGFloat) -> CGRect {
+        let x = source.midX > window.width / 2 ? source.maxX - size.width : source.minX
+        let y = source.midY > window.height / 2 ? source.maxY - size.height : source.minY
+        let left = max(margin, safe.leading), right = window.width - max(margin, safe.trailing)
+        let top = max(margin, safe.top), bottom = window.height - max(margin, safe.bottom)
+        return CGRect(x: min(max(left, x), max(left, right - size.width)).rounded(),
+                      y: min(max(top, y), max(top, bottom - size.height)).rounded(),
+                      width: size.width, height: size.height)
+    }
+
+    /// Where iOS 27 puts a confirmation dialog for its source, as UIKit places a popover with
+    /// any arrow direction (the simulator's `ios/dialog/…` goldens, new-website#649): on the
+    /// side of the source with the most room among those the panel fits on, centred on the source
+    /// along that side and kept inside the window, its arrow touching the source; under a wide
+    /// button above it, beside a small trailing button to its left. Where it fits on no side (a
+    /// source filling the window) it is centred on the source with no arrow.
+    package static func popoverPlacement(size: CGSize, source: CGRect, window: CGSize, safe: EdgeInsets,
+                                         metrics m: PlatformMetricsTable) -> (CGRect, (edge: Edge, tip: CGPoint)?) {
+        let margin = PlatformMetrics.sheetMargin
+        let reach = m.dialogSourceGap + m.dialogArrowHeight
+        let top = max(margin, safe.top), bottom = window.height - max(margin, safe.bottom)
+        let left = max(margin, safe.leading), right = window.width - max(margin, safe.trailing)
+        // Room on each side of the source, and whether the panel fits there.
+        let above = source.minY - reach - top, below = bottom - source.maxY - reach
+        let before = source.minX - reach - left, after = right - source.maxX - reach
+        var best: (Edge, CGFloat)?
+        for (edge, room, fits) in [(Edge.top, above * (right - left), above >= size.height && right - left >= size.width),
+                                   (.bottom, below * (right - left), below >= size.height && right - left >= size.width),
+                                   (.leading, before * (bottom - top), before >= size.width && bottom - top >= size.height),
+                                   (.trailing, after * (bottom - top), after >= size.width && bottom - top >= size.height)]
+        where fits && room > (best?.1 ?? -1) { best = (edge, room) }
+        func clampX(_ x: CGFloat) -> CGFloat { min(max(left, x), max(left, right - size.width)).rounded() }
+        func clampY(_ y: CGFloat) -> CGFloat { min(max(top, y), max(top, bottom - size.height)).rounded() }
+        guard let (edge, _) = best else {
+            let panel = CGRect(x: clampX(source.midX - size.width / 2), y: clampY(source.midY - size.height / 2), width: size.width, height: size.height)
+            return (panel, nil)
+        }
+        // The arrow stays clear of the panel's rounded corners.
+        let inset = m.dialogCornerRadius + m.dialogArrowWidth / 2
+        switch edge {
+        case .top, .bottom:
+            let x = clampX(source.midX - size.width / 2)
+            let y = edge == .top ? source.minY - reach - size.height : source.maxY + reach
+            let tipX = min(max(source.midX, x + inset), x + size.width - inset)
+            let tip = CGPoint(x: tipX, y: edge == .top ? source.minY - m.dialogSourceGap : source.maxY + m.dialogSourceGap)
+            // The arrow is on the panel's side facing the source.
+            return (CGRect(x: x, y: y, width: size.width, height: size.height), (edge == .top ? .bottom : .top, tip))
+        case .leading, .trailing:
+            let y = clampY(source.midY - size.height / 2)
+            let x = edge == .leading ? source.minX - reach - size.width : source.maxX + reach
+            let tipY = min(max(source.midY, y + inset), y + size.height - inset)
+            let tip = CGPoint(x: edge == .leading ? source.minX - m.dialogSourceGap : source.maxX + m.dialogSourceGap, y: tipY)
+            return (CGRect(x: x, y: y, width: size.width, height: size.height), (edge == .leading ? .trailing : .leading, tip))
+        }
+    }
+
     // MARK: Painting
 
     /// A hosted window's content for its own window: the background, the toolbar and the
@@ -555,6 +621,29 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     private func fillBackground(_ style: AnyShapeStyle, _ path: Path, in bounds: CGRect, context: PaintContext, into list: inout DisplayList) {
         if style.base is Color, style.resolveColor(in: environment).alpha == 0 { return }
         style._fill(path, in: bounds, eoFill: false, environment: environment, scale: context.scale, into: &list)
+    }
+
+    /// A popover's arrow on the panel's `edge`, pointing out of it to `tip`: iOS 27 draws it with
+    /// soft sides that flare into the panel and a rounded point (ios/dialog/wide-button), and it
+    /// overlaps the panel by a point so no seam shows.
+    package static func dialogArrowPath(edge: Edge, tip: CGPoint, height h: CGFloat, width: CGFloat) -> Path {
+        let w = width / 2
+        // In the arrow's own frame: the tip at the origin, the base `h` behind it along -y.
+        func point(_ along: CGFloat, _ across: CGFloat) -> CGPoint {
+            switch edge {
+            case .bottom: return CGPoint(x: tip.x + across, y: tip.y - along)
+            case .top: return CGPoint(x: tip.x + across, y: tip.y + along)
+            case .trailing: return CGPoint(x: tip.x - along, y: tip.y + across)
+            case .leading: return CGPoint(x: tip.x + along, y: tip.y + across)
+            }
+        }
+        var path = Path()
+        path.move(to: point(h + 1, -w - 2))
+        path.addQuadCurve(to: point(1.2, -1.6), control: point(h * 0.55, -w * 0.3))
+        path.addQuadCurve(to: point(1.2, 1.6), control: point(0, 0))
+        path.addQuadCurve(to: point(h + 1, w + 2), control: point(h * 0.55, w * 0.3))
+        path.closeSubpath()
+        return path
     }
 
     package func paintPresentation(into list: inout DisplayList, context: PaintContext) {
@@ -619,19 +708,14 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             }
             list.append(.fillRRect(rect, cornerRadius: radius, fill))
             if let arrow {
-                let h = m.dialogArrowHeight, w = m.dialogArrowWidth / 2
-                let tip = CGPoint(x: context.origin.x + arrow.tip.x, y: context.origin.y + arrow.tip.y)
-                var path = Path()
-                path.move(to: tip)
-                if arrow.edge == .bottom {
-                    path.addLine(to: CGPoint(x: tip.x - w, y: tip.y - h)); path.addLine(to: CGPoint(x: tip.x + w, y: tip.y - h))
-                } else {
-                    path.addLine(to: CGPoint(x: tip.x - w, y: tip.y + h)); path.addLine(to: CGPoint(x: tip.x + w, y: tip.y + h))
-                }
-                path.closeSubpath()
-                list.append(.fillPath(path, fill))
+                list.append(.fillPath(Self.dialogArrowPath(edge: arrow.edge, tip: CGPoint(x: context.origin.x + arrow.tip.x, y: context.origin.y + arrow.tip.y),
+                                                           height: m.dialogArrowHeight, width: m.dialogArrowWidth), fill))
             }
             if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+            return
+        }
+        if iOS && kind.isMenu && m.menusAreGlassPanels {
+            paintGlassMenu(rect: rect, into: &list, context: context)
             return
         }
         let radius = kind.isMenu ? PlatformMetrics.menuCornerRadius : kind.isWindow ? Self.windowCornerRadius : PlatformMetrics.presentationCornerRadius
@@ -698,6 +782,32 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         }
         if let toolbarBar { toolbarBar.paint(into: &list, context: context.child(at: toolbarBar.frame)) }
         if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+    }
+
+    /// An iOS menu: a soft shadow, what is behind blurred under a near-white fill, a hairline
+    /// edge, then the rows (a highlighted one under a light fill).
+    private func paintGlassMenu(rect: CGRect, into list: inout DisplayList, context: PaintContext) {
+        let m = metrics
+        let radius = m.menuCornerRadius
+        let shape = Path(roundedRect: rect, cornerRadius: radius)
+        for (spread, alpha) in [(2.0, 0.025), (8.0, 0.02), (20.0, 0.014), (36.0, 0.008)] {
+            list.append(.fillRRect(rect.insetBy(dx: -spread, dy: -spread).offsetBy(dx: 0, dy: spread / 3), cornerRadius: radius + spread, environment._ink(alpha)))
+        }
+        list.append(.backdropBlur(shape, bounds: rect, radius: m.menuGlassSigma))
+        list.append(.fillPath(shape, m.menuGlassFill))
+        list.append(.strokePath(Path(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), cornerRadius: radius - 0.25),
+                                style: StrokeStyle(lineWidth: 0.5), environment._ink(m.menuEdgeAlpha)))
+        if let highlightedIndex {
+            let rows = interactiveNodes
+            if highlightedIndex < rows.count {
+                let row = context.absoluteRect(rows[highlightedIndex].frameInRoot).insetBy(dx: 10, dy: 0)
+                list.append(.fillRRect(row, cornerRadius: 12, environment._ink(0.06)))
+            }
+        }
+        list.append(.save)
+        list.append(.clipRRect(rect, cornerRadius: radius))
+        if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+        list.append(.restore)
     }
 
     // MARK: Keyboard
@@ -885,7 +995,7 @@ package final class PresentationSyncNode<Content: View>: UnaryLayoutModifierNode
                 presented.update(view: modifier.content.make())
             } else {
                 let binding = modifier.binding, onDismiss = modifier.onDismiss
-                presented = runtime.present(kind: modifier.kind, view: modifier.content.make(), environment: environment, anchor: self) {
+                presented = runtime.present(kind: modifier.kind, view: modifier.content.make(), environment: environment, anchor: anchorNode) {
                     binding.wrappedValue = false
                     onDismiss?.run()
                 }
@@ -896,6 +1006,20 @@ package final class PresentationSyncNode<Content: View>: UnaryLayoutModifierNode
             if presented.isMounted { runtime.remove(presentation: presented) }
             modifier.onDismiss?.run()
         }
+    }
+
+    /// What the presentation opens on: this view, or for an iOS confirmation dialog the control
+    /// inside it whose press presented it (the simulator opens Paulo's Sign out sheet on its
+    /// button, not on the settings column the modifier sits on, new-website#649).
+    private var anchorNode: ViewNode {
+        guard modifier.kind == .dialog, environment.platformProfile.metrics.dialogsArePopovers,
+              let pressed = runtime.lastActivatedNode, pressed.isMounted else { return self }
+        var current: ViewNode? = pressed
+        while let node = current {
+            if node === self { return pressed }
+            current = node.parent
+        }
+        return self
     }
 
     override package func unmount() {

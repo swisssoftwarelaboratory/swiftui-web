@@ -105,6 +105,27 @@ extension PlatformMetricsTable {
         t.controlsUsePlainSpacing = true                                // ios/layout/controls
         t.menuIsPlainLabel = true                                       // ios/menu/basic: "Options" is 62 wide, its body label
         t.menuDisabledLabelAlpha = 67.0 / 255
+        // The open menu (new-website#649, Paulo's Training menu on the iPhone 16 simulator, iOS 27):
+        // a 250 pt glass panel with 26 pt corners and a hairline edge, 42 pt rows of 17 pt text
+        // 9.75 from its top and bottom, the icon centred 39.75 in and the title 64.75 in; a
+        // section 21.25 apart from its neighbours with a hairline 24 in from each side.
+        t.menusAreGlassPanels = true
+        t.menuMinimumWidth = 250
+        t.menuRowHeight = 42
+        t.menuVerticalPadding = 9.75
+        t.menuCornerRadius = 26
+        t.menuCheckWidth = 22
+        t.menuTrailingPadding = 20
+        t.menuLabelIconSlot = 35.5
+        t.menuLabelIconGap = 7.25
+        t.menuLabelSize = 17
+        t.menuSectionGap = 21.25
+        t.menuSeparatorInset = 24
+        t.menuSeparatorAlpha = 0.11
+        t.menuGlassFill = RGBA(r: 255, g: 255, b: 255, a: 0.86)
+        t.menuGlassSigma = 18
+        t.menuEdgeAlpha = 0.16
+        t.menuWindowMargin = 8
         // ProgressView (ios/progress/basic): a 4 pt accent bar on a (120, 120, 125) 20 % track, no
         // indeterminate segment, the label 4 above; the circular style is the 20 pt spinner even
         // with a value, its label below in the secondary colour.
