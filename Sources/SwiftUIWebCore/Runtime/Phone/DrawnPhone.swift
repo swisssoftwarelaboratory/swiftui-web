@@ -118,7 +118,13 @@ package final class DrawnPhone {
     }
 
     /// The phone the system frameworks reach (`_DrawnPhoneSystem`): the last one made.
-    package static weak var current: DrawnPhone?
+    package static weak var current: DrawnPhone? {
+        didSet { if current != nil, !promptsInstalled { promptsInstalled = true; installPrompts() } }
+    }
+    private static var promptsInstalled = false
+
+    /// The permission prompts waiting or on screen (#666).
+    let prompts = PhonePromptQueue()
 
     // MARK: What the app's frameworks put on the phone (#643)
 
@@ -262,7 +268,7 @@ package final class DrawnPhone {
     }
 
     /// Whether the phone needs the clock to run: a move, the dark's lock delay, a banner's time.
-    package var needsTime: Bool { isMoving || lockDelay != nil || bannerShown }
+    package var needsTime: Bool { isMoving || lockDelay != nil || bannerShown || prompts.faceID != nil }
 
     /// The app's scene phase as the phone sees it: active while it fills the screen, inactive
     /// while something covers part of it or it is on its way out or in, background once it is
@@ -488,6 +494,7 @@ package final class DrawnPhone {
         for activity in activities where activity.tree.advance(elapsed: elapsed) { treesMoving = true }
         for widget in lockWidgets where widget.advance(elapsed: elapsed) { treesMoving = true }
         let homeWidgetsMoving = widgetsLoaded && advanceWidgets(elapsed: elapsed)
+        let badgeShown = advanceFaceID(elapsed: elapsed)
         if treesMoving, coverAmount > 0 { runtime.requestRepaint() }
         if bannerShown, drag?.kind != .banner {
             bannerTime += elapsed
@@ -495,7 +502,7 @@ package final class DrawnPhone {
         }
         if !cover.isMoving, cover.position <= -height + 0.5 { coverIsPullDown = false }
         if wasMoving || isMoving { runtime.phoneDidChange() }
-        return needsTime || treesMoving && coverAmount > 0 || homeWidgetsMoving
+        return needsTime || treesMoving && coverAmount > 0 || homeWidgetsMoving || badgeShown
     }
 
     // MARK: The finger
@@ -503,6 +510,8 @@ package final class DrawnPhone {
     /// A press: returns whether the phone takes it (the app never sees it).
     package func pointerDown(at point: CGPoint, type: PointerType, time: Double) -> Bool {
         let y = Double(point.y)
+        // The Face ID badge holds the screen until it is gone (#666).
+        if prompts.faceID != nil { return true }
         if mode == .off {
             wakeUp()
             return true

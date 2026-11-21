@@ -1,8 +1,11 @@
 // Camera capture as AVFoundation names it. A page reaches the camera only through
-// `getUserMedia`, which this module does not drive yet, so there is no capture device:
-// `AVCaptureDevice.default(...)` is nil, authorization is denied, and a session runs nothing.
-// An app's "no camera" path (a simulator's) is the one that runs. Accepted for source
-// compatibility.
+// `getUserMedia`, which this module does not drive yet, so in a plain page there is no capture
+// device: `AVCaptureDevice.default(...)` is nil, authorization is denied, and a session runs
+// nothing; an app's "no camera" path (a simulator's) is the one that runs. Inside the drawn
+// iPhone (new-website#666) the phone has its cameras, as an iPhone does: asking for access shows
+// iOS's alert with the app's `NSCameraUsageDescription` once, and the answer is kept between
+// visits. What a running session sees is the demo account's (not drawn yet: nothing flows), and
+// the viewer's own camera is never asked for.
 #if os(WASI)
 import WebFoundation
 #else
@@ -45,12 +48,75 @@ open class AVCaptureDevice: NSObject, @unchecked Sendable {
         self.position = position
     }
 
-    /// The default device of a type: none on the web.
-    open class func `default`(for mediaType: AVMediaType) -> AVCaptureDevice? { nil }
-    open class func `default`(_ deviceType: DeviceType, for mediaType: AVMediaType?, position: Position) -> AVCaptureDevice? { nil }
-    open class func authorizationStatus(for mediaType: AVMediaType) -> AVAuthorizationStatus { .denied }
-    open class func requestAccess(for mediaType: AVMediaType, completionHandler handler: @escaping @Sendable (Bool) -> Void) { handler(false) }
-    open class func requestAccess(for mediaType: AVMediaType) async -> Bool { false }
+    /// The default device of a type: none in a plain page; the drawn iPhone's cameras.
+    open class func `default`(for mediaType: AVMediaType) -> AVCaptureDevice? {
+        mediaType == .video ? phoneCamera(.builtInWideAngleCamera, position: .back) : nil
+    }
+    open class func `default`(_ deviceType: DeviceType, for mediaType: AVMediaType?, position: Position) -> AVCaptureDevice? {
+        guard mediaType == nil || mediaType == .video else { return nil }
+        return phoneCamera(deviceType, position: position)
+    }
+    open class func authorizationStatus(for mediaType: AVMediaType) -> AVAuthorizationStatus {
+        #if os(WASI)
+        if mediaType == .video, _PhonePrompts.isPresent {
+            switch _PhonePrompts.answer("camera") {
+            case "allow": return .authorized
+            case "deny": return .denied
+            default: return .notDetermined
+            }
+        }
+        #endif
+        return .denied
+    }
+    open class func requestAccess(for mediaType: AVMediaType, completionHandler handler: @escaping @Sendable (Bool) -> Void) {
+        #if os(WASI)
+        if mediaType == .video, _PhonePrompts.isPresent {
+            switch authorizationStatus(for: .video) {
+            case .authorized: handler(true); return
+            case .notDetermined: break
+            default: handler(false); return
+            }
+            let german = _PhonePrompts.german
+            let title = german ? "\(_PhonePrompts.quotedName) m\u{00F6}chte auf die Kamera zugreifen"
+                : "\(_PhonePrompts.quotedName) Would Like to Access the Camera"
+            _PhonePrompts.show(.alert(title: title, message: _PhonePrompts.usage("NSCameraUsageDescription"),
+                                      buttons: [_PhonePrompts.dontAllow, _PhonePrompts.allow]), fallback: .button(0)) { answer in
+                let allowed: Bool
+                if case .button(1) = answer { allowed = true } else { allowed = false }
+                _PhonePrompts.setAnswer("camera", allowed ? "allow" : "deny")
+                handler(allowed)
+            }
+            return
+        }
+        #endif
+        handler(false)
+    }
+    open class func requestAccess(for mediaType: AVMediaType) async -> Bool {
+        await withCheckedContinuation { continuation in
+            requestAccess(for: mediaType) { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// The drawn iPhone's camera of `type` at `position` (the back's wide, ultra wide and
+    /// telephoto, the front's wide and TrueDepth); nil in a plain page.
+    private class func phoneCamera(_ type: DeviceType, position: Position) -> AVCaptureDevice? {
+        #if os(WASI)
+        guard _PhonePrompts.isPresent else { return nil }
+        let front = position == .front
+        switch type {
+        case .builtInWideAngleCamera:
+            return AVCaptureDevice(uniqueID: front ? "front-wide" : "back-wide", localizedName: front ? "Front Camera" : "Back Camera", position: front ? .front : .back)
+        case .builtInTrueDepthCamera where position != .back:
+            return AVCaptureDevice(uniqueID: "front-truedepth", localizedName: "Front TrueDepth Camera", position: .front)
+        case .builtInUltraWideCamera where !front, .builtInTelephotoCamera where !front, .builtInDualCamera where !front:
+            return AVCaptureDevice(uniqueID: "back-\(type.rawValue)", localizedName: "Back Camera", position: .back)
+        default:
+            return nil
+        }
+        #else
+        return nil
+        #endif
+    }
 }
 
 /// Something a session takes media from or gives it to.

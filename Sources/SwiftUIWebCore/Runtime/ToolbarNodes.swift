@@ -495,17 +495,31 @@ struct _IOSBarItemsView: View {
 struct _IOSBarButtonStyle: ButtonStyle {
     let prominent: Bool
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        _IOSBarButtonLabel(label: configuration.label, prominent: prominent, isPressed: configuration.isPressed)
+    }
+}
+
+/// The bar button's glass pill; a disabled button's label greys out as UIKit's does (Health's
+/// Allow before a switch is on, new-website#666).
+private struct _IOSBarButtonLabel: View {
+    let label: ButtonStyleConfiguration.Label
+    let prominent: Bool
+    let isPressed: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        label
+            .opacity(isEnabled ? 1 : 0.3)
             .fontWeight(prominent ? .semibold : nil)
             .padding(.horizontal, PlatformMetrics.navigationBarItemPadding)
             .frame(minWidth: PlatformMetrics.navigationBarItemHeight, minHeight: PlatformMetrics.navigationBarItemHeight, maxHeight: PlatformMetrics.navigationBarItemHeight)
             .background(
                 Capsule()
-                    .fill(Color(.sRGB, white: 1, opacity: configuration.isPressed ? 0.3 : 0.45))
+                    .fill(Color(.sRGB, white: 1, opacity: isPressed ? 0.3 : 0.45))
                     .shadow(color: Color(.sRGB, white: 0, opacity: 0.08), radius: 4, y: 2)
             )
             .overlay(Capsule().strokeBorder(Color(.sRGB, white: 0, opacity: 0.06), lineWidth: 0.5))
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(isPressed ? 0.7 : 1)
     }
 }
 

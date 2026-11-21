@@ -39,7 +39,12 @@ open class AVCaptureVideoPreviewLayer: CALayer {
     open var session: AVCaptureSession?
     open var videoGravity: AVLayerVideoGravity = .resizeAspect
 
-    public required init() { super.init() }
+    /// Black, as a camera's preview is before a frame arrives: the drawn iPhone's cameras
+    /// (new-website#666) show no picture yet, and the view behind must not show through.
+    public required init() {
+        super.init()
+        backgroundColor = CGColor(gray: 0, alpha: 1)
+    }
     public override init(layer: Any) { super.init(layer: layer) }
     public convenience init(session: AVCaptureSession) {
         self.init()

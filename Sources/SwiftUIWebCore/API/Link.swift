@@ -92,6 +92,10 @@ public struct OpenURLAction: Sendable {
             case .systemAction(let other): target = other ?? url
             }
         }
+        // The app's page in iOS Settings (`openSettingsURLString`, `openNotificationSettingsURLString`):
+        // there is no Settings to open, in a page or the drawn iPhone (new-website#666), so nothing
+        // happens, as UIApplication's `open` does with it; the browser never gets the address.
+        if target?.scheme == "app-settings" { completion(false); return }
         guard let target, let system = Self.systemHandler else { completion(false); return }
         system(target)
         completion(true)
