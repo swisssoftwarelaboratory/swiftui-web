@@ -60,6 +60,7 @@ extension DrawnPhone {
             if underFade < 1 { list.append(.endGroup) }
             list.append(.restore)
         }
+        if cardShown, appIsFull { paintFaceID(into: &list) }
         if banner.position > Self.bannerAway + 1 { paintBanner(into: &list) }
         let darkStatus = statusBarIsDark(amount: amount)
         paintStatusBar(into: &list, dark: darkStatus && amount < 0.5)

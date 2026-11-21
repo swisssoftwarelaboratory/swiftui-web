@@ -2,6 +2,7 @@ import SwiftUIWebCore
 #if os(WASI)
 import JavaScriptEventLoop
 import JavaScriptKit
+import WebFoundation   // the drawn iPhone's permission answers (`_PhonePrompts`)
 import UIKitWebCore
 import SwiftUIWebWidgetLauncher
 @_exported import WebGraphicsCanvas
@@ -37,6 +38,15 @@ public final class CanvasHost {
         let windows = windows()
         // Open windows are remembered in localStorage and reopened on the next load (sw-windows).
         if let storage = JSObject.global.localStorage.object {
+            // The drawn iPhone's permission answers stay between visits, as on the viewer's
+            // own iPhone (new-website#666).
+            _PhonePrompts.load = { key in MainActor.assumeIsolated { JSObject.global.localStorage.object?.getItem?(key).string } }
+            _PhonePrompts.save = { key, value in
+                MainActor.assumeIsolated {
+                    guard let storage = JSObject.global.localStorage.object else { return }
+                    if let value { _ = storage.setItem?(key, value) } else { _ = storage.removeItem?(key) }
+                }
+            }
             host.runtime.windowStateStore = (get: { storage.getItem?("swiftuiweb.windows").string },
                                              set: { _ = storage.setItem?("swiftuiweb.windows", $0) })
         }

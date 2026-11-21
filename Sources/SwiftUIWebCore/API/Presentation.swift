@@ -372,7 +372,10 @@ private struct _AlertBody: View {
         let m = profile.metrics
         if profile.isIOS {
             VStack(alignment: .leading, spacing: 0) {
-                title.font(.system(size: m.alertTitleSize, weight: .bold)).lineSpacing(m.alertTitleLineSpacing).padding(.horizontal, m.alertTextInset).padding(.bottom, m.alertTitleMessageGap)
+                // A long title wraps at the alert's width, as iOS's does (a system prompt's
+                // "... Would Like to Send You Notifications", new-website#666).
+                title.font(.system(size: m.alertTitleSize, weight: .bold)).lineSpacing(m.alertTitleLineSpacing).fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, m.alertTextInset).padding(.bottom, m.alertTitleMessageGap)
                 message.font(.system(size: m.alertMessageSize)).foregroundStyle(m.alertPlainButtonColorIsAccent ? Color.primary : Color.secondary).padding(.horizontal, m.alertTextInset)
                 // Two buttons share a row (4 further in on iOS 27); one or three or more stack.
                 _AlertActionsLayout(vertical: false, spacing: m.alertButtonGap, stackedSpacing: m.alertStackedButtonGap, rowInset: m.alertRowButtonInset, height: m.alertButtonHeight) { actions }

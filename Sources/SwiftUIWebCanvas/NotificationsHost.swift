@@ -7,8 +7,8 @@
 //
 // Inside the drawn iPhone (new-website#643) the phone is the notification centre instead: its
 // own permission (kept for the page, as iOS keeps it for the app), delivery to the lock
-// screen's list, the pull-down and banners, and the person opening one there. Until the drawn
-// permission prompt is built (#666), asking for permission answers Allow, as a tester would.
+// screen's list, the pull-down and banners, and the person opening one there. Asking for
+// permission shows iOS's own alert in the phone (#666), never the browser's.
 #if os(WASI)
 import JavaScriptKit
 import SwiftUIWebCore
@@ -67,22 +67,30 @@ enum NotificationsHost {
         }
     }
 
-    nonisolated private static let permissionKey = "swiftuiweb.phone.notifications"
-
-    /// The app's notification permission on the drawn iPhone, kept in the page's storage.
+    /// The app's notification permission on the drawn iPhone, kept with the phone's other answers.
     nonisolated static var phonePermission: UNAuthorizationStatus {
         get {
-            guard let stored = JSObject.global.localStorage.object?.getItem?(permissionKey).string, let raw = Int(stored) else { return .notDetermined }
-            return UNAuthorizationStatus(rawValue: raw) ?? .notDetermined
+            switch _PhonePrompts.answer("notifications") {
+            case "allow": .authorized
+            case "deny": .denied
+            default: .notDetermined
+            }
         }
-        set { _ = JSObject.global.localStorage.object?.setItem?(permissionKey, String(newValue.rawValue)) }
+        set { _PhonePrompts.setAnswer("notifications", newValue == .authorized ? "allow" : newValue == .denied ? "deny" : nil) }
     }
 
-    /// The phone's answer: the one asked before, else Allow (the drawn prompt is #666).
+    /// The phone's answer: the one given before, else iOS's alert, asked once.
     private static func askOnPhone(_ completion: @escaping @MainActor (UNAuthorizationStatus) -> Void) {
         if phonePermission != .notDetermined { completion(phonePermission); return }
-        phonePermission = .authorized
-        completion(.authorized)
+        let german = _PhonePrompts.german
+        let title = german ? "\(_PhonePrompts.quotedName) m\u{00F6}chte dir Mitteilungen senden"
+            : "\(_PhonePrompts.quotedName) Would Like to Send You Notifications"
+        let message = german ? "Mitteilungen k\u{00F6}nnen Hinweise, T\u{00F6}ne und Kennzeichensymbole enthalten. Diese k\u{00F6}nnen in den Einstellungen konfiguriert werden."
+            : "Notifications may include alerts, sounds, and icon badges. These can be configured in Settings."
+        _PhonePrompts.show(.alert(title: title, message: message, buttons: [_PhonePrompts.dontAllow, _PhonePrompts.allow]), fallback: .button(0)) { answer in
+            if case .button(1) = answer { phonePermission = .authorized } else { phonePermission = .denied }
+            completion(phonePermission)
+        }
     }
 
     nonisolated static func status(of permission: String?) -> UNAuthorizationStatus {
