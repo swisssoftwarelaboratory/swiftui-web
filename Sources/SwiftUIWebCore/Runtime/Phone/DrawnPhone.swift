@@ -97,7 +97,25 @@ package final class DrawnPhone {
     /// The clock and date the host reads from the viewer's own clock.
     package var clock: (@MainActor @Sendable () -> (time: String, date: String))?
     package private(set) var clockText = (time: "", date: "")
+    /// The name the host gives the app (its page's `data-app` or title), when its build has none.
     package var appName = ""
+
+    /// The app's name under its icon, as iOS takes it from the app's build: its display name,
+    /// else its bundle name, else the host's (#626).
+    var homeName: String {
+        let info = Bundle.main.infoDictionary
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            if let name = info?[key] as? String, !name.isEmpty { return name }
+        }
+        return appName.isEmpty ? "App" : appName
+    }
+
+    /// The app icon's set in the app's catalog, as its Info names it (Xcode's default AppIcon).
+    var appIconName: String {
+        let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        return primary?["CFBundleIconName"] as? String ?? "AppIcon"
+    }
 
     /// The phone the system frameworks reach (`_DrawnPhoneSystem`): the last one made.
     package static weak var current: DrawnPhone?
@@ -145,6 +163,12 @@ package final class DrawnPhone {
     /// Whether the press went to something in a Live Activity that takes presses (its button).
     var activityTookPress = false
 
+    // The app's home screen widgets (#638, DrawnPhoneHome.swift).
+    var widgetsLoaded = false
+    var loadedHomeWidgets: [_PhoneWidget] = []
+    var widgetRects: [CGRect] = []
+    var widgetRows = 0
+
     package init(runtime: Runtime) {
         self.runtime = runtime
     }
@@ -189,8 +213,13 @@ package final class DrawnPhone {
     static let iconColumns: [Double] = [27, 120, 213, 306]
     static let iconTop: Double = 72
     static let iconRowStep: Double = 98
-    var iconRect: CGRect {
-        CGRect(x: Self.iconColumns[0] * width / 393, y: Self.iconTop, width: Self.iconSize, height: Self.iconSize)
+    package var iconRect: CGRect { iconRect(at: 0) }
+
+    /// The home screen's icon at `index`, left to right and top to bottom (the app's is first).
+    func iconRect(at index: Int) -> CGRect {
+        loadWidgets()
+        return CGRect(x: Self.iconColumns[index % 4] * width / 393, y: Self.iconTop + Double(index / 4 + widgetRows) * Self.iconRowStep,
+               width: Self.iconSize, height: Self.iconSize)
     }
 
     // MARK: State
@@ -207,7 +236,7 @@ package final class DrawnPhone {
     }
 
     /// Whether the app fills the screen, still, nothing over it but the banner.
-    var appIsFull: Bool {
+    package var appIsFull: Bool {
         cardShown && !cardMoving && abs(cardWidth.position - width) < 0.5 && abs(cardHeight.position - height) < 0.5
             && abs(cardX.position - width / 2) < 0.5 && abs(cardY.position - height / 2) < 0.5
     }
@@ -385,6 +414,16 @@ package final class DrawnPhone {
         changed()
     }
 
+    /// Grows the app's card out of one of its widgets (a tap on it) to the full screen.
+    func openApp(from rect: CGRect) {
+        mode = .app
+        behind = .app
+        setCard(rect)
+        cardShown = true
+        cardTo(fullRect, spring: Self.cardOpen)
+        changed()
+    }
+
     /// The card flies into its icon, the finger's speed carried in.
     func leaveApp(velocity: CGSize) {
         mode = .home
@@ -448,6 +487,7 @@ package final class DrawnPhone {
         var treesMoving = false
         for activity in activities where activity.tree.advance(elapsed: elapsed) { treesMoving = true }
         for widget in lockWidgets where widget.advance(elapsed: elapsed) { treesMoving = true }
+        let homeWidgetsMoving = widgetsLoaded && advanceWidgets(elapsed: elapsed)
         if treesMoving, coverAmount > 0 { runtime.requestRepaint() }
         if bannerShown, drag?.kind != .banner {
             bannerTime += elapsed
@@ -455,7 +495,7 @@ package final class DrawnPhone {
         }
         if !cover.isMoving, cover.position <= -height + 0.5 { coverIsPullDown = false }
         if wasMoving || isMoving { runtime.phoneDidChange() }
-        return needsTime || treesMoving && coverAmount > 0
+        return needsTime || treesMoving && coverAmount > 0 || homeWidgetsMoving
     }
 
     // MARK: The finger
@@ -639,7 +679,12 @@ package final class DrawnPhone {
                 bannerTime = 0
             }
         case .home:
-            if !d.moved, iconRect.insetBy(dx: -8, dy: -8).contains(point) { openApp() }
+            if !d.moved, iconRect.insetBy(dx: -8, dy: -8).contains(point) {
+                openApp()
+            } else if !d.moved, let rect = widget(at: point) {
+                // A tap on one of the app's widgets opens the app out of it.
+                openApp(from: rect)
+            }
         case .cover:
             coverPressEnded(at: point, velocity: Double(v.height), moved: d.moved, time: time)
         }

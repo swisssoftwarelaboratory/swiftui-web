@@ -55,6 +55,8 @@ extension WidgetBundle {
         _WidgetHost.bundle = { Self().body._widgets }
         _WidgetHost.listed = nil
         _WidgetHost.installActivityHost()
+        // Its home and lock screen widgets, made when the phone first shows them (#638).
+        _DrawnPhoneSystem.widgetSource = { _WidgetHost.phoneWidgets() }
     }
 }
 

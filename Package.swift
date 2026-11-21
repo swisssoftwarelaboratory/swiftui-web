@@ -155,7 +155,7 @@ let package = Package(
                            .product(name: "WebImageIO", package: "WebGraphics", condition: .when(platforms: [.wasi]))],
             swiftSettings: framework
         ),
-        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", "AppIntents", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         // Live Activities and alarms: neither is enabled on the web (no Lock Screen); the types
         // are values, so an app's code for them compiles and its "off" path runs. iOS-only
         // frameworks, so these root modules shadow nothing in a macOS build.

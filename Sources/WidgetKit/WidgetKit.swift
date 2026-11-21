@@ -1,6 +1,7 @@
-// WidgetKit on the web: the calls an app's own target makes to its widgets. A page has no
-// home screen, so there are no widgets to reload: `WidgetCenter` accepts every reload and
-// reports no configured widgets, as on a device where the user has added none. The timeline
+// WidgetKit on the web: the calls an app's own target makes to its widgets. In the drawn iPhone
+// the app's widgets run on its home screen (new-website#638): `WidgetCenter` reloads their
+// timelines and reports them. On a plain page there is no home screen: it reports none, as on a
+// device where the user has added none. The timeline
 // types are values, so code shared between an app and its widget extension compiles and runs.
 // Apple's frameworks re-export Foundation: a file importing only this module names Date.
 @_exported import WebFoundation
@@ -50,19 +51,26 @@ public final class WidgetCenter: @unchecked Sendable {
 
     private init() {}
 
-    /// Reloads the timelines of every widget the app has (none on the web).
-    public func reloadAllTimelines() {}
-
-    /// Reloads the timelines of the widgets of one kind (none on the web).
-    public func reloadTimelines(ofKind kind: String) {}
-
-    /// The widgets the user has configured: none on the web.
-    public func getCurrentConfigurations(_ completion: @escaping (Result<[WidgetInfo], any Error>) -> Void) {
-        completion(.success([]))
+    /// Reloads the timelines of every widget the app has on the drawn iPhone.
+    public func reloadAllTimelines() {
+        Task { @MainActor in _WidgetHost.reload(kind: nil) }
     }
 
-    /// The widgets the user has configured: none on the web.
-    public func currentConfigurations() async throws -> [WidgetInfo] { [] }
+    /// Reloads the timelines of the widgets of one kind.
+    public func reloadTimelines(ofKind kind: String) {
+        Task { @MainActor in _WidgetHost.reload(kind: kind) }
+    }
+
+    /// The widgets on the drawn iPhone's screens (none on a plain page).
+    public func getCurrentConfigurations(_ completion: @escaping (Result<[WidgetInfo], any Error>) -> Void) {
+        nonisolated(unsafe) let completion = completion
+        Task { @MainActor in completion(.success(_WidgetHost.configured)) }
+    }
+
+    /// The widgets on the drawn iPhone's screens (none on a plain page).
+    public func currentConfigurations() async throws -> [WidgetInfo] {
+        await MainActor.run { _WidgetHost.configured }
+    }
 
     /// Tells the system the app's widgets may have changed which kinds they offer.
     public func invalidateConfigurationRecommendations() {}

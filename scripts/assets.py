@@ -136,7 +136,8 @@ class Catalog:
             if not child.is_dir(): continue
             if child.suffix == ".imageset": self.imageset(child, prefix + child.stem)
             elif child.suffix == ".colorset": self.colorset(child, prefix + child.stem)
-            elif child.suffix in (".appiconset", ".launchimage", ".brandassets", ".imagestack", ".cubetextureset", ".textureset"):
+            elif child.suffix == ".appiconset": self.appiconset(child, prefix + child.stem)
+            elif child.suffix in (".launchimage", ".brandassets", ".imagestack", ".cubetextureset", ".textureset"):
                 pass
             elif child.suffix in (".symbolset", ".dataset", ".spriteatlas"):
                 warn(f"{child.relative_to(self.root.parent)}: {child.suffix[1:]} is not supported")
@@ -214,6 +215,25 @@ class Catalog:
             image["capInsets"] = insets
             if resizing.get("center", {}).get("mode") == "tile": image["tilesCenter"] = True
         self.images[name] = image
+
+    def appiconset(self, directory, name):
+        """An app icon set becomes an image of its own name, as `UIImage(named:)` finds it on iOS:
+        its largest iPhone or universal file, at the scale that makes it a 60 point home screen
+        icon (the drawn iPhone's home screen draws it, new-website#638)."""
+        best = None
+        for entry in read_contents(directory).get("images", []):
+            filename = entry.get("filename")
+            if not filename or entry.get("idiom", "universal") not in ("universal", "iphone"): continue
+            if entry.get("appearances"): continue       # the dark and tinted icons wait for a dark home screen
+            path = directory / filename
+            size = image_size(path) if path.exists() else None
+            if size is None: continue
+            if best is None or size[0] > best[1][0]: best = (path, size)
+        if best is None: return
+        path, size = best
+        if name in self.images: warn(f"{name}: defined twice; the later one wins")
+        self.images[name] = {"variants": [{"file": self.copy(path), "scale": size[0] / 60, "width": size[0], "height": size[1],
+                                           "idiom": "universal", "appearance": "any"}]}
 
     def colorset(self, directory, name):
         doc = read_contents(directory)
