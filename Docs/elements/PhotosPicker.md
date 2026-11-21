@@ -18,8 +18,7 @@ Planned and decided in new-website#667 and #624.
 One library every picker in a page reads, newest first:
 
 1. photos saved while the page runs (`save(_:)`, the share sheet's Save Image, #668);
-2. the app's own demo photos: the app package's `Photos` folder (Paulo: `Paulo/Photos`, in an
-   app repo `web/Photos`), named so they sort newest first (`01-…`, `02-…`);
+2. the app's own demo photos: the app package's `Photos` folder (in an app repo, `web/Photos`), named so they sort newest first (`01-…`, `02-…`);
 3. the everyday set every app shares, `Fixtures/Photos/Everyday` (freely licensed, credits in
    its `CREDITS.md`; never Apple's sample photos).
 
@@ -45,9 +44,9 @@ shows the library as one album, Recents, which opens Photos.
 `PhotosPickerTests`: saved photos first with their bytes, picked bytes as `Data`, the grid three
 across edge to edge, one tap picks, several in order, the X cancels, the first screen
 prefetched. Against the simulator (`PhotoProbe` in `swipe-harness/photo-probe-667`): the header,
-banner and grid within a point. Paulo's three pickers in WebKit (`walk/paulo-photos-667.mjs`):
-the chat's Photos, the body photo camera's Photos and Contact us's Add a photo each open the
-sheet and get the tapped photo back.
+banner and grid within a point. An unchanged iPhone app's three pickers
+in WebKit (a chat's photo button, a camera screen's library button and a contact form's Add a
+photo) each open the sheet and get the tapped photo back.
 
 ## Not yet covered
 
