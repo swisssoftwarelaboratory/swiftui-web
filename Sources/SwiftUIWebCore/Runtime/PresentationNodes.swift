@@ -65,6 +65,9 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     private var slideClock: Double?
     private var slideRunning = false
     private var slideBegan = 0.0
+    /// iOS's compact date picker's panel (new-website#665): placed by the pill as measured on
+    /// iOS 27, drawn as the frosted card with no arrow.
+    package var isSystemPicker = false
     /// Laid out at least once (a sheet never shown is removed at once).
     package private(set) var hasLaidOut = false
     /// Dismissed, sliding off: no longer hit, unmounted at the bottom.
@@ -430,6 +433,20 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             }
             let gap = PlatformMetrics.popoverArrowHeight
             var origin: CGPoint
+            if isSystemPicker, environment.platformProfile.isIOS {
+                let card = CGSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
+                let below = source.midY < window.height / 2
+                let centerX = source.midX + (below ? PlatformMetrics.timePopoverBelowShift : PlatformMetrics.timePopoverAboveShift)
+                let y = below ? source.maxY + PlatformMetrics.timePopoverBelowGap : source.minY + PlatformMetrics.timePopoverAboveOverlap - card.height
+                let margin: CGFloat = 16
+                origin = CGPoint(x: min(max(centerX - card.width / 2, margin), max(margin, window.width - card.width - margin)),
+                                 y: min(max(y, runtime.safeAreaInsets.top), max(0, window.height - card.height - runtime.safeAreaInsets.bottom)))
+                panel = CGRect(origin: origin, size: card)
+                arrow = nil
+                contentFrame = panel
+                target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(contentFrame.size), by: runtime.root)
+                return
+            }
             if m.sheetsCentred {
                 // macOS 27 (presentation/mac-popover): the popover window is the content plus a
                 // 15 pt margin all round (the arrow lives in it), its edge on the source's — the
@@ -605,6 +622,20 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             let card = mediumDetent ? rect : CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height + m.sheetCornerRadius)
             list.append(.save)
             list.append(.clipRRect(card, cornerRadius: m.sheetCornerRadius))
+            if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+            list.append(.restore)
+            return
+        }
+        if iOS && isSystemPicker {
+            // The compact date picker's frosted card: a wide soft shadow, the card, its content clipped to it.
+            let radius = PlatformMetrics.systemPickerCornerRadius
+            for (spread, alpha) in [(1.0, 0.03), (6.0, 0.016), (16.0, 0.01), (30.0, 0.006)] {
+                list.append(.fillRRect(rect.insetBy(dx: -spread, dy: -spread).offsetBy(dx: 0, dy: spread / 3), cornerRadius: radius + spread, black(alpha)))
+            }
+            list.append(.fillRRect(rect, cornerRadius: radius, PlatformMetrics.systemPickerFill))
+            list.append(.strokePath(Path(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), cornerRadius: radius), style: StrokeStyle(lineWidth: 0.5), black(0.1)))
+            list.append(.save)
+            list.append(.clipRRect(rect, cornerRadius: radius))
             if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
             list.append(.restore)
             return
