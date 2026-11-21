@@ -6,9 +6,9 @@ import Foundation
 
 // What the drawn iPhone paints (new-website#618): the island, the status bar (the viewer's own
 // time, full signal, wifi and battery, all drawn by us), the home indicator, and the places
-// around the app. The home screen and the lock screen are plain grey stand-ins until their own
-// tickets draw them (#638, #643). Never Apple's artwork or fonts: text is the viewer's system
-// font.
+// around the app. The home screen is #626's plain greys (#638); the lock screen is a plain grey
+// stand-in until its own ticket draws it (#643). Never Apple's artwork or fonts: text is the
+// viewer's system font.
 
 extension DrawnPhone {
     static let island = CGSize(width: 126, height: 37)
@@ -18,11 +18,16 @@ extension DrawnPhone {
     /// The screen's corners (the iPhone 16's 55).
     static let screenCorner: CGFloat = 55
 
-    static let homeGround = RGBA(r: 229, g: 229, b: 234)
-    static let lockGround = RGBA(r: 209, g: 209, b: 214)
-    static let iconGrey = RGBA(r: 199, g: 199, b: 204)
+    // The home screen's plain greys (#626, frame "Home screen: plain greys"): a light grey
+    // wallpaper, grey made-up apps, a light dock.
+    static let homeGround = RGBA(r: 233, g: 233, b: 233)
+    static let lockGround = RGBA(r: 233, g: 233, b: 233)
+    static let iconGrey = RGBA(r: 210, g: 210, b: 210)
+    /// The app's icon when its build has none.
     static let appIconGrey = RGBA(r: 142, g: 142, b: 147)
     static let dockGrey = RGBA(r: 214, g: 214, b: 219)
+    static let dockGround = RGBA(r: 255, g: 255, b: 255, a: 0.45)
+    static let iconCorner: CGFloat = 0.2237
     static let ink = RGBA(r: 0, g: 0, b: 0)
     static let white = RGBA(r: 255, g: 255, b: 255)
     static let otherNames = ["Tide", "Ledger", "Pebble", "Orbit", "Fern", "Atlas", "Quill", "Harbor", "Marble", "Lantern", "Drift"]
@@ -112,38 +117,71 @@ extension DrawnPhone {
         }
         if content < 1 {
             // The app's picture gives way to its icon as it lands.
-            list.append(.fillRect(rect, Self.appIconGrey.multiplyingAlpha(by: Double(1 - content))))
+            list.append(.beginGroup(opacity: Double(1 - content)))
+            paintAppIcon(rect, into: &list)
+            list.append(.endGroup)
         }
         list.append(.restore)
     }
 
-    // MARK: Home screen (stand-in, #638 draws it)
+    // MARK: Home screen (#626)
 
+    /// The home screen: the app top left with its own icon and name, the made-up apps around it
+    /// (they don't open), three rows of four and four in the dock, one page.
     private func paintHome(into list: inout DisplayList, hidingIcon: Bool) {
         let w = CGFloat(width), h = CGFloat(height)
         list.append(.fillRect(CGRect(x: 0, y: 0, width: w, height: h), Self.homeGround))
         let size = CGFloat(Self.iconSize)
         let label = font(size: 12, weight: .regular)
-        for index in 0..<12 {
-            let x = CGFloat(Self.iconColumns[index % 4]) * w / 393
-            let y = CGFloat(Self.iconTop) + CGFloat(index / 4) * CGFloat(Self.iconRowStep)
-            let rect = CGRect(x: x, y: y, width: size, height: size)
+        paintWidgets(into: &list)
+        for index in 0..<homeIconCount {
+            let rect = iconRect(at: index)
             let isApp = index == 0
-            if !(isApp && hidingIcon) {
-                list.append(.fillRRect(rect, cornerRadius: size * 0.2237, isApp ? Self.appIconGrey : Self.iconGrey))
+            if isApp {
+                if !hidingIcon { paintAppIcon(rect, into: &list) }
+            } else {
+                list.append(.fillRRect(rect, cornerRadius: size * Self.iconCorner, Self.iconGrey))
             }
-            let name = isApp ? (appName.isEmpty ? "App" : appName) : Self.otherNames[index - 1]
+            let name = isApp ? homeName : Self.otherNames[index - 1]
             drawCentered(name, font: label, centerX: rect.midX, baseline: rect.maxY + 17, maxWidth: size + 20, color: Self.ink, into: &list)
         }
-        let dock = CGRect(x: 12, y: h - 12 - 92, width: w - 24, height: 92)
-        list.append(.fillRRect(dock, cornerRadius: 34, Self.dockGrey))
+        let dock = dockRect
+        list.append(.fillRRect(dock, cornerRadius: 38, Self.dockGround))
         for index in 0..<4 {
             let x = CGFloat(Self.iconColumns[index]) * w / 393
-            list.append(.fillRRect(CGRect(x: x, y: dock.minY + 16, width: size, height: size), cornerRadius: size * 0.2237, Self.iconGrey))
+            list.append(.fillRRect(CGRect(x: x, y: dock.midY - size / 2, width: size, height: size), cornerRadius: size * Self.iconCorner, Self.iconGrey))
         }
     }
 
-    // MARK: Lock screen and pull-down (stand-in, #643 draws them)
+    /// The dock: light, rounded, low on the screen above the home indicator (#626).
+    var dockRect: CGRect {
+        let w = CGFloat(width), h = CGFloat(height)
+        return CGRect(x: 12, y: h - 19 - 94, width: w - 24, height: 94)
+    }
+
+    /// The app's own icon (its `AppIcon` set, as its Info names it), rounded like iOS's; a grey
+    /// square when the build has none.
+    func paintAppIcon(_ rect: CGRect, into list: inout DisplayList) {
+        let corner = rect.width * Self.iconCorner
+        guard let icon = appIcon(scale: 3) else {
+            list.append(.fillRRect(rect, cornerRadius: corner, Self.appIconGrey))
+            return
+        }
+        list.append(.save)
+        list.append(.clipRRect(rect, cornerRadius: corner))
+        list.append(.drawImage(ImageDraw(file: icon.file, scale: icon.scale, pixelSize: CGSize(width: icon.pixelWidth, height: icon.pixelHeight), rect: rect)))
+        list.append(.restore)
+    }
+
+    private func appIcon(scale: CGFloat) -> ImageVariant? {
+        let catalog = runtime.assetCatalog
+        return catalog.image(named: appIconName)?.variant(scale: scale, scheme: .light, idiom: "iphone")
+    }
+
+    // MARK: Lock screen and pull-down (#627, built in #643)
+
+    static let stackEdgeGrey = RGBA(r: 246, g: 246, b: 246)
+    static let greyText = RGBA(red: 0, green: 0, blue: 0, alpha: 0.55)
 
     private func paintCover(into list: inout DisplayList, screen: CGRect) {
         let top = CGFloat(cover.position)
@@ -154,27 +192,122 @@ extension DrawnPhone {
         if zoom != 1 { list.append(.concat(Self.zoom(zoom, in: screen))) }
         list.append(.fillRect(screen.insetBy(dx: -20, dy: -20), Self.lockGround))
         list.append(.restore)
-        let date = font(size: 20, weight: .semibold)
-        let time = font(size: 92, weight: .bold)
-        drawCentered(clockText.date, font: date, centerX: screen.midX, baseline: 118, maxWidth: screen.width - 40, color: Self.ink, into: &list)
-        drawCentered(clockText.time, font: time, centerX: screen.midX, baseline: 214, maxWidth: screen.width - 20, color: Self.ink, into: &list)
-        // One notification from the app, as a stand-in card.
-        let note = notificationRect.offsetBy(dx: 0, dy: -top)
-        paintNotificationCard(note, into: &list)
+        // The date over a large clock, in the system font, the viewer's own time.
+        drawCentered(clockText.date, font: font(size: 21, weight: .semibold), centerX: screen.midX, baseline: 95, maxWidth: screen.width - 40, color: Self.ink, into: &list)
+        drawCentered(clockText.time, font: font(size: 96, weight: .medium), centerX: screen.midX, baseline: 187, maxWidth: screen.width - 20, color: Self.ink, into: &list)
+        paintLockWidgets(into: &list, screen: screen)
+        paintColumn(into: &list, screen: screen)
         list.append(.restore)
     }
 
-    private func paintNotificationCard(_ rect: CGRect, into list: inout DisplayList) {
-        list.append(.fillRRect(rect, cornerRadius: 24, Self.white))
-        let icon = CGRect(x: rect.minX + 14, y: rect.minY + 18, width: 38, height: 38)
-        list.append(.fillRRect(icon, cornerRadius: 9, Self.appIconGrey))
-        list.append(.fillRRect(CGRect(x: icon.maxX + 12, y: rect.minY + 22, width: rect.width * 0.45, height: 10), cornerRadius: 5, Self.iconGrey))
-        list.append(.fillRRect(CGRect(x: icon.maxX + 12, y: rect.minY + 42, width: rect.width * 0.6, height: 10), cornerRadius: 5, Self.dockGrey))
+    /// The app's lock screen widgets in one row under the clock, centred, 14 apart.
+    private func paintLockWidgets(into list: inout DisplayList, screen: CGRect) {
+        guard !lockWidgets.isEmpty else { return }
+        let sizes = lockWidgets.map { $0.layout(width: $0.size.width > 0 ? $0.size.width : 64) }
+        let total = sizes.reduce(0) { $0 + $1.width } + 14 * CGFloat(sizes.count - 1)
+        var x = screen.midX - total / 2
+        for (tree, size) in zip(lockWidgets, sizes) {
+            tree.paint(into: &list, at: CGPoint(x: x, y: 214), scale: runtime.hostDisplayScale)
+            x += size.width + 14
+        }
+    }
+
+    /// The Live Activities, then the notifications (a stack or the list), clipped to the room
+    /// between the clock and the bottom once they scroll.
+    private func paintColumn(into list: inout DisplayList, screen: CGRect) {
+        let layout = columnLayout()
+        guard !layout.entries.isEmpty else { return }
+        let clips = layout.overflow > 0 || listScroll.isMoving
+        if clips {
+            let room = columnRoom
+            list.append(.save)
+            list.append(.clipRect(CGRect(x: 0, y: room.top, width: screen.width, height: room.bottom - room.top)))
+        }
+        let pressedNote: CoverItem? = activityTookPress ? nil : pressedItem
+        for entry in layout.entries {
+            let rect = entry.rect
+            switch entry.item {
+            case .activity(let index):
+                guard index < activities.count else { continue }
+                // The app's own view on a white card (its `activityBackgroundTint` over it).
+                list.append(.save)
+                list.append(.clipRRect(rect, cornerRadius: Self.cardCorner))
+                list.append(.fillRect(rect, Self.white))
+                activities[index].tree.paint(into: &list, at: rect.origin, scale: runtime.hostDisplayScale)
+                list.append(.restore)
+            case .note(let index):
+                guard index < notes.count else { continue }
+                paintNote(notes[index], in: rect, more: nil, pressed: pressedNote == entry.item, into: &list)
+            case .stack:
+                guard let first = notes.first else { continue }
+                // Edges of the notifications behind, under the newest one.
+                let edges = notes.count > 2 ? 2 : 1
+                let card = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - Self.stackEdge * CGFloat(edges))
+                for edge in stride(from: edges, through: 1, by: -1) {
+                    let inset = 14 * CGFloat(edge)
+                    let edgeRect = CGRect(x: card.minX + inset, y: card.maxY - Self.cardCorner, width: card.width - 2 * inset,
+                                          height: Self.cardCorner + Self.stackEdge * CGFloat(edge))
+                    list.append(.fillRRect(edgeRect, cornerRadius: Self.cardCorner, edge == 1 ? Self.white : Self.stackEdgeGrey))
+                }
+                let others = notes.count - 1
+                paintNote(first, in: card, more: "\(others) more notification\(others == 1 ? "" : "s")", pressed: pressedNote == .stack, into: &list)
+            }
+        }
+        if clips { list.append(.restore) }
+    }
+
+    /// A notification's flat white card: the app's icon and name, title, when, and its text.
+    private func paintNote(_ note: Note, in rect: CGRect, more: String?, pressed: Bool, into list: inout DisplayList) {
+        list.append(.fillRRect(rect, cornerRadius: Self.cardCorner, pressed ? RGBA(r: 236, g: 236, b: 238) : Self.white))
+        let icon = CGRect(x: rect.minX + Self.notePad.width, y: rect.minY + Self.notePad.height + 1, width: Self.noteIcon, height: Self.noteIcon)
+        paintAppIcon(in: icon, cornerRadius: 9, into: &list)
+        let left = rect.minX + noteTextLeft
+        let right = rect.maxX - Self.notePad.width
+        // The title line: the title (or the app's name), "now" on its right.
+        let when = whenText(note.date)
+        let whenFont = font(size: 13, weight: .regular)
+        let whenWidth = runtime.layoutText(when, font: whenFont, width: nil).size.width
+        let lineTop = rect.minY + Self.notePad.height
+        list.append(.drawText(when, DisplayFont(whenFont), origin: CGPoint(x: right - whenWidth, y: lineTop + 15), Self.greyText))
+        let title = note.title.isEmpty ? (appName.isEmpty ? "App" : appName) : note.title
+        let titleFont = font(size: 15, weight: .semibold)
+        let titleLayout = runtime.layoutText([StyledRun(title, font: titleFont)], options: TextLayoutOptions(lineLimit: 1),
+                                             width: max(10, right - whenWidth - 8 - left))
+        drawLines(titleLayout, font: titleFont, origin: CGPoint(x: left, y: lineTop), lineHeight: Self.noteLine, color: Self.ink, into: &list)
+        let body = noteBodyLayout(note, width: rect.width)
+        let bodyFont = font(size: 15, weight: .regular)
+        drawLines(body, font: bodyFont, origin: CGPoint(x: left, y: lineTop + Self.noteLine), lineHeight: Self.noteLine, color: Self.ink, into: &list)
+        if let more {
+            let y = lineTop + Self.noteLine * CGFloat(1 + body.lines.count)
+            list.append(.drawText(more, DisplayFont(whenFont), origin: CGPoint(x: left, y: y + 16), Self.greyText))
+        }
+    }
+
+    /// The app's icon (its own picture once the home screen draws it, #638; grey until then).
+    func paintAppIcon(in rect: CGRect, cornerRadius: CGFloat, into list: inout DisplayList) {
+        list.append(.fillRRect(rect, cornerRadius: cornerRadius, Self.appIconGrey))
+    }
+
+    /// Draws a laid-out text one line every `lineHeight`, each line's baseline where a 15 pt
+    /// line of that height puts it.
+    private func drawLines(_ layout: TextLayout, font: ResolvedFont, origin: CGPoint, lineHeight: CGFloat, color: RGBA, into list: inout DisplayList) {
+        let display = DisplayFont(font)
+        for (index, line) in layout.lines.enumerated() {
+            let baseline = origin.y + CGFloat(index) * lineHeight + 15
+            for fragment in line.fragments {
+                list.append(.drawText(fragment.text, display, origin: CGPoint(x: origin.x + fragment.x, y: baseline), color))
+            }
+        }
     }
 
     private func paintBanner(into list: inout DisplayList) {
         list.append(.beginShadow(RGBA(red: 0, green: 0, blue: 0, alpha: 0.18), radius: 16, offset: CGSize(width: 0, height: 4)))
-        paintNotificationCard(bannerRect, into: &list)
+        let rect = bannerRect
+        if let note = bannerNote {
+            paintNote(note, in: rect, more: nil, pressed: false, into: &list)
+        } else {
+            list.append(.fillRRect(rect, cornerRadius: Self.cardCorner, Self.white))
+        }
         list.append(.endGroup)
     }
 

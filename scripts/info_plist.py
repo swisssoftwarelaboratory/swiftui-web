@@ -151,6 +151,11 @@ def info_dictionary(source, product=None, configuration="Release"):
         for name, key in (("CFBundleIdentifier", "PRODUCT_BUNDLE_IDENTIFIER"), ("CFBundleName", "PRODUCT_NAME"),
                           ("CFBundleShortVersionString", "MARKETING_VERSION"), ("CFBundleVersion", "CURRENT_PROJECT_VERSION")):
             if key in settings: generated[name] = expand(settings[key], settings)
+        # The app icon's set, as Xcode's asset compiler names it in the built Info.plist (the drawn
+        # iPhone's home screen finds the icon by it, new-website#638).
+        if settings.get("ASSETCATALOG_COMPILER_APPICON_NAME"):
+            icon = expand(settings["ASSETCATALOG_COMPILER_APPICON_NAME"], settings)
+            generated["CFBundleIcons"] = {"CFBundlePrimaryIcon": {"CFBundleIconName": icon}}
         info = {**generated, **{k: expand(v, settings) for k, v in info.items()}}
         return plain(info)
     return {}
