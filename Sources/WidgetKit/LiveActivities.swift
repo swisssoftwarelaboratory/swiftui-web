@@ -77,7 +77,7 @@ extension Widget {
 }
 
 /// Builds a bundle's body from its widgets.
-@resultBuilder
+@resultBuilder @MainActor
 public enum WidgetBundleBuilder {
     public static func buildExpression<W: Widget>(_ widget: W) -> _WidgetList { _WidgetList(widget._widgets) }
     public static func buildBlock(_ parts: _WidgetList...) -> _WidgetList { _WidgetList(parts.flatMap { $0.widgets }) }
