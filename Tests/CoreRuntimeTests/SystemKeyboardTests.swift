@@ -8,6 +8,8 @@ import SwiftUIWebCore
 import SwiftUIWebHeadless
 
 #if !os(WASI)
+@Observable private final class SheetModel { var open = false }
+
 @Suite @MainActor struct SystemKeyboardTests {
     static let screen = CGSize(width: 393, height: 852)
 
@@ -52,6 +54,37 @@ import SwiftUIWebHeadless
     }
 
     private func letter(_ c: String) -> KeyboardKeyKind { .character(c) }
+
+    /// A sheet coming up over a focused field takes its focus and the keyboard goes down;
+    /// closing it gives both back, as in the iOS 27 simulator (a focused field, then
+    /// `.photosPicker`, new-website#667).
+    @Test func aSheetOverTheFieldTakesTheKeyboardAndGivesItBack() {
+        let model = SheetModel()
+        let box = KeyboardTextBox("")
+        let r = Runtime()
+        r.hostPlatformProfile = .iOS
+        r.drawsSoftwareKeyboard = true
+        r.softwareKeyboardLanguage = "en"
+        r.mount(VStack {
+            Spacer()
+            TextField("Message", text: Binding(get: { box.value }, set: { box.value = $0 }))
+        }
+        .sheet(isPresented: Binding(get: { model.open }, set: { model.open = $0 })) { Text("Photos") })
+        r.layout(in: Self.screen)
+        focus(r)
+        let field = r.focusedTextFieldIdentifier
+        #expect(field != nil && r.systemKeyboard.isVisible)
+        model.open = true
+        settle(r)
+        #expect(r.hasPresentations)
+        #expect(r.focusedTextFieldIdentifier == nil)
+        #expect(!r.systemKeyboard.isVisible && r.keyboardInset == 0)
+        model.open = false
+        settle(r, seconds: 1.5)
+        #expect(!r.hasPresentations)
+        #expect(r.focusedTextFieldIdentifier == field)
+        #expect(r.systemKeyboard.isVisible && r.keyboardInset == 328)
+    }
 
     @Test func slidesUpOnFocusOnUIKitsSpringAndTheSafeAreaFollows() {
         let box = KeyboardTextBox("")
