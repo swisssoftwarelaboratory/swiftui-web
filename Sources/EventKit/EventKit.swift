@@ -186,25 +186,30 @@ enum _PhoneCalendar {
         let german = _PhonePrompts.german
         let app = _PhonePrompts.quotedName
         let title: String
-        let key: String
-        let allowWord: String
+        var message: String
+        var buttons = [_PhonePrompts.dontAllow, _PhonePrompts.allow]
+        var allowIndex = 1
         switch (type, full) {
         case (.event, true):
-            title = german ? "Darf \(app) vollen Zugriff auf deinen Kalender haben?" : "Allow \(app) Full Access to Your Calendar?"
-            key = "NSCalendarsFullAccessUsageDescription"
-            allowWord = german ? "Vollen Zugriff erlauben" : "Allow Full Access"
+            // Full access stacks its buttons, Allow Full Access on top, with iOS's own line
+            // under the app's usage text.
+            title = german ? "Darf \(app) auf deinen Kalender zugreifen?" : "Allow \(app) to access your calendar?"
+            message = _PhonePrompts.usage("NSCalendarsFullAccessUsageDescription")
+            let extra = german ? "Kalenderereignisse k\u{00F6}nnen zus\u{00E4}tzliche Daten wie Orte, E-Mail-Adressen oder Notizen enthalten."
+                : "Calendar events may include additional data, such as locations, email addresses, or notes."
+            message = [message, extra].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            buttons = [german ? "Vollen Zugriff erlauben" : "Allow Full Access", _PhonePrompts.dontAllow]
+            allowIndex = 0
         case (.event, false):
-            title = german ? "Darf \(app) Ereignisse zu deinem Kalender hinzuf\u{00FC}gen?" : "Allow \(app) to Add Events to Your Calendar?"
-            key = "NSCalendarsWriteOnlyAccessUsageDescription"
-            allowWord = german ? "Ereignisse hinzuf\u{00FC}gen" : "Add Events Only"
+            title = german ? "Darf \(app) Ereignisse zu deinem Kalender hinzuf\u{00FC}gen?" : "Allow \(app) to add events to your calendar?"
+            message = _PhonePrompts.usage("NSCalendarsWriteOnlyAccessUsageDescription")
         default:
-            title = german ? "Darf \(app) vollen Zugriff auf deine Erinnerungen haben?" : "Allow \(app) Full Access to Your Reminders?"
-            key = "NSRemindersFullAccessUsageDescription"
-            allowWord = german ? "Vollen Zugriff erlauben" : "Allow Full Access"
+            title = german ? "Darf \(app) auf deine Erinnerungen zugreifen?" : "Allow \(app) to access your reminders?"
+            message = _PhonePrompts.usage("NSRemindersFullAccessUsageDescription")
         }
-        let buttons = [_PhonePrompts.dontAllow, allowWord]
-        _PhonePrompts.askAlert(name, title: title, message: _PhonePrompts.usage(key), buttons: buttons) { index in
-            if index == 1 {
+        let allowAt = allowIndex
+        _PhonePrompts.askAlert(name, title: title, message: message, buttons: buttons, fallback: 1 - allowAt) { index in
+            if index == allowAt {
                 _PhonePrompts.setAnswer(name, full ? "full" : "writeOnly")
             } else if status == .notDetermined {
                 _PhonePrompts.setAnswer(name, "deny")

@@ -515,13 +515,26 @@ package struct _AlertActionsLayout: Layout {
         return ordered.count == 2 ? ordered : Array(ordered.dropFirst(ordered.first.map { $0[_ButtonRoleKey.self] == .cancel } == true ? 1 : 0)) + ordered.prefix(ordered.first.map { $0[_ButtonRoleKey.self] == .cancel } == true ? 1 : 0)
     }
 
-    private func stacks(_ count: Int) -> Bool { vertical || count != 2 }
+    /// Two buttons share a row only when each label fits its half, as UIKit's alert decides;
+    /// a longer one ("Allow Full Access") stacks them.
+    /// A row button's room each side of its label: "Allow Full Access" stacks in English, while
+    /// "Nicht erlauben" and "Erlauben" share a row (iOS 27 simulator, new-website#710).
+    static let labelMargin: CGFloat = 6
+
+    private func stacks(_ visible: [Subviews.Element], width: CGFloat?) -> Bool {
+        if vertical || visible.count != 2 { return true }
+        guard let width else { return false }
+        let half = (width - 2 * rowInset - spacing) / 2
+        // UIKit keeps a margin each side of a row button's label.
+        return visible.contains { $0.sizeThatFits(.unspecified).width + 2 * Self.labelMargin > half + 0.5 }
+    }
 
     package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let count = shown(subviews).count
+        let visible = shown(subviews)
+        let count = visible.count
         guard count > 0 else { return .zero }
         let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.reduce(0, +)
-        return CGSize(width: width, height: stacks(count) ? CGFloat(count) * height + CGFloat(count - 1) * stackedSpacing : height)
+        return CGSize(width: width, height: stacks(visible, width: proposal.width) ? CGFloat(count) * height + CGFloat(count - 1) * stackedSpacing : height)
     }
 
     package func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -529,7 +542,7 @@ package struct _AlertActionsLayout: Layout {
         let hidden = subviews.filter { subview in !visible.contains { $0 == subview } }
         for subview in hidden { subview.place(at: bounds.origin, proposal: ProposedViewSize(width: 0, height: 0)) }
         guard !visible.isEmpty else { return }
-        if stacks(visible.count) {
+        if stacks(visible, width: bounds.width) {
             var y = bounds.minY
             for subview in visible {
                 subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))

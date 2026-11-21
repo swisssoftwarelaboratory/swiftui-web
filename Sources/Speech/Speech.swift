@@ -163,9 +163,13 @@ public class SFSpeechRecognizer {
     public static func requestAuthorization(_ handler: @escaping (SFSpeechRecognizerAuthorizationStatus) -> Void) {
         nonisolated(unsafe) let handler = handler
         if _PhoneSpeech.inPhone {
-            let title = _PhonePrompts.german ? "\(_PhonePrompts.quotedName) m\u{00F6}chte auf die Spracherkennung zugreifen"
-                : "\(_PhonePrompts.quotedName) Would Like to Access Speech Recognition"
-            _PhonePrompts.askAllow(_PhoneSpeech.name, title: title, usageKey: "NSSpeechRecognitionUsageDescription") { allowed in
+            let german = _PhonePrompts.german
+            let title = german ? "Darf \(_PhonePrompts.quotedName) auf das zugreifen, was mit der Spracherkennung gesagt wird?"
+                : "Allow \(_PhonePrompts.quotedName) to access what is said using speech recognition?"
+            let apple = german
+                ? "Sprachdaten von dieser App werden an Apple gesendet, um deine Anfragen zu verarbeiten. Au\u{00DF}erdem werden sie verwendet, um Apple beim Verbessern der Spracherkennungstechnologie zu unterst\u{00FC}tzen."
+                : "Speech data from this app will be sent to Apple to process your requests. This will also help Apple improve its speech recognition technology."
+            _PhonePrompts.askAllow(_PhoneSpeech.name, title: title, usageKey: "NSSpeechRecognitionUsageDescription", before: apple) { allowed in
                 handler(allowed ? .authorized : .denied)
             }
             return

@@ -195,8 +195,10 @@ public final class AlarmManager: @unchecked Sendable {
     public func requestAuthorization() async throws -> AuthorizationState {
         guard Self.inPhone else { return .denied }
         if authorizationState != .notDetermined { return authorizationState }
-        let title = _PhonePrompts.german ? "\(_PhonePrompts.quotedName) m\u{00F6}chte Wecker und Timer planen"
-            : "\(_PhonePrompts.quotedName) Would Like to Schedule Alarms and Timers"
+        // The simulator refuses AlarmKit without an alert: the English is from published
+        // screenshots, the German follows iOS's "Darf ..." alerts (new-website#710).
+        let title = _PhonePrompts.german ? "Darf \(_PhonePrompts.quotedName) Wecker und Timer planen?"
+            : "Allow \(_PhonePrompts.quotedName) to schedule alarms and timers?"
         let allowed: Bool = await withCheckedContinuation { done in
             _PhonePrompts.askAllow(Self.name, title: title, usageKey: "NSAlarmKitUsageDescription") { done.resume(returning: $0) }
         }

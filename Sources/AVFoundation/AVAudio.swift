@@ -565,8 +565,8 @@ enum _PhoneMicrophone {
     }
 
     static func ask(_ answered: @escaping @MainActor @Sendable (Bool) -> Void) {
-        let title = _PhonePrompts.german ? "\(_PhonePrompts.quotedName) m\u{00F6}chte auf das Mikrofon zugreifen"
-            : "\(_PhonePrompts.quotedName) Would Like to Access the Microphone"
+        let title = _PhonePrompts.german ? "Darf \(_PhonePrompts.quotedName) auf dein Mikrofon zugreifen?"
+            : "Allow \(_PhonePrompts.quotedName) to access your microphone?"
         _PhonePrompts.askAllow(name, title: title, usageKey: "NSMicrophoneUsageDescription", answered: answered)
     }
 }

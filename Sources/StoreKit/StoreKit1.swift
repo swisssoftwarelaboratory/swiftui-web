@@ -394,8 +394,8 @@ open class SKCloudServiceController: NSObject {
         if _PhonePrompts.isPresent {
             nonisolated(unsafe) let handler = handler
             let title = _PhonePrompts.german
-                ? "\(_PhonePrompts.quotedName) m\u{00F6}chte auf Apple Music, deine Musik- und Videoaktivit\u{00E4}t und deine Mediathek zugreifen"
-                : "\(_PhonePrompts.quotedName) Would Like to Access Apple Music, Your Music and Video Activity, and Your Media Library"
+                ? "Darf \(_PhonePrompts.quotedName) auf deine Musik, deine Videoaktivit\u{00E4}ten und auf deine Mediathek in Apple Music zugreifen?"
+                : "Allow \(_PhonePrompts.quotedName) to access your music, video activity, and media library in Apple Music?"
             _PhonePrompts.askAllow("appleMusic", title: title, usageKey: "NSAppleMusicUsageDescription") { handler($0 ? .authorized : .denied) }
             return
         }

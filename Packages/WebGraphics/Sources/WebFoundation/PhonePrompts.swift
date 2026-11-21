@@ -98,11 +98,13 @@ public enum _PhonePrompts {
     }
 
     /// Asks iOS's Don't Allow / Allow alert for `name` unless it was answered, keeps the
-    /// answer, and hands it on (true for Allow).
-    public static func askAllow(_ name: String, title: String, usageKey: String,
+    /// answer, and hands it on (true for Allow). `before` is iOS's own paragraph ahead of the
+    /// app's usage text, where it has one.
+    public static func askAllow(_ name: String, title: String, usageKey: String, before: String = "",
                                 answered: @escaping @MainActor @Sendable (Bool) -> Void) {
         if let known = allowed(name) { Task { @MainActor in answered(known) }; return }
-        askAlert(name, title: title, message: usage(usageKey), buttons: [dontAllow, allow]) { index in
+        let message = [before, usage(usageKey)].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        askAlert(name, title: title, message: message, buttons: [dontAllow, allow]) { index in
             if allowed(name) == nil { setAnswer(name, index == 1 ? "allow" : "deny") }
             answered(allowed(name) ?? false)
         }
