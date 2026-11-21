@@ -452,9 +452,10 @@ package final class DateFieldNode: LeafNode<_DateFieldHost>, _Interactive, _KeyH
         openPill = index
         let content: AnyView = isTime
             ? AnyView(_WheelDateHost(date: view.date, binding: view.binding, components: .hourAndMinute, panelSize: PlatformMetrics.timePopoverSize))
-            : AnyView(_GraphicalDatePicker(date: view.date, binding: view.binding, components: .date).padding(PlatformMetrics.defaultSpacing))
+            : AnyView(_IOSCalendar(date: view.date, binding: view.binding, inPanel: true))
         var source = rects.indices.contains(index) ? rects[index].rect : CGRect(origin: .zero, size: frame.size)
         source.origin.y = 0
+        source.size.height = frame.height
         popover = runtime.present(kind: .popover(arrowEdge: .bottom, anchor: .rect(.rect(source))), view: content, environment: environment, anchor: self) { [weak self] in
             guard let self else { return }
             popover = nil

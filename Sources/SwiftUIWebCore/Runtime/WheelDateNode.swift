@@ -26,7 +26,13 @@ package final class WheelDateNode: LeafNode<_WheelDateHost>, _Interactive, _Fram
         super.init(context)
     }
 
-    override package func computeSizeThatFits(_ proposal: ProposedViewSize) -> CGSize { view.panelSize ?? PlatformMetrics.wheelSize }
+    override package func computeSizeThatFits(_ proposal: ProposedViewSize) -> CGSize {
+        if view.monthAndYear { return CGSize(width: proposal.width ?? PlatformMetrics.wheelSize.width, height: Self.monthAndYearHeight) }
+        return view.panelSize ?? PlatformMetrics.wheelSize
+    }
+
+    /// The calendar's month and year wheel: 291 tall (iOS 27, iPhone 16).
+    package static let monthAndYearHeight: CGFloat = 291
     override package var layoutSpacing: ViewSpacing { .plainControl }
     package var dragAxes: Axis.Set { .vertical }
 
@@ -106,6 +112,12 @@ package final class WheelDateNode: LeafNode<_WheelDateHost>, _Interactive, _Fram
     /// anchors at the ink of the selected row, pivots where the other rows shrink to).
     package var columns: [Column] {
         let style = style
+        if view.monthAndYear {
+            // Measured in the calendar's year picker (iOS 27): the month's leading edge 105.3
+            // left of the wheel's centre, the year's 43 right of it.
+            return [Column(kind: .month, trailing: false, anchor: 54.7, pivot: 107),
+                    Column(kind: .year, trailing: false, anchor: 203, pivot: 230)]
+        }
         switch (showsDate, showsTime) {
         case (true, true):
             return style.twentyFourHour
@@ -274,7 +286,7 @@ package final class WheelDateNode: LeafNode<_WheelDateHost>, _Interactive, _Fram
         guard rows != 0, let next = date(kind, by: rows, from: view.date) else { runtime.setNeedsDisplay(); return }
         view.binding.set(next)
         // Re-read so a binding nobody observes still shows the new date (and a clamped one its bound).
-        view = _WheelDateHost(date: view.binding.get(), binding: view.binding, components: view.components, panelSize: view.panelSize)
+        view = view.showing(view.binding.get())
         runtime.setNeedsDisplay()
     }
 
@@ -307,7 +319,7 @@ package final class WheelDateNode: LeafNode<_WheelDateHost>, _Interactive, _Fram
         let bounds = absoluteBounds(context)
         list.append(.save)
         list.append(.clipRect(bounds))
-        let inset = view.panelSize == nil ? PlatformMetrics.wheelBandInset : PlatformMetrics.timePopoverBandInset
+        let inset = view.bandInset ?? (view.panelSize == nil ? PlatformMetrics.wheelBandInset : PlatformMetrics.timePopoverBandInset)
         let band = CGRect(x: bounds.minX + inset, y: bounds.midY - PlatformMetrics.wheelBandHeight / 2,
                           width: bounds.width - 2 * inset, height: PlatformMetrics.wheelBandHeight)
         list.append(.fillRRect(band, cornerRadius: PlatformMetrics.wheelBandCornerRadius, PlatformMetrics.wheelBandFill))
@@ -424,7 +436,7 @@ package final class WheelDateNode: LeafNode<_WheelDateHost>, _Interactive, _Fram
     package func turn(_ kind: Kind, by rows: Int) {
         guard rows != 0, let next = date(kind, by: rows, from: view.date) else { return }
         view.binding.set(next)
-        view = _WheelDateHost(date: view.binding.get(), binding: view.binding, components: view.components, panelSize: view.panelSize)
+        view = view.showing(view.binding.get())
         runtime.setNeedsDisplay()
     }
 

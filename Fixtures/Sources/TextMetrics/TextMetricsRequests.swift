@@ -902,7 +902,7 @@ extension TextMetricsRequests {
             requests.append(TextMetricRequest(string, .system(size: 13, weight: "regular", design: "default")))
             requests.append(TextMetricRequest(string, .system(size: 13, weight: "medium", design: "default")))
         }
-        for string in ["Mar 15, 2025", "11:09 AM", "11:09\u{202F}AM"] { requests.append(TextMetricRequest(string, seventeen)) }
+        for string in ["Mar 15, 2025", "11:09 AM", "11:09\u{202F}AM", "05:30", "13 Nov 2026"] { requests.append(TextMetricRequest(string, seventeen)) }
         requests.append(TextMetricRequest("UILabel in a sheet", seventeen))
         // The sizing corners (ios/representable/measure-axes, grid): the texts beside the boxes and the grid's cells.
         requests.append(TextMetricRequest("Tx", .style("body")))

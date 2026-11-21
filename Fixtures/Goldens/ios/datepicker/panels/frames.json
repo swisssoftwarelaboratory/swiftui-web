@@ -1,0 +1,33 @@
+{
+  "fixture" : "ios\/datepicker\/panels",
+  "frames" : {
+    "both" : {
+      "height" : 36,
+      "width" : 335,
+      "x" : 20,
+      "y" : 177.5
+    },
+    "date" : {
+      "height" : 34.5,
+      "width" : 335,
+      "x" : 20,
+      "y" : 119
+    },
+    "stack" : {
+      "height" : 600,
+      "width" : 375,
+      "x" : 0,
+      "y" : 0
+    },
+    "time" : {
+      "height" : 36,
+      "width" : 335,
+      "x" : 20,
+      "y" : 59
+    }
+  },
+  "size" : {
+    "height" : 600,
+    "width" : 375
+  }
+}

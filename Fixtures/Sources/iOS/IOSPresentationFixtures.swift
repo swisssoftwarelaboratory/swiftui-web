@@ -9,6 +9,15 @@ import SwiftUI
 import FixtureKit
 
 @Observable
+public final class IOSDatePanelModel {
+    // 13 Nov 2026, 06:30 UTC.
+    public var a = Date(timeIntervalSince1970: 1_794_547_800)
+    public var b = Date(timeIntervalSince1970: 1_794_547_800)
+    public var c = Date(timeIntervalSince1970: 1_794_547_800)
+    public init() {}
+}
+
+@Observable
 public final class IOSPresentationModel {
     public var sheet = false
     public var alert = false
@@ -297,6 +306,35 @@ public enum IOSPresentationFixtures {
         .probe("form")
     }.platform(.iOS)
 
+    /// iOS 27's own calendar (`.graphical`, new-website#674): the month's weeks from the
+    /// locale's first day, the selected day on a filled circle; March 2025 holds no today.
+    public static let dateGraphical = Fixture("ios/datepicker/graphical", size: CGSize(width: 375, height: 380)) {
+        VStack {
+            DatePicker("Date", selection: .constant(fixed), displayedComponents: .date).datePickerStyle(.graphical).labelsHidden().probe("calendar")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .environment(\.timeZone, utc)
+        .probe("stack")
+    }.platform(.iOS)
+
+    /// The compact pills as the picker probe app shows them
+    /// (swipe-harness/picker-probe-674): pressing the date pill opens iOS 27's calendar panel.
+    /// No golden: the panel opens on a press, compared with the simulator's screenshots.
+    public static let datePanels = Fixture("ios/datepicker/panels", size: CGSize(width: 375, height: 600), model: { IOSDatePanelModel() }, steps: []) { model in
+        VStack(alignment: .leading, spacing: 24) {
+            DatePicker("Time", selection: Binding(get: { model.a }, set: { model.a = $0 }), displayedComponents: .hourAndMinute).probe("time")
+            DatePicker("Date", selection: Binding(get: { model.b }, set: { model.b = $0 }), displayedComponents: .date).probe("date")
+            DatePicker("Both", selection: Binding(get: { model.c }, set: { model.c = $0 })).probe("both")
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 59)
+        .environment(\.locale, Locale(identifier: "en_GB"))
+        .environment(\.timeZone, utc)
+        .probe("stack")
+    }.platform(.iOS)
+
     /// A list with a selection binding: the selected row's look after a step selects it.
     /// The wheel style (iOS only): the date's three columns and the time's, captured as the window.
     public static let dateWheel = Fixture("ios/datepicker/wheel", size: CGSize(width: 375, height: 520)) {
@@ -322,7 +360,7 @@ public enum IOSPresentationFixtures {
     }.platform(.iOS)
 
     public static var all: [Fixture] {
-        var fixtures = [sheet, sheetNav, sheetNavTitled, sheetMedium, alert, alertStacked, fullScreenCover, dialog, tabs, tabsSecond, tabsBadges, tabsPage, datePicker, listSelection, multipleSelection]
+        var fixtures = [sheet, sheetNav, sheetNavTitled, sheetMedium, alert, alertStacked, fullScreenCover, dialog, tabs, tabsSecond, tabsBadges, tabsPage, datePicker, dateGraphical, datePanels, listSelection, multipleSelection]
         #if canImport(UIKit)
         fixtures.append(sheetRepresentable)
         #endif
