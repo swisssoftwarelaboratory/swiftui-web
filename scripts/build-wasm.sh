@@ -101,7 +101,10 @@ case "$PRODUCT" in
   Ember) ASSETS="upstream/ember-hackernews";;
 esac
 rm -rf "$BUNDLE/assets"
-python3 "$ROOT/scripts/assets.py" "$ASSETS" --js "$BUNDLE/assets/manifest.js" --out "$BUNDLE/assets"
+# The manifest also carries the app's Info dictionary (its Xcode target's Info.plist and
+# INFOPLIST_KEY_* settings, scripts/info_plist.py): `--product` names the target.
+INFO_FLAGS=(); [[ -n "$PRODUCT" ]] && INFO_FLAGS+=(--product "$PRODUCT"); [[ $DEBUG == 1 ]] && INFO_FLAGS+=(--debug)
+python3 "$ROOT/scripts/assets.py" "$ASSETS" --js "$BUNDLE/assets/manifest.js" --out "$BUNDLE/assets" ${INFO_FLAGS[@]+"${INFO_FLAGS[@]}"}
 # A package target's processed resources (`resources: [.process("Resources")]`, which SwiftPM's
 # native build system lays out as `<Package>_<Target>.resources` and Swift Build as
 # `<Package>_<Target>.bundle`) join the assets, where `Bundle.url(forResource:)` looks (decision

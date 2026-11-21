@@ -237,6 +237,27 @@ public protocol HostedScene: AnyObject {
     /// Platform elements the host places over the painted content after a render: a video
     /// player, a web view. The scene paints a stand-in underneath for hosts without them.
     func hostElements() -> [HostElement]
+
+    // MARK: The drawn iPhone (new-website#651)
+
+    /// Whether the scene draws an iPhone's own screen around the app: status bar, island, home
+    /// indicator, the home screen and lock screen behind and over it, and the moves between
+    /// them, which take the presses that start at the screen's edges. The host draws the
+    /// frame and the side button around the canvas and sets this before the first frame.
+    var drawsPhone: Bool { get set }
+    /// The viewer's clock as their own clock writes it, without AM or PM ("9:41", "21:41"),
+    /// and the date as the lock screen writes it ("Friday 20 November"), for the status bar and
+    /// the lock screen.
+    var phoneClock: (@MainActor @Sendable () -> (time: String, date: String))? { get set }
+    /// The app's name under its icon on the home screen.
+    var phoneAppName: String { get set }
+    /// The frame's side button was pressed: the screen goes dark on its lock screen, or wakes.
+    func phoneSideButtonPressed()
+    /// The host's once-a-second tick: the scene paints again when the clock's text changed.
+    func phoneClockTick()
+    /// For probes (`__swiftuiwebDebug.phone(action)`): "banner" drops a banner in, "side"
+    /// presses the side button; every call returns where the phone stands, as `key=value` lines.
+    func phoneDebug(_ action: String) -> String
 }
 
 /// Where a scroll view a host's native scroller drives stands (`HostedScene.nativeScrollTarget`):
@@ -361,6 +382,25 @@ public struct ColorPanelRequest: Equatable, Sendable {
         self.supportsOpacity = supportsOpacity
         self.anchor = anchor
     }
+}
+
+/// Scenes without a drawn iPhone draw none.
+extension HostedScene {
+    public var drawsPhone: Bool {
+        get { false }
+        set {}
+    }
+    public var phoneClock: (@MainActor @Sendable () -> (time: String, date: String))? {
+        get { nil }
+        set {}
+    }
+    public var phoneAppName: String {
+        get { "" }
+        set {}
+    }
+    public func phoneSideButtonPressed() {}
+    public func phoneClockTick() {}
+    public func phoneDebug(_ action: String) -> String { "" }
 }
 
 extension HostedScene {

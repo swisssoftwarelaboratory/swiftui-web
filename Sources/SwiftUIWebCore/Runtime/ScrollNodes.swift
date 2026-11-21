@@ -1347,6 +1347,8 @@ extension Runtime {
     /// A wheel event at `point`; deltas are in points (the host has already normalised line and
     /// page modes). Desktop wheel deltas carry the OS's own momentum, so none is added.
     public func scrollWheel(by delta: CGSize, at point: CGPoint) {
+        // Over the drawn iPhone's own places a wheel scrolls nothing in the app.
+        if let phone = drawnPhone, !phone.appTakesWheel { return }
         // A sideways scroll over a list row with swipe actions swipes the row (macOS trackpads).
         if abs(delta.width) > abs(delta.height), let list = swipeWheelReceiver(at: point) {
             let origin = list.frameInRoot.origin
@@ -1468,6 +1470,8 @@ extension Runtime {
     /// A frame's wheel input (`WheelResampler`), `afterPause` when it begins after a pause in
     /// fast motion: a new swipe, even where its speed alone looks like more of the tail.
     public func scrollWheel(by delta: CGSize, at point: CGPoint, time: Double, afterPause: Bool) {
+        // Over the drawn iPhone's own places a wheel scrolls nothing in the app.
+        if let phone = drawnPhone, !phone.appTakesWheel { return }
         wheelAfterPause = afterPause
         wheelPerFrame = true
         defer { wheelAfterPause = false; wheelPerFrame = false }

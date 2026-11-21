@@ -49,6 +49,10 @@ public final class CanvasSceneHost {
     /// The platform look the page asks for (`data-platform="ios"` / `"macos"` on the container
     /// or `?platform=` in the URL, lowercased), if any.
     public let requestedPlatform: String?
+    /// Whether the app runs in the drawn iPhone (new-website#651).
+    public let drawsPhone: Bool
+    /// The drawn iPhone's frame, scaled to fit the window.
+    private var phoneFrame: JSObject?
     /// Whether the primary pointer is coarse (a finger: phones and tablets, an iPad with a
     /// trackpad included), the cue for a touch-first look.
     public let hasCoarsePointer: Bool
@@ -95,6 +99,10 @@ public final class CanvasSceneHost {
         }
         bridge = window.__swiftuiweb.object!
         container = document.getElementById!("app").object ?? document.body.object!
+        // `?device=iphone` (or `data-device="iphone"`): the app runs in the drawn iPhone, its
+        // frame and side button drawn here around the canvas, its screen drawn by the scene.
+        drawsPhone = Self.requestedDevice(window: window, container: container) == "iphone"
+        if drawsPhone { Self.dressAsPhone(container: container, document: document) }
         // iOS Safari exposes the user's text size through the `-apple-system-body` font keyword:
         // the computed size of a probe span is the body style's point size at the current
         // category (17 at Large). Browsers without the keyword leave the style empty.
@@ -167,10 +175,16 @@ public final class CanvasSceneHost {
         scene.assetCatalog = Self.assetCatalog(from: window.__swiftuiwebAssets)
         // The app's languages reach `Bundle.main` (EnvironmentOverrides lists them, decision 0021).
         Bundle._hostLocalizations = (languages: scene.assetCatalog.localizations, source: scene.assetCatalog.sourceLanguage)
+        // The app's Info dictionary as Xcode built it (scripts/info_plist.py, new-website#663).
+        if let info = Self.plistValue(window.__swiftuiwebAssets.object?.info ?? .undefined) as? [String: Any], !info.isEmpty {
+            Bundle._info = info
+            if let identifier = info["CFBundleIdentifier"] as? String { Bundle._identifier = identifier }
+        }
         loadFonts(scene.assetCatalog, base: window.__swiftuiwebAssets.object?.base.string ?? "")
         scene.onNeedsFrame = { [weak self] in self?.scheduleFrame() }
         // The drawn keyboard's edits go through the field's input element (new-website#648).
         scene.softwareKeyboardEditHandler = { [weak self] edit, id in self?.applySoftwareKeyboardEdit(edit, to: id) ?? false }
+        if drawsPhone { installPhone() }
         // An image the painter had to fetch has arrived: paint the frame again (and let the
         // scene's image views move to their loaded or failed phase).
         let imageLoaded = JSClosure { [weak self] _ in
@@ -249,12 +263,17 @@ public final class CanvasSceneHost {
         // under the well, opened inside the press's gesture; `input` events feed the well while
         // the chooser is open, `change` ends it. The input has no alpha: the well's stays.
         scene.colorPanelHandler = { [weak self] request in self?.showColorInput(request) ?? false }
-        // The system appearance, now and when it changes.
+        // The system appearance, now and when it changes: an app whose Info.plist sets
+        // `UIUserInterfaceStyle` to Light or Dark keeps that one, as iOS keeps it whatever the
+        // device's setting, its keyboard, alerts and sheets included (new-website#663). A window's
+        // `overrideUserInterfaceStyle` and `preferredColorScheme` still win over it, as on iOS.
+        let appStyle = Self.appInterfaceStyle(Bundle.main.object(forInfoDictionaryKey: "UIUserInterfaceStyle"))
+        if let appStyle { scene.hostColorScheme = appStyle }
         if let media = window.matchMedia?("(prefers-color-scheme: dark)").object {
-            scene.hostColorScheme = (media.matches.boolean ?? false) ? .dark : .light
+            scene.hostColorScheme = appStyle ?? ((media.matches.boolean ?? false) ? .dark : .light)
             let listener = JSClosure { [weak self] arguments in
                 MainActor.assumeIsolated {
-                    self?.scene.hostColorScheme = (arguments.first?.matches.boolean ?? false) ? .dark : .light
+                    self?.scene.hostColorScheme = appStyle ?? ((arguments.first?.matches.boolean ?? false) ? .dark : .light)
                     self?.scheduleFrame()
                 }
                 return .undefined
@@ -362,6 +381,127 @@ public final class CanvasSceneHost {
     }
 
     /// The platform a page forces with `data-platform` on the container or `?platform=` in its URL.
+    /// The device the page asks the app to run in (`data-device` on the container or
+    /// `?device=` in the URL, lowercased), if any.
+    static func requestedDevice(window: JSObject, container: JSObject) -> String? {
+        var forced = container.dataset.object?.device.string
+        if forced == nil, let search = window.location.object?.search.string {
+            for pair in search.dropFirst().split(separator: "&") {
+                let parts = pair.split(separator: "=", maxSplits: 1)
+                if parts.count == 2, parts[0] == "device" { forced = String(parts[1]) }
+            }
+        }
+        return forced?.lowercased()
+    }
+
+    /// The drawn iPhone's size, safe area and frame (new-website#618): the iPhone 16's screen,
+    /// 393 by 852 with the status bar's 59 and the home indicator's 34, its corners at 55, in
+    /// Preview's plain black frame 13 thick, a side button in the frame's black on the right.
+    static let phoneScreen = (width: 393.0, height: 852.0, corner: 55.0, bezel: 13.0)
+
+    /// Puts the container in the phone's frame, centred in what was its place, the iPhone's
+    /// look and safe area set on it before the host reads them.
+    static func dressAsPhone(container: JSObject, document: JSObject) {
+        let dataset = container.dataset.object!
+        if dataset.platform.isUndefined { dataset.platform = .string("ios") }
+        if dataset.safeArea.isUndefined { dataset.safeArea = .string("59,0,34,0") }
+        let screen = phoneScreen
+        let stage = document.createElement!("div").object!
+        stage.style.object!.cssText = .string("position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden")
+        let frame = document.createElement!("div").object!
+        _ = frame.setAttribute!("data-phone-frame", "")
+        frame.style.object!.cssText = .string("position:relative;flex:none;padding:\(Int(screen.bezel))px;background:#000;border-radius:\(Int(screen.corner + screen.bezel))px;transform-origin:50% 50%")
+        if let parent = container.parentNode.object {
+            _ = parent.insertBefore!(stage, container)
+        }
+        _ = stage.appendChild!(frame)
+        _ = frame.appendChild!(container)
+        let style = container.style.object!
+        style.width = .string("\(Int(screen.width))px")
+        style.height = .string("\(Int(screen.height))px")
+        style.borderRadius = .string("\(Int(screen.corner))px")
+        style.overflow = .string("hidden")
+        style.background = .string("#000")
+        // The side button: a short tick sticking out of the frame's right edge, where an
+        // iPhone's sits; nothing else beside the phone.
+        let button = document.createElement!("div").object!
+        _ = button.setAttribute!("data-phone-side-button", "")
+        _ = button.setAttribute!("role", "button")
+        _ = button.setAttribute!("aria-label", "Side button")
+        button.style.object!.cssText = .string("position:absolute;right:-4px;top:\(Int(screen.bezel + 200))px;width:5px;height:100px;background:#000;border-radius:0 3px 3px 0;cursor:pointer")
+        _ = frame.appendChild!(button)
+    }
+
+    /// The scene's side of the drawn iPhone: the phone itself, the viewer's clock, the app's
+    /// name, the side button, and the frame shrunk to fit the window.
+    private func installPhone() {
+        scene.drawsPhone = true
+        let root = document.documentElement.object
+        let name = root?.dataset.object?.app.string ?? ""
+        scene.phoneAppName = name.isEmpty ? (document.title.string ?? "") : name
+        // The viewer's own clock as it writes the time (24 or 12 hours, without AM or PM) and
+        // the date the lock screen shows.
+        if window.__swiftuiwebPhoneClock.isUndefined, let made = JSObject.global.Function.function?.new("""
+            const d = new Date();
+            const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+              .replace(/\\s*([AaPp]\\.?\\s?[Mm]\\.?)$/, '').replace(/^\\s*([AaPp]\\.?\\s?[Mm]\\.?)\\s*/, '').trim();
+            const date = d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+            return time + '\\n' + date;
+            """) {
+            window.__swiftuiwebPhoneClock = .object(made)
+        }
+        scene.phoneClock = {
+            let text = JSObject.global.__swiftuiwebPhoneClock.function?().string ?? ""
+            let parts = text.split(separator: "\n", maxSplits: 1).map(String.init)
+            return (parts.first ?? "", parts.count > 1 ? parts[1] : "")
+        }
+        let tick = JSClosure { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.scene.phoneClockTick()
+                if self.scene.needsFrame { self.scheduleFrame() }
+            }
+            return .undefined
+        }
+        closures.append(tick)
+        _ = window.setInterval!(tick, 1000)
+        // The frame takes the window's room, never more than its own size.
+        phoneFrame = container.parentNode.object
+        let fit = JSClosure { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitPhone() }
+            return .undefined
+        }
+        closures.append(fit)
+        _ = window.addEventListener!("resize", fit)
+        fitPhone()
+        if let button = phoneFrame?.querySelector?("[data-phone-side-button]").object {
+            let press = JSClosure { [weak self] arguments in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let event = arguments.first?.object {
+                        _ = event.preventDefault!()
+                        _ = event.stopPropagation!()
+                    }
+                    self.scene.phoneSideButtonPressed()
+                    self.scheduleFrame()
+                }
+                return .undefined
+            }
+            closures.append(press)
+            _ = button.addEventListener!("pointerdown", press)
+        }
+    }
+
+    private func fitPhone() {
+        guard let frame = phoneFrame, let stage = frame.parentNode.object else { return }
+        let screen = Self.phoneScreen
+        let roomWidth = (stage.clientWidth.number ?? 0) - 40
+        let roomHeight = (stage.clientHeight.number ?? 0) - 40
+        let scale = max(0.2, min(1, roomWidth / (screen.width + 2 * screen.bezel), roomHeight / (screen.height + 2 * screen.bezel)))
+        frame.style.object!.transform = .string("scale(\(scale))")
+        frame.style.object!.margin = .string("\(-(1 - scale) * (screen.height + 2 * screen.bezel) / 2)px \(-(1 - scale) * (screen.width + 2 * screen.bezel) / 2)px")
+    }
+
     static func requestedPlatform(window: JSObject, container: JSObject) -> String? {
         var forced = container.dataset.object?.platform.string
         if forced == nil, let search = window.location.object?.search.string {
@@ -371,6 +511,35 @@ public final class CanvasSceneHost {
             }
         }
         return forced?.lowercased()
+    }
+
+    /// The scheme an Info.plist's `UIUserInterfaceStyle` holds the app to: Light or Dark; nil for
+    /// Automatic, an unknown value or none, where the app follows the device.
+    static func appInterfaceStyle(_ value: Any?) -> ColorScheme? {
+        switch (value as? String)?.lowercased() {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
+    }
+
+    /// A JSON value from the page as the property-list value Foundation would hand an app
+    /// (dictionaries, arrays, strings, numbers, booleans); nil for null and undefined.
+    static func plistValue(_ value: JSValue) -> Any? {
+        if let flag = value.boolean { return flag }
+        if let text = value.string { return text }
+        if let number = value.number { return number.rounded() == number && abs(number) < 1e15 ? Int(number) as Any : number }
+        guard let object = value.object else { return nil }
+        if JSObject.global.Array.function?.isArray?(value).boolean == true {
+            return (0..<Int(object.length.number ?? 0)).compactMap { plistValue(object[$0]) }
+        }
+        guard let keys = JSObject.global.Object.function?.keys?(value).object else { return nil }
+        var dictionary: [String: Any] = [:]
+        for index in 0..<Int(keys.length.number ?? 0) {
+            guard let key = keys[index].string, let entry = plistValue(object[dynamicMember: key]) else { continue }
+            dictionary[key] = entry
+        }
+        return dictionary
     }
 
     /// The catalog `scripts/assets.py --js` published as `window.__swiftuiwebAssets`, or an empty
@@ -2107,6 +2276,15 @@ public final class CanvasSceneHost {
         debug.displayList = .object(displayList)
         debug.frameCount = .object(frameCount)
         debug.frameMillis = .object(frameMillis)
+        // phone(action): the drawn iPhone's probe hook (`HostedScene.phoneDebug`).
+        let phone = JSClosure { [weak self] arguments in
+            guard let self else { return .undefined }
+            let answer = self.scene.phoneDebug(arguments.first?.string ?? "")
+            self.scheduleFrame()
+            return .string(answer)
+        }
+        closures.append(phone)
+        debug.phone = .object(phone)
         JSObject.global.__swiftuiwebDebug = .object(debug)
         // The frame-time HUD (`?perf`): rolling frame statistics over the page, a scripted drag.
         if marksEnabled { _ = bridge.installHud?(debug) }

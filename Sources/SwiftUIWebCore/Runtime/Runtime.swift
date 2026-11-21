@@ -127,7 +127,21 @@ public final class Runtime {
     /// Told of every visibility or focus change of any runtime (a UIKit app delegate's scene
     /// follows the page, decision 0021).
     public static var _hostLifecycleObservers: [@MainActor (_ visible: Bool, _ focused: Bool) -> Void] = []
-    public var scenePhase: ScenePhase { !hostIsVisible ? .background : (hostIsFocused ? .active : .inactive) }
+    public var scenePhase: ScenePhase {
+        let page: ScenePhase = !hostIsVisible ? .background : (hostIsFocused ? .active : .inactive)
+        // Inside the drawn iPhone the app is also behind its lock screen or on its home screen.
+        guard let phone = drawnPhone else { return page }
+        return min(page, phone.scenePhase)
+    }
+
+    /// The drawn iPhone around the app (new-website#651), when the host asks for one.
+    package var drawnPhone: DrawnPhone?
+
+    /// The drawn phone moved or changed place: paint again, and the app hears of a new phase.
+    package func phoneDidChange() {
+        requestRepaint()
+        applyScenePhase()
+    }
 
     private func applyScenePhase() {
         guard rootEnvironment.scenePhase != scenePhase else { return }
@@ -783,7 +797,9 @@ public final class Runtime {
         pendingAnimation = nil
         pendingRepeatingScopes.removeAll()
         isLayingOut = true
+        let resized = layoutSize != size
         layoutSize = size
+        if resized { drawnPhone?.screenResized() }
         probeFrames.removeAll(keepingCapacity: true)
         root.frame = CGRect(origin: .zero, size: size)
         layoutToolbar(in: size)
