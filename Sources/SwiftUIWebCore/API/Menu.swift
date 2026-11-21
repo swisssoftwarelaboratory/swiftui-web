@@ -437,17 +437,30 @@ package struct _MenuRowLabel: View {
     package let submenu: Bool
     /// A check mark in the check column (a `Toggle` that is on, a `Picker`'s selected option).
     package let checked: Bool
+    /// The button's role: an iOS menu draws a destructive row, icon and title, in red.
+    package let role: ButtonRole?
 
-    package init(label: AnyView, submenu: Bool, checked: Bool = false) {
+    package init(label: AnyView, submenu: Bool, checked: Bool = false, role: ButtonRole? = nil) {
         self.label = label
         self.submenu = submenu
         self.checked = checked
+        self.role = role
+    }
+
+    @Environment(\.platformProfile) private var profile
+
+    /// The label, red when the row is destructive in an iOS menu (new-website#709).
+    private var tintedLabel: AnyView {
+        guard role == .destructive, PlatformMetrics.menusAreGlassPanels else { return label }
+        let red = profile.metrics.destructiveColor
+        let color = Color(red: red.red, green: red.green, blue: red.blue)
+        return AnyView(label.foregroundStyle(color).accentColor(color))
     }
 
     package var body: some View {
         // The label after the check column; a submenu's chevron overlays the trailing edge so
         // the row keeps the label's ideal width and spans the menu when placed.
-        label
+        tintedLabel
             .padding(.leading, PlatformMetrics.menuCheckWidth)
             .padding(.trailing, PlatformMetrics.menuTrailingPadding + (submenu ? PlatformMetrics.menuSubmenuChevronGap + PlatformMetrics.menuSubmenuChevronSize.width : 0))
             .frame(minWidth: PlatformMetrics.menuMinimumWidth, minHeight: PlatformMetrics.menuRowHeight, alignment: .leading)

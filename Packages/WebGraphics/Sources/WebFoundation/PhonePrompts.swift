@@ -118,8 +118,9 @@ public enum _PhonePrompts {
     /// Whether prompts go to the drawn iPhone now.
     public static var isPresent: Bool { phone?() ?? false }
 
-    /// The prefix of every answer kept, so a fresh install forgets them all.
-    public static let keyPrefix = "swiftuiweb.phone.permission."
+    /// The prefix of every answer kept, inside the app's own (`_AppSandbox`), so a fresh
+    /// install forgets them all (new-website#709).
+    public static var keyPrefix: String { _AppSandbox.prefix + "phone.permission." }
 
     /// The answer kept under `name` (nil: never asked).
     public static func answer(_ name: String) -> String? {
@@ -129,8 +130,14 @@ public enum _PhonePrompts {
 
     /// Keeps an answer under `name` (nil forgets it).
     public static func setAnswer(_ name: String, _ value: String?) {
+        guard !_AppSandbox.isErased else { return }
         if let save { save(keyPrefix + name, value); return }
         memory[name] = value
+    }
+
+    /// Forgets the answers kept in memory (a fresh install without a host store).
+    public static func forgetAnswers() {
+        memory = [:]
     }
 
     /// Shows `prompt` once the main actor runs; without a drawn iPhone, `fallback`.

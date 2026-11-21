@@ -71,23 +71,27 @@ public final class CanvasSceneHost {
             TimeZone._hostSecondsFromGMT = -Int(minutes) * 60
         }
         IntlBridge.install()
-        // `UserDefaults` suites live in localStorage as JSON (decision 0021).
+        // `UserDefaults` suites live in localStorage as JSON (decision 0021), each app's under
+        // its own prefix (`_AppSandbox`, new-website#709).
         if let storage = JSObject.global.localStorage.object {
-            UserDefaults._hostStore = (load: { storage.getItem?("swiftuiweb.defaults." + $0).string },
-                                       save: { _ = storage.setItem?("swiftuiweb.defaults." + $0, $1) })
+            UserDefaults._hostStore = (load: { storage.getItem?(_AppSandbox.prefix + "defaults." + $0).string },
+                                       save: { guard !_AppSandbox.isErased else { return }; _ = storage.setItem?(_AppSandbox.prefix + "defaults." + $0, $1) })
             // The app's durable files (`FileManager`'s documents) as base64 under their paths.
             _MemoryFiles._hostStore = (
                 list: {
                     var paths: [String] = []
+                    let files = _AppSandbox.prefix + "files"
                     let count = Int(storage.length.number ?? 0)
                     for index in 0..<count {
-                        if let key = storage.key?(index).string, key.hasPrefix("swiftuiweb.files") { paths.append(String(key.dropFirst("swiftuiweb.files".count))) }
+                        if let key = storage.key?(index).string, key.hasPrefix(files), _AppSandbox.owns(key) { paths.append(String(key.dropFirst(files.count))) }
                     }
                     return paths
                 },
-                load: { storage.getItem?("swiftuiweb.files" + $0).string },
+                load: { storage.getItem?(_AppSandbox.prefix + "files" + $0).string },
                 save: { path, text in
-                    if let text { _ = storage.setItem?("swiftuiweb.files" + path, text) } else { _ = storage.removeItem?("swiftuiweb.files" + path) }
+                    guard !_AppSandbox.isErased else { return }
+                    let key = _AppSandbox.prefix + "files" + path
+                    if let text { _ = storage.setItem?(key, text) } else { _ = storage.removeItem?(key) }
                 })
         }
         scene.hostDisplayScale = JSObject.global.devicePixelRatio.number.map { CGFloat($0) } ?? 1

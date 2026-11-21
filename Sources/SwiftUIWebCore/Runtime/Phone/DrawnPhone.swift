@@ -46,6 +46,9 @@ package final class DrawnPhone {
         /// A press in the app's bottom edge that has not shown which way it goes: a move up
         /// leaves the app, anything else (a tap on a tab bar, a sideways drag) is the app's.
         case bottomEdge
+        /// A press while the icon's menu or its alerts are up, or the hold that opened the menu
+        /// (#709): theirs.
+        case iconMenu
     }
 
     struct Drag {
@@ -65,7 +68,7 @@ package final class DrawnPhone {
     /// What the lock screen, the pull-down or the dark screen has over it.
     package internal(set) var behind: Mode = .app
     /// Whether the app's card is on screen (full, or flying to or from its icon).
-    package private(set) var cardShown = true
+    package internal(set) var cardShown = true
     /// Whether the cover is the pull-down (nothing behind zooms) rather than the lock screen.
     private(set) var coverIsPullDown = false
 
@@ -175,6 +178,23 @@ package final class DrawnPhone {
     var widgetRects: [CGRect] = []
     var widgetRows = 0
 
+    // Remove App (#709, DrawnPhoneRemoveApp.swift).
+    /// How long the press on the icon has been held.
+    var holdTime: Double = 0
+    /// The phone's own view tree over the home screen while the icon's menu or its alerts are up.
+    package internal(set) var iconMenu: _HostedTree?
+    /// Whether the press in flight went to the menu's tree.
+    var menuTookPress = false
+    /// Set between one of the menu's steps closing and the next one showing.
+    var menuHandoff = false
+    /// The icon shrinking away (1 to 0) once Delete is pressed.
+    var removal = Motion(position: 1, restDistance: 0.002, restSpeed: 0.05)
+    var removing = false
+    /// The app's start, held until it is first opened after a fresh install.
+    var pendingLaunch: (@MainActor () -> Void)?
+    /// Whether the app is new on the home screen (its name marked with a blue dot).
+    package internal(set) var freshlyInstalled = false
+
     package init(runtime: Runtime) {
         self.runtime = runtime
     }
@@ -268,7 +288,7 @@ package final class DrawnPhone {
     }
 
     /// Whether the phone needs the clock to run: a move, the dark's lock delay, a banner's time.
-    package var needsTime: Bool { isMoving || lockDelay != nil || bannerShown || prompts.faceID != nil }
+    package var needsTime: Bool { isMoving || lockDelay != nil || bannerShown || prompts.faceID != nil || holdIsArmed || iconMenu != nil || removing }
 
     /// The app's scene phase as the phone sees it: active while it fills the screen, inactive
     /// while something covers part of it or it is on its way out or in, background once it is
@@ -350,6 +370,7 @@ package final class DrawnPhone {
         case .pullDown: break
         case .locked, .off: break
         }
+        if iconMenu != nil { closeIconMenu() }
         drag = nil
         heldPress = nil
         cancelCoverPress()
@@ -412,6 +433,7 @@ package final class DrawnPhone {
 
     /// Grows the app's card out of its icon to the full screen.
     package func openApp(fromIcon: Bool = true) {
+        launchIfNeeded()
         mode = .app
         behind = .app
         if !cardShown || fromIcon && cardWidth.position < Self.iconSize + 1 { setCard(iconRect) }
@@ -422,6 +444,7 @@ package final class DrawnPhone {
 
     /// Grows the app's card out of one of its widgets (a tap on it) to the full screen.
     func openApp(from rect: CGRect) {
+        launchIfNeeded()
         mode = .app
         behind = .app
         setCard(rect)
@@ -495,6 +518,7 @@ package final class DrawnPhone {
         for widget in lockWidgets where widget.advance(elapsed: elapsed) { treesMoving = true }
         let homeWidgetsMoving = widgetsLoaded && advanceWidgets(elapsed: elapsed)
         let badgeShown = advanceFaceID(elapsed: elapsed)
+        let menuMoving = advanceRemoval(elapsed: elapsed)
         if treesMoving, coverAmount > 0 { runtime.requestRepaint() }
         if bannerShown, drag?.kind != .banner {
             bannerTime += elapsed
@@ -502,7 +526,7 @@ package final class DrawnPhone {
         }
         if !cover.isMoving, cover.position <= -height + 0.5 { coverIsPullDown = false }
         if wasMoving || isMoving { runtime.phoneDidChange() }
-        return needsTime || treesMoving && coverAmount > 0 || homeWidgetsMoving || badgeShown
+        return needsTime || treesMoving && coverAmount > 0 || homeWidgetsMoving || badgeShown || menuMoving
     }
 
     // MARK: The finger
@@ -533,12 +557,19 @@ package final class DrawnPhone {
                 for index in 0..<4 { holdCard(index) }
             case .banner:
                 banner.hold(at: banner.position)
-            case .home, .cover, .bottomEdge:
+            case .home, .cover, .bottomEdge, .iconMenu:
                 break
             }
             changed()
             return true
         }
+        // The icon's menu or its alerts take every press while they are up; nothing while the
+        // icon shrinks away (#709).
+        if mode == .home, iconMenu != nil {
+            menuPointerDown(at: point, type: type, time: time)
+            return true
+        }
+        if removing { return true }
         if bannerShown || banner.isMoving, mode == .app || mode == .home, bannerRect.contains(point) {
             return begin(.banner)
         }
@@ -551,6 +582,7 @@ package final class DrawnPhone {
             return began
         case .home:
             if y < Self.topEdge { return begin(.pullDown) }
+            holdTime = 0
             return begin(.home)
         case .app:
             if !appIsFull {
@@ -625,6 +657,8 @@ package final class DrawnPhone {
             }
         case .home:
             break
+        case .iconMenu:
+            menuPointerMoved(to: point, time: time)
         }
         changed()
         return true
@@ -696,6 +730,8 @@ package final class DrawnPhone {
             }
         case .cover:
             coverPressEnded(at: point, velocity: Double(v.height), moved: d.moved, time: time)
+        case .iconMenu:
+            menuPointerUp(at: point, time: time)
         }
         changed()
         return true
@@ -716,6 +752,7 @@ package final class DrawnPhone {
         case .banner: banner.animate(to: 0, spring: Self.bannerBack)
         case .cover: cancelCoverPress()
         case .home, .bottomEdge: break
+        case .iconMenu: menuPointerCancelled(time: d.startTime)
         }
         changed()
     }
@@ -755,6 +792,8 @@ package final class DrawnPhone {
             "banner=\(f(banner.position))", "bannerShown=\(bannerShown)",
             "moving=\(isMoving)", "drag=\(drag.map { "\($0.kind)" } ?? "none")",
             "clock=\(clockText.time)",
+            "iconMenu=\(iconMenuDebug)", "removing=\(removing)",
+            "freshlyInstalled=\(freshlyInstalled)", "launched=\(pendingLaunch == nil)",
         ].joined(separator: "\n")
     }
 

@@ -61,6 +61,7 @@ extension DrawnPhone {
             list.append(.restore)
         }
         if cardShown, appIsFull { paintFaceID(into: &list) }
+        if iconMenu != nil, !cardShown { paintIconMenu(into: &list) }
         if banner.position > Self.bannerAway + 1 { paintBanner(into: &list) }
         let darkStatus = statusBarIsDark(amount: amount)
         paintStatusBar(into: &list, dark: darkStatus && amount < 0.5)
@@ -139,7 +140,22 @@ extension DrawnPhone {
             let rect = iconRect(at: index)
             let isApp = index == 0
             if isApp {
-                if !hidingIcon { paintAppIcon(rect, into: &list) }
+                // While it is removed the icon shrinks away about its centre, its name with it (#709).
+                let scale = iconScale
+                if hidingIcon {
+                    drawAppName(rect: rect, font: label, into: &list)
+                } else if scale > 0.001 {
+                    if scale < 1 {
+                        list.append(.save)
+                        list.append(.concat(Self.zoom(scale, in: rect)))
+                        list.append(.beginGroup(opacity: Double(scale)))
+                    }
+                    paintAppIcon(rect, into: &list)
+                    if scale < 1 { list.append(.endGroup) }
+                    drawAppName(rect: rect, font: label, into: &list)
+                    if scale < 1 { list.append(.restore) }
+                }
+                continue
             } else {
                 list.append(.fillRRect(rect, cornerRadius: size * Self.iconCorner, Self.iconGrey))
             }
@@ -152,6 +168,21 @@ extension DrawnPhone {
             let x = CGFloat(Self.iconColumns[index]) * w / 393
             list.append(.fillRRect(CGRect(x: x, y: dock.midY - size / 2, width: size, height: size), cornerRadius: size * Self.iconCorner, Self.iconGrey))
         }
+    }
+
+    /// The app's name under its icon; a new app's starts with iOS's blue dot (#709).
+    private func drawAppName(rect: CGRect, font label: ResolvedFont, into list: inout DisplayList) {
+        let size = CGFloat(Self.iconSize)
+        guard freshlyInstalled else {
+            drawCentered(homeName, font: label, centerX: rect.midX, baseline: rect.maxY + 17, maxWidth: size + 20, color: Self.ink, into: &list)
+            return
+        }
+        let layout = runtime.layoutText(homeName, font: label, width: nil)
+        let nameWidth = min(layout.lines.first?.inkWidth ?? layout.size.width, size + 20 - 9)
+        let dot: CGFloat = 6, gap: CGFloat = 3
+        let left = rect.midX - (dot + gap + nameWidth) / 2
+        list.append(.fillRRect(CGRect(x: left, y: rect.maxY + 17 - 4.5 - dot / 2, width: dot, height: dot), cornerRadius: dot / 2, Self.newDot))
+        list.append(.drawText(homeName, DisplayFont(label), origin: CGPoint(x: left + dot + gap, y: rect.maxY + 17), Self.ink))
     }
 
     /// The dock: light, rounded, low on the screen above the home indicator (#626).

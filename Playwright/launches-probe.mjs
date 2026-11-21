@@ -79,7 +79,8 @@ if (await keyboardLine() !== 'keyboard: 0' || await sceneFrame() !== null) probl
 await page.evaluate(() => window.__swiftuiwebDebug.syntheticKeyboardReading(500, 500 - 336, 0, 1, false));   // no focused input
 await page.waitForTimeout(300);
 if (await keyboardLine() !== 'keyboard: 0') problems.push(`keyboard without a focused input: "${await keyboardLine()}", expected "keyboard: 0"`);
-const stored = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('swiftuiweb.')).sort());
+// An app with a bundle identifier keeps its keys under `swiftuiweb.app[<id>].` (new-website#709).
+const stored = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('swiftuiweb.')).map(k => k.replace(/^swiftuiweb\.app\[[^\]]*\]\./, 'swiftuiweb.')).sort());
 if (!stored.includes('swiftuiweb.defaults.standard') || !stored.includes('swiftuiweb.files/Documents/launches.json') || !stored.includes('swiftuiweb.swiftdata.launches')) problems.push('localStorage keys: ' + stored.join(', '));
 console.log(problems.length ? problems.join('\n') : 'launches OK: three loads counted, on file and settled; keyboard notifications on synthetic viewport readings (no phone keyboard here)');
 await browser.close();

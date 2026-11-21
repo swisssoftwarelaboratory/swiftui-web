@@ -53,7 +53,7 @@ public struct Button<Label: View>: View {
     public var body: some View {
         if inMenu {
             // A menu item: the label in a row, no button chrome.
-            _ButtonHost(action: action, isPressed: $isPressed, label: AnyView(_MenuRowLabel(label: AnyView(label), submenu: false)))
+            _ButtonHost(action: action, isPressed: $isPressed, label: AnyView(_MenuRowLabel(label: AnyView(label), submenu: false, role: role)))
         } else if let primitiveStyle {
             // A primitive style owns the interaction: its body decides when `trigger` runs.
             let configuration = PrimitiveButtonStyleConfiguration(label: PrimitiveButtonStyleConfiguration.Label(AnyView(label)), role: role, action: action)

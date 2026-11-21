@@ -1,5 +1,5 @@
 // The browser behind the Security framework's keychain items (decision 0021, the Ember app's
-// session cookie): each item in localStorage under `swiftuiweb.keychain.<identity>`, bounded
+// session cookie): each item in localStorage under `swiftuiweb.keychain.<identity>` (inside the app's own prefix, `_AppSandbox`), bounded
 // by the page's origin as every key there is. Storage the browser refuses (a sandboxed frame,
 // blocked site data, a spent quota) reads as no item and a write that does not stick — the
 // functions answer `errSecSuccess` for the write they made in memory, as a keychain whose
@@ -10,7 +10,8 @@ import WebFoundation
 
 @MainActor
 enum SecurityHost {
-    static let prefix = "swiftuiweb.keychain."
+    /// Inside the app's own prefix (`_AppSandbox`, new-website#709).
+    static var prefix: String { _AppSandbox.prefix + "keychain." }
 
     private static let op: JSObject? = {
         guard let make = JSObject.global.Function.function else { return nil }
@@ -34,7 +35,9 @@ enum SecurityHost {
     static func install() {
         _SecurityHost.store = (
             load: { key in run("get", prefix + key) },
-            save: { key, value in _ = value.map { run("set", prefix + key, $0) } ?? run("remove", prefix + key) }
+            save: { key, value in
+                guard !_AppSandbox.isErased else { return }
+                _ = value.map { run("set", prefix + key, $0) } ?? run("remove", prefix + key) }
         )
     }
 }
