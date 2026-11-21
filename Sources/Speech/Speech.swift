@@ -103,7 +103,7 @@ public class SFSpeechRecognizer {
     public weak var delegate: (any SFSpeechRecognizerDelegate)?
     public var defaultTaskHint: SFSpeechRecognitionTaskHint = .unspecified
     /// Recognition here is on the device or not at all.
-    public var supportsOnDeviceRecognition: Bool { _SpeechHost.availability != nil }
+    public var supportsOnDeviceRecognition: Bool { _PhoneSpeech.inPhone || _SpeechHost.availability != nil }
     public var queue: DispatchQueue = .main
 
     /// The recognizer for the current locale.
@@ -130,6 +130,7 @@ public class SFSpeechRecognizer {
     /// answer for the locale. Unknown yet, the host is asked (without installing anything) and
     /// the answer is false until it arrives — `requestAuthorization` waits for one.
     public var isAvailable: Bool {
+        if _PhoneSpeech.inPhone { return true }
         if let known = _SpeechHost.known[tag] { return known == .available }
         guard _SpeechHost.availability != nil else { return false }
         nonisolated(unsafe) weak let recognizer = self
@@ -144,7 +145,16 @@ public class SFSpeechRecognizer {
     /// the current locale stands for them.
     public static func supportedLocales() -> Set<Locale> { [Locale.current] }
 
-    public static func authorizationStatus() -> SFSpeechRecognizerAuthorizationStatus { _SpeechHost.authorization }
+    public static func authorizationStatus() -> SFSpeechRecognizerAuthorizationStatus {
+        if _PhoneSpeech.inPhone {
+            switch _PhonePrompts.allowed(_PhoneSpeech.name) {
+            case true?: return .authorized
+            case false?: return .denied
+            case nil: return .notDetermined
+            }
+        }
+        return _SpeechHost.authorization
+    }
 
     /// Asks the user to allow speech recognition. The browser's one prompt is the language
     /// pack's download (when the locale's pack is not on the device yet), so this is where it
@@ -152,6 +162,14 @@ public class SFSpeechRecognizer {
     /// the device and `.restricted` where it cannot.
     public static func requestAuthorization(_ handler: @escaping (SFSpeechRecognizerAuthorizationStatus) -> Void) {
         nonisolated(unsafe) let handler = handler
+        if _PhoneSpeech.inPhone {
+            let title = _PhonePrompts.german ? "\(_PhonePrompts.quotedName) m\u{00F6}chte auf die Spracherkennung zugreifen"
+                : "\(_PhonePrompts.quotedName) Would Like to Access Speech Recognition"
+            _PhonePrompts.askAllow(_PhoneSpeech.name, title: title, usageKey: "NSSpeechRecognitionUsageDescription") { allowed in
+                handler(allowed ? .authorized : .denied)
+            }
+            return
+        }
         guard _SpeechHost.availability != nil else {
             _SpeechHost.authorization = .restricted
             handler(.restricted)
@@ -189,6 +207,37 @@ public class SFSpeechRecognizer {
             }
         }, onError: { _ in delegate.speechRecognitionTask(held, didFinishSuccessfully: false) })
         return task
+    }
+}
+
+/// Speech recognition inside the drawn iPhone (new-website#710): iOS's own question, asked once
+/// and kept, and a recogniser that hears the phone's silent microphone.
+enum _PhoneSpeech {
+    static let name = "speech"
+
+    static var inPhone: Bool {
+        #if os(WASI)
+        return _PhonePrompts.isPresent
+        #else
+        return false
+        #endif
+    }
+
+    /// A recognition that hears nothing: ending its audio fails as iOS does when no one spoke.
+    final class Quiet: _SpeechSession {
+        private let failed: @MainActor @Sendable (String) -> Void
+        private var done = false
+        init(failed: @escaping @MainActor @Sendable (String) -> Void) { self.failed = failed }
+        func append(_ samples: [Float], sampleRate: Double) {}
+        func endAudio() { finish() }
+        func stop() { finish() }
+        func cancel() { done = true }
+        private func finish() {
+            guard !done else { return }
+            done = true
+            let failed = self.failed
+            Task { @MainActor in failed("No speech detected") }
+        }
     }
 }
 
@@ -344,7 +393,18 @@ public final class SFSpeechRecognitionTask {
             fail(SFSpeechError("Speech: the host recognises appended buffers, not a file"), onError)
             return
         }
-        guard let start = _SpeechHost.start else {
+        var start = _SpeechHost.start
+        if _PhoneSpeech.inPhone {
+            guard _PhonePrompts.allowed(_PhoneSpeech.name) == true else {
+                fail(SFSpeechError("Speech recognition is not authorized"), onError)
+                return
+            }
+            // The drawn iPhone's microphone hears silence (new-website#710), so nothing is said:
+            // the end of the audio finishes with iOS's "No speech detected", never the
+            // browser's recogniser.
+            start = { _, _, _, failed in _PhoneSpeech.Quiet(failed: failed) }
+        }
+        guard let start else {
             fail(SFSpeechError("Speech: no speech host"), onError)
             return
         }
