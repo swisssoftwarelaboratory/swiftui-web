@@ -958,14 +958,17 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if moving {
             // The lens: what lies beneath bends in up to 14 pt at the rim while the glass is in
             // motion, less as it settles.
-            list.append(.backdropLens(shape, bounds: rect, radius: m.menuGlassSigma, bend: 14 * (1 - settle), cornerRadius: radius))
+            // The iPhone's lens is nearly clear while it moves (the page shows through, bent hard
+            // at the rim); it frosts as it settles (side by side with the simulator, 21 Nov).
+            list.append(.backdropLens(shape, bounds: rect, radius: 1.5 + (m.menuGlassSigma - 1.5) * settle,
+                                      bend: 22 * (1 - settle), cornerRadius: radius))
         } else {
             list.append(.backdropBlur(shape, bounds: rect, radius: m.menuGlassSigma))
         }
         // In motion the glass is clearer, the bent page showing through it (the simulator's
         // frames); it whitens as it settles.
         var fill = m.menuGlassFill
-        if moving { fill.alpha = 0.45 + (fill.alpha - 0.45) * settle }
+        if moving { fill.alpha = 0.08 + (fill.alpha - 0.08) * settle }
         list.append(.fillPath(shape, fill))
         list.append(.strokePath(Path(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), cornerRadius: radius - 0.25),
                                 style: StrokeStyle(lineWidth: 0.5), environment._ink(m.menuEdgeAlpha)))
@@ -981,14 +984,18 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if let target {
             if moving {
                 // The rows squeezed into the glass, showing as it nears its size.
-                let rows = smooth(0.55, 0.98, grown)
+                let rows = smooth(0.25, 0.9, grown)
                 if rows > 0.001 {
                     let sx = rect.width / max(1, panelRect.width), sy = rect.height / max(1, panelRect.height)
                     list.append(.beginGroup(opacity: rows))
+                    // Smudged inside the moving lens, sharp once it has settled.
+                    let smudge = 7 * (1 - settle)
+                    if smudge > 0.3 { list.append(.beginFilter(.blur(radius: smudge, opaque: false), bounds: rect)) }
                     list.append(.save)
                     list.append(.concat(CGAffineTransform(a: sx, b: 0, c: 0, d: sy, tx: rect.minX - panelRect.minX * sx, ty: rect.minY - panelRect.minY * sy)))
                     target.paint(into: &list, context: context.child(at: target.presentedFrame))
                     list.append(.restore)
+                    if smudge > 0.3 { list.append(.endGroup) }
                     list.append(.endGroup)
                 }
             } else {
