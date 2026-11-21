@@ -278,6 +278,9 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         /// `presentationBackground`: the card's (a cover's window's) fill instead of the system
         /// background; a clear style paints nothing.
         package var background: AnyShapeStyle?
+        /// iOS: a system sheet (Sign in with Apple's, new-website#707) floating in from the
+        /// sides and the bottom like the medium detent's card, as tall as its content.
+        package var fitsContent = false
     }
     package var options = Options()
 
@@ -293,7 +296,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     }
 
     /// iOS: the medium detent when it is the only one offered (`sheetsFillWindow`).
-    private var mediumDetent: Bool { options.detents.contains(.medium) && !options.detents.contains(.large) }
+    private var mediumDetent: Bool { options.fitsContent || (options.detents.contains(.medium) && !options.detents.contains(.large)) }
 
     /// Secondary windows: the title bar above the content and the close button in it.
     package static let windowTitleBarHeight: CGFloat = 28
@@ -453,7 +456,13 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             // and the bottom. The card has no unsafe region above it; at the bottom the content
             // keeps clear of the home indicator unless it extends into it, as in the window.
             let safe = runtime.safeAreaInsets
-            if mediumDetent {
+            if options.fitsContent {
+                let width = window.width - 2 * m.sheetMediumSideInset
+                // The content keeps clear of the home indicator below it (as placed below).
+                let fitted = target.sizeThatFits(ProposedViewSize(width: width, height: nil)).height + max(0, safe.bottom - m.sheetMediumBottomInset)
+                let height = min(fitted.rounded(.up), window.height - max(m.sheetTopInset, safe.top) - m.sheetMediumBottomInset)
+                panel = CGRect(x: m.sheetMediumSideInset, y: window.height - m.sheetMediumBottomInset - height, width: width, height: height)
+            } else if mediumDetent {
                 let height = (window.height * m.sheetMediumHeightFraction).rounded()
                 panel = CGRect(x: m.sheetMediumSideInset, y: window.height - height, width: window.width - 2 * m.sheetMediumSideInset, height: height - m.sheetMediumBottomInset)
             } else {

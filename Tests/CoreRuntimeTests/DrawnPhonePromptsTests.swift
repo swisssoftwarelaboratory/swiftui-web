@@ -149,6 +149,53 @@ extension NotificationCentreSuites {
         settle(r, seconds: 1.6)
         #expect(heard.value == true && !r.drawnPhone!.needsTime)
     }
+
+    // MARK: Sign in with Apple (new-website#707)
+
+    @Test mutating func appleIDsSheetAsksThenFaceIDThenAnswers() async {
+        let r = phone()
+        let heard = Heard<_PhonePrompts.Answer>()
+        _PhonePrompts.show(.appleID(.init(returning: false, asksName: true, asksEmail: true)), fallback: .cancelled) { heard.hear($0) }
+        await turns(r)
+        settle(r)
+        let names = textNodes(r).map(\.0)
+        for word in ["Sign in with Apple", "Name", "Share My Email", "Hide My Email", "mara.keller@icloud.com", "Continue"] {
+            #expect(names.contains(word), "missing \(word)")
+        }
+        #expect(names.contains { $0.hasPrefix("Create an account for") })
+        // Floating at its content's height, in from the sides.
+        let panel = r.presentations.first!.panel
+        #expect(panel.minX == 6 && panel.maxY == 852 - 6 && panel.height < 600)
+        tap(r, text: "Continue")
+        // Face ID over the sheet, then the answer.
+        #expect(r.drawnPhone!.needsTime && heard.value == nil && r.hasPresentations)
+        settle(r, seconds: 2)
+        guard case let .appleID(name, hide)? = heard.value else { Issue.record("answer \(String(describing: heard.value))"); return }
+        #expect(name == "Mara Keller" && hide)
+        #expect(!r.hasPresentations)
+    }
+
+    @Test mutating func aReturningSignInOnlyAsksToContinue() async {
+        let r = phone()
+        let heard = Heard<_PhonePrompts.Answer>()
+        _PhonePrompts.show(.appleID(.init(returning: true, asksName: true, asksEmail: true)), fallback: .cancelled) { heard.hear($0) }
+        await turns(r)
+        settle(r)
+        let names = textNodes(r).map(\.0)
+        #expect(!names.contains("Share My Email") && !names.contains("Name"))
+        #expect(names.contains { $0.hasPrefix("Do you want to sign in to") })
+        // Only its buttons close it.
+        #expect(r.dismissTopmostPresentation())
+        #expect(r.hasPresentations && heard.value == nil)
+    }
+
+    @Test func appleAccountIdsAreStable() {
+        let user = _PhonePrompts.AppleAccount.userID
+        #expect(user == _PhonePrompts.AppleAccount.userID)
+        let parts = user.split(separator: ".")
+        #expect(parts.count == 3 && parts[0].count == 6 && parts[1].count == 32 && parts[2].count == 4)
+        #expect(_PhonePrompts.AppleAccount.relayEmail.hasSuffix("@privaterelay.appleid.com"))
+    }
 }
 }
 #endif
