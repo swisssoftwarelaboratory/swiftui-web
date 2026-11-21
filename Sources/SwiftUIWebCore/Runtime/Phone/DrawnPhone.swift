@@ -61,9 +61,9 @@ package final class DrawnPhone {
 
     unowned let runtime: Runtime
 
-    package private(set) var mode: Mode = .app
+    package internal(set) var mode: Mode = .app
     /// What the lock screen, the pull-down or the dark screen has over it.
-    package private(set) var behind: Mode = .app
+    package internal(set) var behind: Mode = .app
     /// Whether the app's card is on screen (full, or flying to or from its icon).
     package private(set) var cardShown = true
     /// Whether the cover is the pull-down (nothing behind zooms) rather than the lock screen.
@@ -99,6 +99,52 @@ package final class DrawnPhone {
     package private(set) var clockText = (time: "", date: "")
     package var appName = ""
 
+    /// The phone the system frameworks reach (`_DrawnPhoneSystem`): the last one made.
+    package static weak var current: DrawnPhone?
+
+    // MARK: What the app's frameworks put on the phone (#643)
+
+    /// A delivered notification as the phone shows it.
+    package struct Note {
+        package var identifier: String
+        package var title: String
+        package var subtitle: String
+        package var body: String
+        package var date: Date
+        package var onOpen: @MainActor () -> Void
+    }
+
+    /// A running Live Activity, drawn live by the app's own view.
+    package final class LiveActivity {
+        let id: String
+        let tree: _HostedTree
+        let opensApp: @MainActor () -> Void
+        init(id: String, tree: _HostedTree, opensApp: @escaping @MainActor () -> Void) {
+            self.id = id
+            self.tree = tree
+            self.opensApp = opensApp
+        }
+    }
+
+    /// The lock screen's and the pull-down's notifications, newest first.
+    package internal(set) var notes: [Note] = []
+    /// The notification the banner shows.
+    package internal(set) var bannerNote: Note?
+    /// The app's Live Activities, oldest first (the first on top of the column).
+    package internal(set) var activities: [LiveActivity] = []
+    /// The app's lock screen widgets (#638 fills them), in one row under the clock.
+    package internal(set) var lockWidgets: [_HostedTree] = []
+    /// Whether the lock screen's stack was opened into the full list.
+    package internal(set) var stackOpen = false
+    /// How far the column of the lock screen or the pull-down is scrolled (0 at its top).
+    var listScroll = Motion(position: 0, restDistance: 0.25, restSpeed: 5)
+    /// The column's scroll when the press began, and what the press landed on.
+    var pressedItem: CoverItem?
+    var pressScroll: Double = 0
+    var columnScrolled = false
+    /// Whether the press went to something in a Live Activity that takes presses (its button).
+    var activityTookPress = false
+
     package init(runtime: Runtime) {
         self.runtime = runtime
     }
@@ -116,7 +162,7 @@ package final class DrawnPhone {
     static let liftZone: Double = 140
     /// A press that travels this far is a drag, not a tap.
     static let slop: Double = 8
-    static let bannerAway: Double = -170
+    static let bannerAway: Double = -200
     static let bannerHeight: Double = 76
     static let bannerTop: Double = 54
     static let bannerSeconds: Double = 6
@@ -183,7 +229,7 @@ package final class DrawnPhone {
 
     /// Whether anything moves on screen.
     package var isMoving: Bool {
-        cover.isMoving || dark.isMoving || wake.isMoving || cardMoving || banner.isMoving
+        cover.isMoving || dark.isMoving || wake.isMoving || cardMoving || banner.isMoving || listScroll.isMoving
     }
 
     /// Whether the phone needs the clock to run: a move, the dark's lock delay, a banner's time.
@@ -217,9 +263,13 @@ package final class DrawnPhone {
         wake.hold(at: 0)
         banner.hold(at: Self.bannerAway)
         bannerShown = false
+        bannerNote = nil
         lockDelay = nil
         drag = nil
         heldPress = nil
+        stackOpen = false
+        listScroll.hold(at: 0)
+        pressedItem = nil
     }
 
     /// The screen took a new size (the first layout): every place stands where its mode puts it.
@@ -267,6 +317,9 @@ package final class DrawnPhone {
         }
         drag = nil
         heldPress = nil
+        cancelCoverPress()
+        stackOpen = false
+        listScroll.hold(at: 0)
         mode = .off
         dark.hold(at: 1)
         lockDelay = 0.2
@@ -347,8 +400,9 @@ package final class DrawnPhone {
     }
 
     /// A banner drops in below the island and goes up by itself after 6 s.
-    package func showBanner() {
+    package func showBanner(_ note: Note? = nil) {
         guard mode == .app || mode == .home else { return }
+        bannerNote = note
         bannerShown = true
         bannerTime = 0
         banner.hold(at: Self.bannerAway)
@@ -390,13 +444,18 @@ package final class DrawnPhone {
         cardHeight.step(elapsed)
         if cardWasMoving, !cardMoving, mode == .home, drag == nil { cardShown = false }
         banner.step(elapsed)
+        listScroll.step(elapsed)
+        var treesMoving = false
+        for activity in activities where activity.tree.advance(elapsed: elapsed) { treesMoving = true }
+        for widget in lockWidgets where widget.advance(elapsed: elapsed) { treesMoving = true }
+        if treesMoving, coverAmount > 0 { runtime.requestRepaint() }
         if bannerShown, drag?.kind != .banner {
             bannerTime += elapsed
             if bannerTime >= Self.bannerSeconds { hideBanner(atOnce: false) }
         }
         if !cover.isMoving, cover.position <= -height + 0.5 { coverIsPullDown = false }
         if wasMoving || isMoving { runtime.phoneDidChange() }
-        return needsTime
+        return needsTime || treesMoving && coverAmount > 0
     }
 
     // MARK: The finger
@@ -436,8 +495,11 @@ package final class DrawnPhone {
         }
         switch mode {
         case .locked, .pullDown:
-            if y > height - Self.liftZone { return begin(.lift) }
-            return begin(.cover)
+            let item = coverItem(at: point)
+            if y > height - Self.liftZone, item == nil { return begin(.lift) }
+            let began = begin(.cover)
+            coverPressBegan(item, at: point, type: type, time: time)
+            return began
         case .home:
             if y < Self.topEdge { return begin(.pullDown) }
             return begin(.home)
@@ -502,7 +564,17 @@ package final class DrawnPhone {
             cover.hold(at: min(0, moved) + (moved > 0 ? RubberBand.offset(forOvershoot: moved, dimension: height) : 0))
         case .banner:
             banner.hold(at: dy < 0 ? dy : RubberBand.offset(forOvershoot: dy, dimension: 120))
-        case .home, .cover:
+        case .cover:
+            if coverPressMoved(to: point, dx: dx, dy: dy, time: time) {
+                // Up from a column with nothing to scroll: the lock screen lifts after all.
+                d.kind = .lift
+                d.coverStart = cover.position - dy
+                drag = d
+                cover.hold(at: cover.position)
+                let moved = d.coverStart + dy
+                cover.hold(at: min(0, moved))
+            }
+        case .home:
             break
         }
         changed()
@@ -556,8 +628,10 @@ package final class DrawnPhone {
             }
         case .banner:
             if !d.moved {
+                let note = bannerNote
                 hideBanner(atOnce: false)
                 if mode == .home { openApp() }
+                if let note { open(note) }
             } else if dy < -20 || v.height < -300 {
                 hideBanner(atOnce: false, velocity: Double(v.height))
             } else {
@@ -567,13 +641,7 @@ package final class DrawnPhone {
         case .home:
             if !d.moved, iconRect.insetBy(dx: -8, dy: -8).contains(point) { openApp() }
         case .cover:
-            if !d.moved, notificationRect.contains(point) {
-                // A tapped notification slides the cover away and opens the app.
-                let wasHome = behind == .home || !cardShown
-                behind = .app
-                cover.animate(to: -height, spring: Self.coverSpring)
-                if wasHome { openApp() } else { mode = .app }
-            }
+            coverPressEnded(at: point, velocity: Double(v.height), moved: d.moved, time: time)
         }
         changed()
         return true
@@ -592,7 +660,8 @@ package final class DrawnPhone {
         case .lift:
             if mode == .locked { relock(velocity: 0) } else { openPullDown(velocity: 0) }
         case .banner: banner.animate(to: 0, spring: Self.bannerBack)
-        case .home, .cover, .bottomEdge: break
+        case .cover: cancelCoverPress()
+        case .home, .bottomEdge: break
         }
         changed()
     }
@@ -615,12 +684,9 @@ package final class DrawnPhone {
     // MARK: Places on screen
 
     var bannerRect: CGRect {
-        CGRect(x: 8, y: Self.bannerTop + banner.position, width: width - 16, height: Self.bannerHeight)
-    }
-
-    /// The stand-in notification on the lock screen (its own ticket draws the real ones, #643).
-    var notificationRect: CGRect {
-        CGRect(x: 8, y: height * 0.42 + cover.position, width: width - 16, height: Self.bannerHeight)
+        let w = width - 16
+        let h = bannerNote.map { Double(noteHeight($0, width: CGFloat(w), more: false)) } ?? Self.bannerHeight
+        return CGRect(x: 8, y: Self.bannerTop + banner.position, width: w, height: h)
     }
 
     /// Where the phone stands, as `key=value` lines (`phoneDebug`).

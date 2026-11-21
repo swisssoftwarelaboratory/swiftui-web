@@ -1042,6 +1042,10 @@ package final class TextNode: LeafNode<Text>, _HoverTracking, _PointerStyled, _I
     }
 
     override package func paintSelf(into list: inout DisplayList, context: PaintContext) {
+        // A live date shown for the first time ticks from now on: `update` schedules the next
+        // second only after a change, and a text mounted once (a Live Activity's countdown,
+        // new-website#643) never had one.
+        if liveWake == nil, view.isLive { scheduleLiveRefresh() }
         let progress = contentTransitionProgress
         guard let outgoing, progress < 1 else {
             paintText(alpha: 1, dy: 0, into: &list, context: context)
