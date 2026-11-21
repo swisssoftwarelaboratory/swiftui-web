@@ -882,6 +882,19 @@ extension TextMetricsRequests {
             requests.append(TextMetricRequest(string, seventeen))
             requests.append(TextMetricRequest(string, seventeen, width: 211))
         }
+        // ios/dialog/wide-button, trailing-button, tall-column (new-website#649): the screens' texts
+        // and the dialogs' within the 241 pt panel.
+        for string in ["Sign out", "Delete"] + (0..<10).map({ "Row \($0)" }) {
+            requests.append(TextMetricRequest(string, .style("body")))
+            for width: CGFloat in [311, 343, 375] { requests.append(TextMetricRequest(string, .style("body"), width: width)) }
+        }
+        requests.append(TextMetricRequest("Version 1.0 (1)", .style("footnote")))
+        for width: CGFloat in [311, 343, 375] { requests.append(TextMetricRequest("Version 1.0 (1)", .style("footnote"), width: width)) }
+        for string in ["Sign out?", "Delete it?"] { requests.append(TextMetricRequest(string, seventeenBold, width: 177)) }
+        for string in ["Your plan and history stay saved. Sign in again any time.", "This can't be undone."] {
+            requests.append(TextMetricRequest(string, .system(size: 15, weight: "regular", design: "default"), width: 177))
+        }
+        for string in ["Sign out", "Delete"] { requests.append(TextMetricRequest(string, seventeen, width: 208)); requests.append(TextMetricRequest(string, seventeenSemibold, width: 208)) }
         for string in ["Home", "Search", "Settings", "Alerts", "Mail", "More"] {   // ios/tabs/*
             requests.append(TextMetricRequest(string, .system(size: 10, weight: "medium", design: "default")))
         }

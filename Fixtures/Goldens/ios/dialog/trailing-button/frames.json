@@ -1,0 +1,28 @@
+{
+  "fixture" : "ios\/dialog\/trailing-button",
+  "frames" : {
+    "stack" : {
+      "height" : 667,
+      "width" : 375,
+      "x" : 0,
+      "y" : 0
+    }
+  },
+  "size" : {
+    "height" : 667,
+    "width" : 375
+  },
+  "steps" : [
+    {
+      "frames" : {
+        "stack" : {
+          "height" : 667,
+          "width" : 375,
+          "x" : 0,
+          "y" : 0
+        }
+      },
+      "name" : "present"
+    }
+  ]
+}

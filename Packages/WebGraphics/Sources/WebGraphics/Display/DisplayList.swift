@@ -118,6 +118,12 @@ public enum DisplayCommand: Equatable, Sendable {
     /// place: a material's ground, which the tint drawn after it sits on. `bounds` is the
     /// path's frame, the area the painters process.
     case backdropBlur(Path, bounds: CGRect, radius: CGFloat, saturation: Double = 1)
+    /// Like `backdropBlur`, seen through thick glass: what lies beneath is blurred and bends
+    /// toward the path's rim, as an iOS 27 menu's glass does while it grows (new-website#649).
+    /// `bend` is how far, in points, content from outside the shape is pulled in at its rim.
+    /// `cornerRadius` is the shape's (a rounded rectangle's), which the rim follows. Painters
+    /// without a lens draw the blur alone (`asBackdropBlur`).
+    case backdropLens(Path, bounds: CGRect, radius: CGFloat, bend: CGFloat, cornerRadius: CGFloat)
     /// Multiplies the current transform (inside save/restore) for Canvas drawing and effects.
     case concat(CGAffineTransform)
     case fillRect(CGRect, RGBA)
@@ -176,6 +182,7 @@ public struct DisplayList: Equatable, Sendable {
             case .drawImage(let draw): add(draw.rect)
             case .drawBitmap(_, let rect): add(rect)
             case .backdropBlur(_, let bounds, _, _): add(bounds)
+            case .backdropLens(_, let bounds, _, _, _): add(bounds)
             default: break
             }
         }
@@ -219,6 +226,7 @@ extension DisplayCommand: CustomStringConvertible {
         case .beginMasked: return "beginMasked"
         case .endGroup: return "endGroup"
         case .backdropBlur(let path, let bounds, let radius, let saturation): return "backdropBlur(\(path.elements.count) elements\(r(bounds)) r=\(f(radius))\(saturation == 1 ? "" : " sat=\(f(saturation))"))"
+        case .backdropLens(let path, let bounds, let radius, let bend, let corner): return "backdropLens(\(path.elements.count) elements\(r(bounds)) r=\(f(radius)) bend=\(f(bend)) corner=\(f(corner)))"
         case .concat(let t): return "concat(\(f(t.a)), \(f(t.b)), \(f(t.c)), \(f(t.d)), \(f(t.tx)), \(f(t.ty)))"
         case .fillRect(let rect, let color): return "fillRect\(r(rect)) \(c(color))"
         case .fillRRect(let rect, let radius, let color): return "fillRRect\(r(rect)) r=\(f(radius)) \(c(color))"
@@ -439,6 +447,8 @@ extension DisplayList {
             case .beginMask(let bounds): result.append(.beginMask(bounds: bounds.offsetBy(dx: offset.x, dy: offset.y)))
             case .backdropBlur(let path, let bounds, let radius, let saturation):
                 result.append(.backdropBlur(path.applying(shift), bounds: bounds.offsetBy(dx: offset.x, dy: offset.y), radius: radius, saturation: saturation))
+            case .backdropLens(let path, let bounds, let radius, let bend, let corner):
+                result.append(.backdropLens(path.applying(shift), bounds: bounds.offsetBy(dx: offset.x, dy: offset.y), radius: radius, bend: bend, cornerRadius: corner))
             case .fillRect(let rect, let color): result.append(.fillRect(rect.offsetBy(dx: offset.x, dy: offset.y), color))
             case .fillRRect(let rect, let radius, let color): result.append(.fillRRect(rect.offsetBy(dx: offset.x, dy: offset.y), cornerRadius: radius, color))
             case .fillPath(let path, let color, let eo): result.append(.fillPath(path.applying(shift), color, eoFill: eo))
@@ -527,5 +537,14 @@ public struct SegmentSources: Sendable {
             }
         }
         return nil
+    }
+}
+
+extension DisplayCommand {
+    /// A lens as the plain blur it reduces to, for painters that draw no lens; any other command
+    /// as it is.
+    public var asBackdropBlur: DisplayCommand {
+        if case .backdropLens(let path, let bounds, let radius, _, _) = self { return .backdropBlur(path, bounds: bounds, radius: radius) }
+        return self
     }
 }

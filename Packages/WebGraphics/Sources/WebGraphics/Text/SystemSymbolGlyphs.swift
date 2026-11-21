@@ -30,7 +30,7 @@ public struct SymbolGlyphOutline: Sendable {
 
 @MainActor
 public enum SystemSymbolGlyphs {
-    public static let count = 1565
+    public static let count = 1567
 
     public static func glyph(named name: String) -> (SymbolGlyph, SymbolGlyphOutline)? {
         guard let glyph = table[name], let outline = outline(for: glyph.icon) else { return nil }
@@ -297,6 +297,7 @@ atom.fill|atom|1
 backpack|backpack|0
 backpack.fill|backpack|1
 backward.end.fill|skip-back|1
+backward|rewind|0
 backward.fill|rewind|1
 bag|shopping-bag|0
 bag.badge.minus|shopping-bag|0
@@ -750,6 +751,7 @@ folder.fill|folder|1
 fork.knife|utensils|0
 fork.knife.circle|utensils|0
 forward.end.fill|skip-forward|1
+forward|fast-forward|0
 forward.fill|fast-forward|1
 frying.pan|cooking-pot|0
 fuelpump|fuel|0

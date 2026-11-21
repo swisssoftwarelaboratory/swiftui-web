@@ -50,7 +50,99 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         // A sheet presented once its presenter is on screen slides up; one there from the first
         // frame (a scene restored, a fixture) is simply there.
         slidesIn = kind == .sheet && environment.platformProfile.isIOS && anchor?.hasBeenPlaced == true
+        // An iOS alert, confirmation dialog or menu presented once the app is on screen comes
+        // in with the iPhone's motion; one there from the first frame is simply there.
+        popsIn = pops && anchor?.hasBeenPlaced == true
     }
+
+    // MARK: iOS alerts, dialogs and menus coming and going (new-website#649)
+
+    /// Whether this presentation comes and goes with the iPhone's motion: an iOS alert (fades in
+    /// from 1.2 times its size, fades out), confirmation dialog (grows out of and back into its
+    /// arrow's tip) or menu (glass growing out of and back into its button).
+    package var pops: Bool {
+        guard environment.platformProfile.isIOS else { return false }
+        switch kind {
+        case .alert: return true
+        case .dialog: return metrics.dialogsArePopovers
+        case .menu: return metrics.menusAreGlassPanels
+        default: return false
+        }
+    }
+
+    /// How far in the presentation is (1 shown, 0 gone), per channel: one for an alert or a
+    /// dialog; a menu's morph has three, its width and horizontal centre, its height, and its
+    /// vertical centre, each on its own spring.
+    package private(set) var pop: [Motion] = []
+    private var popsIn = false
+    private var popRunning = false
+    private var popClock: Double?
+    private var popBegan = 0.0
+    /// A menu's button, where its glass grows from and shrinks back to.
+    package private(set) var popSource: CGRect = .zero
+
+    /// The springs iOS 27 runs, read from Core Animation in the simulator (a probe app reading
+    /// the layers' own animations and presentation frames, swipe-harness/overlay-probe-649):
+    /// each with the speed it starts at, in channel units a second.
+    package static func popSprings(kind: _PresentationKind, entering: Bool) -> [(SpringModel, Double)] {
+        switch kind {
+        case .alert:
+            // UIKit's alert transition: mass 1, stiffness 522.35, damping 45.71 (critically
+            // damped), both ways.
+            return [(SpringModel(mass: 1, stiffness: 522.3503, damping: 45.71), 0)]
+        case .dialog:
+            // The popover's transform and opacity: in on stiffness 331.90, damping 29.149; out on
+            // 283.97, 28.648.
+            return [entering ? (SpringModel(mass: 1, stiffness: 331.9007, damping: 29.149), 0)
+                             : (SpringModel(mass: 1, stiffness: 283.9735, damping: 28.6476), 0)]
+        default:
+            // The menu's morph, fitted to its presentation frame every display frame: opening,
+            // the width and horizontal centre on omega 18, zeta 0.74 from 4/s, the height on
+            // omega 16.8, zeta 0.78 from 10/s, the vertical centre on a bouncier omega 20,
+            // zeta 0.54 from 14/s (it dips past its place and settles back); closing, all on
+            // UIKit's default spring (0.5 s, bounce 0.2).
+            if entering {
+                return [(SpringModel(omega: 18, zeta: 0.74), 4), (SpringModel(omega: 16.8, zeta: 0.78), 10), (SpringModel(omega: 20, zeta: 0.54), 14)]
+            }
+            let close = SpringModel(duration: 0.5, bounce: 0.2)
+            return [(close, 0), (close, 0), (close, 0)]
+        }
+    }
+
+    private func runPop(entering: Bool) {
+        let springs = Self.popSprings(kind: kind, entering: entering)
+        if pop.count != springs.count {
+            pop = springs.map { _ in Motion(position: entering ? 0 : 1, restDistance: 0.0005, restSpeed: 0.01) }
+        }
+        for index in pop.indices {
+            let (spring, speed) = springs[index]
+            pop[index].animate(to: entering ? 1 : 0, spring: spring, velocity: entering ? speed : -speed)
+        }
+        if !popRunning {
+            popRunning = true
+            popClock = nil
+            popBegan = runtime.animationClock
+            runtime.paintAnimations += 1
+            runtime.subscribeFrames(self)
+        }
+        runtime.requestRepaint()
+    }
+
+    private func stopPopFrames() {
+        guard popRunning else { return }
+        popRunning = false
+        runtime.paintAnimations -= 1
+        if !slideRunning { runtime.unsubscribeFrames(self) }
+    }
+
+    private func popFinished() {
+        stopPopFrames()
+        if isLeaving { runtime.finishLeaving(self) }
+        runtime.requestRepaint()
+    }
+
+    /// The main channel's progress (1 when nothing animates).
+    package var popProgress: Double { pop.first?.position ?? 1 }
 
     // MARK: The slide of an iOS sheet
 
@@ -101,7 +193,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         guard slideRunning else { return }
         slideRunning = false
         runtime.paintAnimations -= 1
-        runtime.unsubscribeFrames(self)
+        if !popRunning { runtime.unsubscribeFrames(self) }
     }
 
     private func slideFinished() {
@@ -115,14 +207,24 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     /// does not eat into it.
     package func frameDidAdvance() {
         let now = runtime.animationClock
-        defer { slideClock = now }
-        let last = slideClock ?? slideBegan
-        if !slide.step(now - last) { slideFinished() } else { runtime.requestRepaint() }
+        if slideRunning {
+            let last = slideClock ?? slideBegan
+            slideClock = now
+            if !slide.step(now - last) { slideFinished() } else { runtime.requestRepaint() }
+        }
+        if popRunning {
+            let last = popClock ?? popBegan
+            popClock = now
+            var moving = false
+            for index in pop.indices where pop[index].step(now - last) { moving = true }
+            if !moving { popFinished() } else { runtime.requestRepaint() }
+        }
     }
 
-    /// A slide begun in this frame starts when the frame is shown (`Runtime.beginAnimationsOnScreen`).
+    /// A slide or pop begun in this frame starts when the frame is shown (`Runtime.beginAnimationsOnScreen`).
     package func startOnScreen(now: Double, lateness: Double) {
         if slideRunning, slideClock == nil, slideBegan == now { slideBegan += lateness }
+        if popRunning, popClock == nil, popBegan == now { popBegan += lateness }
     }
 
     /// A finger dragging the sheet: `offset` points below its place (none above it).
@@ -147,7 +249,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     /// Starts sliding off (the runtime moved it to its leaving list).
     package func beginLeaving() {
         isLeaving = true
-        runSlide(to: Double(slideDistance))
+        if pops { runPop(entering: false) } else { runSlide(to: Double(slideDistance)) }
     }
 
     package var isModal: Bool {
@@ -304,6 +406,10 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         guard let target else { return }
         defer {
             hasLaidOut = true
+            if popsIn {
+                popsIn = false
+                runPop(entering: true)
+            }
             if slidesIn {
                 slidesIn = false
                 slide.hold(at: Double(slideDistance))
@@ -361,10 +467,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             let source = anchor?.frameInRoot ?? CGRect(x: window.width / 2, y: window.height / 2, width: 0, height: 0)
             let x = min(max(0, (source.midX - size.width / 2).rounded(.down)), max(0, window.width - size.width))
             if m.dialogCentredOnSource {
-                let margin = PlatformMetrics.sheetMargin
-                let y = min(max(margin, (source.midY - size.height / 2).rounded()), max(margin, window.height - size.height - margin))
-                panel = CGRect(x: x, y: y, width: size.width, height: size.height)
-                arrow = nil
+                (panel, arrow) = Self.popoverPlacement(size: size, source: source, window: window, safe: runtime.safeAreaInsets, metrics: m)
                 contentFrame = panel
                 target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(size), by: runtime.root)
                 return
@@ -494,6 +597,18 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             case .trailing: tip = CGPoint(x: source.minX, y: source.midY)
             }
             arrow = (edge, tip)
+        case .menu where m.menusAreGlassPanels:
+            // iOS 27: the panel covers its source, pinned by the source's corner nearest the
+            // window's edges (Paulo's ••• button top right: the panel's top-right corner on the
+            // button's), kept inside the window's safe area.
+            let size = target.sizeThatFits(ProposedViewSize(width: nil, height: nil))
+            let source = anchor?.frameInRoot ?? anchorPoint.map { CGRect(origin: $0, size: .zero) } ?? .zero
+            panel = Self.menuPlacement(size: size, source: source, window: window, safe: runtime.safeAreaInsets, margin: m.menuWindowMargin)
+            popSource = source
+            arrow = nil
+            contentFrame = panel
+            target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(size), by: runtime.root)
+            return
         case .menu:
             let size = target.sizeThatFits(ProposedViewSize(width: nil, height: nil))
             let source = anchor?.frameInRoot ?? anchorPoint.map { CGRect(origin: $0, size: .zero) } ?? .zero
@@ -554,6 +669,64 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(contentFrame.size), by: runtime.root)
     }
 
+    /// An iOS menu's panel over its source: the corner of the source nearest the window's
+    /// edges is the panel's, the panel then kept inside the safe area less `margin`.
+    package static func menuPlacement(size: CGSize, source: CGRect, window: CGSize, safe: EdgeInsets, margin: CGFloat) -> CGRect {
+        let x = source.midX > window.width / 2 ? source.maxX - size.width : source.minX
+        let y = source.midY > window.height / 2 ? source.maxY - size.height : source.minY
+        let left = max(margin, safe.leading), right = window.width - max(margin, safe.trailing)
+        let top = max(margin, safe.top), bottom = window.height - max(margin, safe.bottom)
+        return CGRect(x: min(max(left, x), max(left, right - size.width)).rounded(),
+                      y: min(max(top, y), max(top, bottom - size.height)).rounded(),
+                      width: size.width, height: size.height)
+    }
+
+    /// Where iOS 27 puts a confirmation dialog for its source, as UIKit places a popover with
+    /// any arrow direction (the simulator's `ios/dialog/…` goldens, new-website#649): on the
+    /// side of the source with the most room among those the panel fits on, centred on the source
+    /// along that side and kept inside the window, its arrow touching the source; under a wide
+    /// button above it, beside a small trailing button to its left. Where it fits on no side (a
+    /// source filling the window) it is centred on the source with no arrow.
+    package static func popoverPlacement(size: CGSize, source: CGRect, window: CGSize, safe: EdgeInsets,
+                                         metrics m: PlatformMetricsTable) -> (CGRect, (edge: Edge, tip: CGPoint)?) {
+        let margin = PlatformMetrics.sheetMargin
+        let reach = m.dialogSourceGap + m.dialogArrowHeight
+        let top = max(margin, safe.top), bottom = window.height - max(margin, safe.bottom)
+        let left = max(margin, safe.leading), right = window.width - max(margin, safe.trailing)
+        // Room on each side of the source, and whether the panel fits there.
+        let above = source.minY - reach - top, below = bottom - source.maxY - reach
+        let before = source.minX - reach - left, after = right - source.maxX - reach
+        var best: (Edge, CGFloat)?
+        for (edge, room, fits) in [(Edge.top, above * (right - left), above >= size.height && right - left >= size.width),
+                                   (.bottom, below * (right - left), below >= size.height && right - left >= size.width),
+                                   (.leading, before * (bottom - top), before >= size.width && bottom - top >= size.height),
+                                   (.trailing, after * (bottom - top), after >= size.width && bottom - top >= size.height)]
+        where fits && room > (best?.1 ?? -1) { best = (edge, room) }
+        func clampX(_ x: CGFloat) -> CGFloat { min(max(left, x), max(left, right - size.width)).rounded() }
+        func clampY(_ y: CGFloat) -> CGFloat { min(max(top, y), max(top, bottom - size.height)).rounded() }
+        guard let (edge, _) = best else {
+            let panel = CGRect(x: clampX(source.midX - size.width / 2), y: clampY(source.midY - size.height / 2), width: size.width, height: size.height)
+            return (panel, nil)
+        }
+        // The arrow stays clear of the panel's rounded corners.
+        let inset = m.dialogCornerRadius + m.dialogArrowWidth / 2
+        switch edge {
+        case .top, .bottom:
+            let x = clampX(source.midX - size.width / 2)
+            let y = edge == .top ? source.minY - reach - size.height : source.maxY + reach
+            let tipX = min(max(source.midX, x + inset), x + size.width - inset)
+            let tip = CGPoint(x: tipX, y: edge == .top ? source.minY - m.dialogSourceGap : source.maxY + m.dialogSourceGap)
+            // The arrow is on the panel's side facing the source.
+            return (CGRect(x: x, y: y, width: size.width, height: size.height), (edge == .top ? .bottom : .top, tip))
+        case .leading, .trailing:
+            let y = clampY(source.midY - size.height / 2)
+            let x = edge == .leading ? source.minX - reach - size.width : source.maxX + reach
+            let tipY = min(max(source.midY, y + inset), y + size.height - inset)
+            let tip = CGPoint(x: edge == .leading ? source.minX - m.dialogSourceGap : source.maxX + m.dialogSourceGap, y: tipY)
+            return (CGRect(x: x, y: y, width: size.width, height: size.height), (edge == .leading ? .trailing : .leading, tip))
+        }
+    }
+
     // MARK: Painting
 
     /// A hosted window's content for its own window: the background, the toolbar and the
@@ -574,6 +747,29 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         style._fill(path, in: bounds, eoFill: false, environment: environment, scale: context.scale, into: &list)
     }
 
+    /// A popover's arrow on the panel's `edge`, pointing out of it to `tip`: iOS 27 draws it with
+    /// soft sides that flare into the panel and a rounded point (ios/dialog/wide-button), and it
+    /// overlaps the panel by a point so no seam shows.
+    package static func dialogArrowPath(edge: Edge, tip: CGPoint, height h: CGFloat, width: CGFloat) -> Path {
+        let w = width / 2
+        // In the arrow's own frame: the tip at the origin, the base `h` behind it along -y.
+        func point(_ along: CGFloat, _ across: CGFloat) -> CGPoint {
+            switch edge {
+            case .bottom: return CGPoint(x: tip.x + across, y: tip.y - along)
+            case .top: return CGPoint(x: tip.x + across, y: tip.y + along)
+            case .trailing: return CGPoint(x: tip.x - along, y: tip.y + across)
+            case .leading: return CGPoint(x: tip.x + along, y: tip.y + across)
+            }
+        }
+        var path = Path()
+        path.move(to: point(h + 1, -w - 2))
+        path.addQuadCurve(to: point(1.2, -1.6), control: point(h * 0.55, -w * 0.3))
+        path.addQuadCurve(to: point(1.2, 1.6), control: point(0, 0))
+        path.addQuadCurve(to: point(h + 1, w + 2), control: point(h * 0.55, w * 0.3))
+        path.closeSubpath()
+        return path
+    }
+
     package func paintPresentation(into list: inout DisplayList, context: PaintContext) {
         if isHostedWindow { return }
         // The dim is always black; the panel, its shadow and border follow the appearance (unverified in dark).
@@ -581,7 +777,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         let m = metrics
         let iOS = environment.platformProfile.isIOS
         if isModal && !(kind == .dialog && m.dialogsArePopovers) && !options.fullScreen {
-            let alpha = m.presentationDimAlpha * (slides ? slideProgress : 1)
+            let alpha = m.presentationDimAlpha * (slides ? slideProgress : 1) * (pops ? min(1, max(0, popProgress)) : 1)
             list.append(.fillRect(context.absoluteRect(CGRect(origin: .zero, size: runtime.layoutSize)), RGBA(red: 0, green: 0, blue: 0, alpha: alpha)))
         }
         // A sliding sheet is drawn lower by its slide, at whole device pixels.
@@ -641,6 +837,31 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             return
         }
         if iOS && (kind == .alert || (kind == .dialog && m.dialogsArePopovers)) {
+            // Coming and going (new-website#649): the alert fades in from 1.2 times its size
+            // and fades out where it is; the dialog grows out of its arrow's tip (its centre
+            // without an arrow) from a hundredth of its size, fading in, and shrinks back into it.
+            let progress = popProgress
+            let popping = pops && abs(progress - 1) > 0.0005
+            if popping {
+                let scale: Double
+                let origin: CGPoint
+                if kind == .alert {
+                    scale = isLeaving ? 1 : 1 + 0.2 * (1 - progress)
+                    origin = CGPoint(x: rect.midX, y: rect.midY)
+                } else {
+                    scale = 0.01 + 0.99 * progress
+                    origin = arrow.map { CGPoint(x: context.origin.x + $0.tip.x, y: context.origin.y + $0.tip.y) } ?? CGPoint(x: rect.midX, y: rect.midY)
+                }
+                list.append(.beginGroup(opacity: min(1, max(0, progress))))
+                list.append(.save)
+                list.append(.concat(CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: origin.x * (1 - scale), ty: origin.y * (1 - scale))))
+            }
+            defer {
+                if popping {
+                    list.append(.restore)
+                    list.append(.endGroup)
+                }
+            }
             // iOS: a glass card; the dialog with its arrow and a soft shadow around, no border.
             let dialog = kind == .dialog
             let fill = dialog ? m.dialogGlassFill : (m.alertFill ?? m.presentationGlassFill)
@@ -650,19 +871,14 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             }
             list.append(.fillRRect(rect, cornerRadius: radius, fill))
             if let arrow {
-                let h = m.dialogArrowHeight, w = m.dialogArrowWidth / 2
-                let tip = CGPoint(x: context.origin.x + arrow.tip.x, y: context.origin.y + arrow.tip.y)
-                var path = Path()
-                path.move(to: tip)
-                if arrow.edge == .bottom {
-                    path.addLine(to: CGPoint(x: tip.x - w, y: tip.y - h)); path.addLine(to: CGPoint(x: tip.x + w, y: tip.y - h))
-                } else {
-                    path.addLine(to: CGPoint(x: tip.x - w, y: tip.y + h)); path.addLine(to: CGPoint(x: tip.x + w, y: tip.y + h))
-                }
-                path.closeSubpath()
-                list.append(.fillPath(path, fill))
+                list.append(.fillPath(Self.dialogArrowPath(edge: arrow.edge, tip: CGPoint(x: context.origin.x + arrow.tip.x, y: context.origin.y + arrow.tip.y),
+                                                           height: m.dialogArrowHeight, width: m.dialogArrowWidth), fill))
             }
             if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+            return
+        }
+        if iOS && kind.isMenu && m.menusAreGlassPanels {
+            paintGlassMenu(rect: rect, into: &list, context: context)
             return
         }
         let radius = kind.isMenu ? PlatformMetrics.menuCornerRadius : kind.isWindow ? Self.windowCornerRadius : PlatformMetrics.presentationCornerRadius
@@ -729,6 +945,95 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         }
         if let toolbarBar { toolbarBar.paint(into: &list, context: context.child(at: toolbarBar.frame)) }
         if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+    }
+
+    /// Where a menu's glass is while it grows out of its button or shrinks back into it: each
+    /// channel moves its part of the rectangle from the button's to the panel's.
+    package func menuMorphRect(panel rect: CGRect, source: CGRect) -> CGRect {
+        guard pop.count == 3 else { return rect }
+        let across = pop[0].position, height = pop[1].position, down = pop[2].position
+        let width = max(1, source.width + (rect.width - source.width) * across)
+        let tall = max(1, source.height + (rect.height - source.height) * height)
+        let midX = source.midX + (rect.midX - source.midX) * across
+        let midY = source.midY + (rect.midY - source.midY) * down
+        return CGRect(x: midX - width / 2, y: midY - tall / 2, width: width, height: tall)
+    }
+
+    /// An iOS menu: a soft shadow, what is behind blurred under a near-white fill, a hairline
+    /// edge, then the rows (a highlighted one under a light fill). While it grows or shrinks
+    /// (new-website#649) the glass is a lens between the button and the panel: rounder the
+    /// smaller it is, bending what lies beneath toward its rim, the rows squeezed into it and
+    /// showing only as it nears its size, as the simulator shows.
+    private func paintGlassMenu(rect panelRect: CGRect, into list: inout DisplayList, context: PaintContext) {
+        let m = metrics
+        let moving = pop.count == 3 && pop.contains { abs($0.position - 1) > 0.0005 }
+        let source = context.absoluteRect(popSource)
+        let rect = moving ? menuMorphRect(panel: panelRect, source: source) : panelRect
+        // How far it has grown: 0 at the button, 1 at its size (past 1 while it overshoots).
+        let grown = pop.count == 3 ? min(pop[0].position, pop[1].position) : 1
+        func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double {
+            let t = min(1, max(0, (x - a) / (b - a)))
+            return t * t * (3 - 2 * t)
+        }
+        let settle = smooth(0.7, 1.0, grown)
+        let round = min(rect.width, rect.height) / 2
+        let radius = moving ? round + (min(m.menuCornerRadius, round) - round) * settle : m.menuCornerRadius
+        let shape = Path(roundedRect: rect, cornerRadius: radius)
+        // Shrunk nearly into its button the glass fades away, giving the button back.
+        let fade = moving ? smooth(0.02, 0.22, grown) : 1
+        if fade < 0.999 { list.append(.beginGroup(opacity: fade)) }
+        defer { if fade < 0.999 { list.append(.endGroup) } }
+        for (spread, alpha) in [(2.0, 0.025), (8.0, 0.02), (20.0, 0.014), (36.0, 0.008)] {
+            list.append(.fillRRect(rect.insetBy(dx: -spread, dy: -spread).offsetBy(dx: 0, dy: spread / 3), cornerRadius: radius + spread, environment._ink(alpha)))
+        }
+        if moving {
+            // The lens: what lies beneath bends in up to 14 pt at the rim while the glass is in
+            // motion, less as it settles.
+            // The iPhone's lens is nearly clear while it moves (the page shows through, bent hard
+            // at the rim); it frosts as it settles (side by side with the simulator, 21 Nov).
+            list.append(.backdropLens(shape, bounds: rect, radius: 1.5 + (m.menuGlassSigma - 1.5) * settle,
+                                      bend: 22 * (1 - settle), cornerRadius: radius))
+        } else {
+            list.append(.backdropBlur(shape, bounds: rect, radius: m.menuGlassSigma))
+        }
+        // In motion the glass is clearer, the bent page showing through it (the simulator's
+        // frames); it whitens as it settles.
+        var fill = m.menuGlassFill
+        if moving { fill.alpha = 0.08 + (fill.alpha - 0.08) * settle }
+        list.append(.fillPath(shape, fill))
+        list.append(.strokePath(Path(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), cornerRadius: radius - 0.25),
+                                style: StrokeStyle(lineWidth: 0.5), environment._ink(m.menuEdgeAlpha)))
+        if let highlightedIndex {
+            let rows = interactiveNodes
+            if highlightedIndex < rows.count {
+                let row = context.absoluteRect(rows[highlightedIndex].frameInRoot).insetBy(dx: 10, dy: 0)
+                list.append(.fillRRect(row, cornerRadius: 12, environment._ink(0.06)))
+            }
+        }
+        list.append(.save)
+        list.append(.clipRRect(rect, cornerRadius: radius))
+        if let target {
+            if moving {
+                // The rows squeezed into the glass, showing as it nears its size.
+                let rows = smooth(0.25, 0.9, grown)
+                if rows > 0.001 {
+                    let sx = rect.width / max(1, panelRect.width), sy = rect.height / max(1, panelRect.height)
+                    list.append(.beginGroup(opacity: rows))
+                    // Smudged inside the moving lens, sharp once it has settled.
+                    let smudge = 7 * (1 - settle)
+                    if smudge > 0.3 { list.append(.beginFilter(.blur(radius: smudge, opaque: false), bounds: rect)) }
+                    list.append(.save)
+                    list.append(.concat(CGAffineTransform(a: sx, b: 0, c: 0, d: sy, tx: rect.minX - panelRect.minX * sx, ty: rect.minY - panelRect.minY * sy)))
+                    target.paint(into: &list, context: context.child(at: target.presentedFrame))
+                    list.append(.restore)
+                    if smudge > 0.3 { list.append(.endGroup) }
+                    list.append(.endGroup)
+                }
+            } else {
+                target.paint(into: &list, context: context.child(at: target.presentedFrame))
+            }
+        }
+        list.append(.restore)
     }
 
     // MARK: Keyboard
@@ -800,6 +1105,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
 
     override package func unmount() {
         stopSlideFrames()
+        stopPopFrames()
         toolbarBar?.unmount()
         toolbarBar = nil
         content.unmount()
@@ -816,7 +1122,10 @@ extension Runtime {
                                     onDismissRequested: onDismissRequested)
         node.focusToRestore = focusedIdentifier.map { ($0, focusVisible) }
         presentations.append(node)
-        requestLayout()
+        // A presentation lays out over the window after the main tree and never changes its
+        // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
+        // a menu opening or closing in a debug build, new-website#649).
+        requestLayout(invalidatingSizes: false)
         return node
     }
 
@@ -824,7 +1133,7 @@ extension Runtime {
         guard let index = presentations.firstIndex(where: { $0 === node }) else { return }
         presentations.remove(at: index)
         // An iOS sheet on screen slides off first; its content stays until it is gone.
-        if node.slides, node.hasLaidOut, hostIsVisible {
+        if node.slides || node.pops, node.hasLaidOut, hostIsVisible {
             leavingPresentations.append(node)
             node.beginLeaving()
         } else {
@@ -836,14 +1145,20 @@ extension Runtime {
            interactiveNode(semanticsIdentifier: restore.identifier) != nil {
             focus(semanticsIdentifier: restore.identifier, keyboard: restore.keyboard)
         }
-        requestLayout()
+        // A presentation lays out over the window after the main tree and never changes its
+        // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
+        // a menu opening or closing in a debug build, new-website#649).
+        requestLayout(invalidatingSizes: false)
     }
 
     /// A sheet that slid off: gone now.
     package func finishLeaving(_ node: PresentationNode) {
         leavingPresentations.removeAll { $0 === node }
         if node.isMounted { node.unmount() }
-        requestLayout()
+        // A presentation lays out over the window after the main tree and never changes its
+        // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
+        // a menu opening or closing in a debug build, new-website#649).
+        requestLayout(invalidatingSizes: false)
     }
 
     /// Dismisses the topmost presentation, if any (hosts call this for Escape). Returns whether one was.
@@ -881,6 +1196,13 @@ extension Runtime {
                 return (hit, true)
             }
             if presentation.panel.contains(point) { return (nil, true) }
+            // iOS 27: a press beside a confirmation dialog closes it, as beside a popover (the
+            // simulator dismisses Paulo's Sign out sheet so, new-website#649); the press is used up.
+            if presentation.kind == .dialog, presentation.environment.platformProfile.metrics.dialogsArePopovers,
+               !presentation.options.interactiveDismissDisabled {
+                presentation.dismiss()
+                return (nil, true)
+            }
             if presentation.isModal { return (nil, true) }
             // A press beside a window leaves it open and goes on to what is under it.
             if presentation.kind.isWindow { continue }
@@ -916,7 +1238,7 @@ package final class PresentationSyncNode<Content: View>: UnaryLayoutModifierNode
                 presented.update(view: modifier.content.make())
             } else {
                 let binding = modifier.binding, onDismiss = modifier.onDismiss
-                presented = runtime.present(kind: modifier.kind, view: modifier.content.make(), environment: environment, anchor: self) {
+                presented = runtime.present(kind: modifier.kind, view: modifier.content.make(), environment: environment, anchor: anchorNode) {
                     binding.wrappedValue = false
                     onDismiss?.run()
                 }
@@ -927,6 +1249,20 @@ package final class PresentationSyncNode<Content: View>: UnaryLayoutModifierNode
             if presented.isMounted { runtime.remove(presentation: presented) }
             modifier.onDismiss?.run()
         }
+    }
+
+    /// What the presentation opens on: this view, or for an iOS confirmation dialog the control
+    /// inside it whose press presented it (the simulator opens Paulo's Sign out sheet on its
+    /// button, not on the settings column the modifier sits on, new-website#649).
+    private var anchorNode: ViewNode {
+        guard modifier.kind == .dialog, environment.platformProfile.metrics.dialogsArePopovers,
+              let pressed = runtime.lastActivatedNode, pressed.isMounted else { return self }
+        var current: ViewNode? = pressed
+        while let node = current {
+            if node === self { return pressed }
+            current = node.parent
+        }
+        return self
     }
 
     override package func unmount() {
