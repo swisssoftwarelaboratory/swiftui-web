@@ -21,6 +21,23 @@ public enum _PhonePrompts {
         case health(share: [String], read: [String], shareExplanation: String, readExplanation: String)
         /// The Face ID badge over the app; it always recognises the face.
         case faceID
+        /// Sign in with Apple's sheet over the dimmed app (new-website#707), then Face ID. The
+        /// answer is `.appleID` with the name and email choice, or `.cancelled` for its close
+        /// button.
+        case appleID(AppleIDAsk)
+    }
+
+    /// What Sign in with Apple's sheet asks: a first sign-in asks to share the name and email
+    /// the app requested; a returning one only asks to continue.
+    public struct AppleIDAsk: Sendable, Equatable {
+        public var returning: Bool
+        public var asksName: Bool
+        public var asksEmail: Bool
+        public init(returning: Bool, asksName: Bool, asksEmail: Bool) {
+            self.returning = returning
+            self.asksName = asksName
+            self.asksEmail = asksEmail
+        }
     }
 
     /// The person's answer to a prompt.
@@ -28,6 +45,64 @@ public enum _PhonePrompts {
         case button(Int)
         case health(allowed: Set<String>?)
         case done
+        /// Sign in with Apple's Continue: the name as the sheet showed it (empty when cleared
+        /// or not asked) and whether Hide My Email was chosen.
+        case appleID(name: String, hideEmail: Bool)
+        /// A sheet's close button.
+        case cancelled
+    }
+
+    /// The drawn iPhone's Apple Account: a made-up person until the demo account is decided
+    /// (new-website#194's fog). Its relay address for Hide My Email is one per app, as Apple's is.
+    public enum AppleAccount {
+        public static let givenName = "Mara"
+        public static let familyName = "Keller"
+        public static let email = "mara.keller@icloud.com"
+        public static var fullName: String { givenName + " " + familyName }
+
+        /// The app's bundle identifier, or its name without one.
+        public static var appID: String {
+            #if os(WASI)
+            if let id = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String, !id.isEmpty { return id }
+            #endif
+            return _PhonePrompts.appName
+        }
+
+        /// A stable hex string of `count` digits from `seed` (FNV-1a, stretched).
+        public static func digits(_ seed: String, count: Int) -> String {
+            var out = ""
+            var round: UInt64 = 0
+            while out.count < count {
+                var hash: UInt64 = 0xcbf29ce484222325
+                for byte in (seed + "#" + String(round)).utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+                out += String(hash, radix: 16).leftPadded(16)
+                round += 1
+            }
+            return String(out.prefix(count))
+        }
+
+        /// The app's Hide My Email address, as Apple's relay gives one per app.
+        public static var relayEmail: String {
+            let letters = Array("abcdefghjkmnpqrstvwxyz23456789")
+            let hex = digits("relay:" + appID, count: 20)
+            var word = ""
+            var index = hex.startIndex
+            while index < hex.endIndex {
+                let next = hex.index(index, offsetBy: 2)
+                word.append(letters[Int(hex[index..<next], radix: 16)! % letters.count])
+                index = next
+            }
+            return word + "@privaterelay.appleid.com"
+        }
+
+        /// The user identifier Apple gives this app for the account (team-scoped on iOS, here
+        /// app-scoped): six digits, 32 hex digits, four digits.
+        public static var userID: String {
+            let hex = digits("user:" + appID, count: 42)
+            let six = String(Int(hex.prefix(5), radix: 16)! % 1_000_000).leftPadded(6, with: "0")
+            let four = String(Int(hex.suffix(4), radix: 16)! % 10_000).leftPadded(4, with: "0")
+            return six + "." + String(hex.dropFirst(5).prefix(32)) + "." + four
+        }
     }
 
     /// Shows a prompt; the answer on the main actor once the person gave it. Set by the drawn
@@ -104,4 +179,10 @@ public enum _PhonePrompts {
 
     /// The app's name in iOS's quotes.
     public static var quotedName: String { german ? "\u{201E}\(appName)\u{201C}" : "\u{201C}\(appName)\u{201D}" }
+}
+
+private extension String {
+    func leftPadded(_ width: Int, with pad: Character = "0") -> String {
+        count >= width ? self : String(repeating: pad, count: width - count) + self
+    }
 }

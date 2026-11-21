@@ -75,6 +75,7 @@ let package = Package(
         .library(name: "CoreAudio", targets: ["CoreAudio"]),
         .library(name: "HealthKit", targets: ["HealthKit"]),
         .library(name: "PhotosUI", targets: ["PhotosUI"]),
+        .library(name: "AuthenticationServices", targets: ["AuthenticationServices"]),
     ],
     // `CoreData` (decision 0024): `import Foundation` re-exports WebCoreData too, as Apple's
     // declares `NSPredicate`, `NSSortDescriptor` and `NSExpression`. Enable it with SwiftUIWeb's.
@@ -218,5 +219,13 @@ let package = Package(
         .target(name: "CoreAudio", dependencies: [.product(name: "AudioToolbox", package: "SwiftUIWeb")], swiftSettings: framework),
         .target(name: "HealthKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(name: "PhotosUI", dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb")], swiftSettings: framework),
+        // Sign in with Apple (new-website#707): the drawn iPhone's sheet, then Face ID, and a
+        // credential from the phone's Apple Account; no account in a plain page.
+        .target(
+            name: "AuthenticationServices",
+            dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb"), .product(name: "UIKit", package: "UIKitWeb"),
+                           .product(name: "WebFoundation", package: "WebGraphics")],
+            swiftSettings: framework
+        ),
     ]
 )

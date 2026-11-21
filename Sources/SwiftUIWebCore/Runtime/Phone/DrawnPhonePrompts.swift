@@ -51,7 +51,30 @@ extension DrawnPhone {
             presentHealthSheet(share: share, read: read, shareExplanation: shareExplanation, readExplanation: readExplanation, answered: finish)
         case .faceID:
             showFaceID { finish(.done) }
+        case let .appleID(ask):
+            presentAppleIDSheet(ask, answered: finish)
         }
+    }
+
+    // MARK: Sign in with Apple's sheet (new-website#707)
+
+    /// iOS's sheet over the dimmed app, floating at its content's height; Continue runs Face ID
+    /// over it, then the sheet goes and the app gets its answer. Only its buttons close it.
+    private func presentAppleIDSheet(_ ask: _PhonePrompts.AppleIDAsk, answered: @escaping @MainActor (_PhonePrompts.Answer) -> Void) {
+        var node: PresentationNode?
+        let close: @MainActor () -> Void = { if let node, node.isMounted { node.dismiss() } }
+        let hasIcon = runtime.assetCatalog.image(named: appIconName) != nil
+        let sheet = _AppleIDSheet(ask: ask, iconName: hasIcon ? appIconName : nil) { [weak self] choice in
+            guard let choice else { close(); answered(.cancelled); return }
+            guard let self else { return }
+            self.showFaceID {
+                close()
+                answered(.appleID(name: choice.name, hideEmail: choice.hideEmail))
+            }
+        }
+        node = runtime.present(kind: .sheet, view: AnyView(sheet), environment: runtime.rootEnvironment, anchor: runtime.root) {}
+        node?.options.fitsContent = true
+        node?.options.interactiveDismissDisabled = true
     }
 
     // MARK: The alert
@@ -259,5 +282,229 @@ private struct _HealthAccessSheet: View {
 
     private func binding(_ key: String) -> Binding<Bool> {
         Binding(get: { on.contains(key) }, set: { if $0 { on.insert(key) } else { on.remove(key) } })
+    }
+}
+
+/// Sign in with Apple's sheet as iOS 27 draws it (measured from iOS 26's, new-website#707): the
+/// title and a round close button, the app's icon beside a line naming the Apple Account, then
+/// for a first sign-in the name and the email choice in two rounded groups, and Continue. Words
+/// and our own drawings only, never Apple's logo.
+private struct _AppleIDSheet: View {
+    struct Choice { let name: String; let hideEmail: Bool }
+
+    let ask: _PhonePrompts.AppleIDAsk
+    /// The app's icon set in its catalog; a grey square without one.
+    let iconName: String?
+    /// Continue's choice, or nil for the close button.
+    let answered: @MainActor (Choice?) -> Void
+
+    @State private var name = _PhonePrompts.AppleAccount.fullName
+    @State private var hideEmail = true
+    @State private var pressed = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private typealias Account = _PhonePrompts.AppleAccount
+    private var german: Bool { _PhonePrompts.german }
+    private var groupFill: Color { colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.5) }
+    private var quotedEmail: String { german ? "\u{201E}\(Account.email)\u{201C}" : "\u{201C}\(Account.email)\u{201D}" }
+
+    private var line: String {
+        let app = _PhonePrompts.appName
+        if ask.returning {
+            return german ? "M\u{00F6}chtest du dich mit deinem Apple Account \(quotedEmail) bei \(app) anmelden?"
+                : "Do you want to sign in to \(app) with your Apple Account \(quotedEmail)?"
+        }
+        return german ? "Erstelle einen Account f\u{00FC}r \(app) mit deinem Apple Account \(quotedEmail)."
+            : "Create an account for \(app) using your Apple Account \(quotedEmail)."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center) {
+                Text(german ? "Mit Apple anmelden" : "Sign in with Apple")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.primary)
+                    .padding(.leading, 3)
+                Spacer(minLength: 8)
+                Button { if !pressed { answered(nil) } } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(groupFill))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(german ? "Schlie\u{00DF}en" : "Close"))
+            }
+            .padding(.top, 15)
+            HStack(alignment: .top, spacing: 10) {
+                icon
+                Text(verbatim: line)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, 5)
+            .padding(.top, 19)
+            if !ask.returning, ask.asksName {
+                nameGroup.padding(.top, 18)
+            }
+            if !ask.returning, ask.asksEmail {
+                emailGroup.padding(.top, ask.asksName ? 10 : 18)
+            }
+            HStack {
+                Spacer()
+                Button { continuePressed() } label: {
+                    Text(german ? "Fortfahren" : "Continue")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 24)
+                        .frame(height: 42)
+                        .background(Capsule().fill(Color(red: 0.0, green: 0.53, blue: 1.0)))
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 28)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func continuePressed() {
+        guard !pressed else { return }
+        pressed = true
+        let asked = !ask.returning && ask.asksName
+        answered(Choice(name: asked ? name : "", hideEmail: !ask.returning && ask.asksEmail && hideEmail))
+    }
+
+    @ViewBuilder private var icon: some View {
+        if let iconName {
+            Image(decorative: iconName)
+                .resizable()
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(white: 0.84))
+                .frame(width: 52, height: 52)
+        }
+    }
+
+    /// A dark rounded square with a white drawing (our own, not Apple's symbols).
+    private func glyph<S: Shape>(_ shape: S, flap: Bool = false) -> some View {
+        ZStack {
+            shape.fill(Color.white)
+            if flap { _EnvelopeFlap().stroke(Color(white: 0.17), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)) }
+        }
+            .frame(width: 18, height: 18)
+            .frame(width: 34, height: 34)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(white: 0.17)))
+    }
+
+    private var nameGroup: some View {
+        HStack(spacing: 16) {
+            glyph(_PersonGlyph())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: "Name")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Color.primary)
+                TextField(german ? "Vor- und Nachname" : "First and Last Name", text: $name)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.secondary)
+            }
+            if !name.isEmpty {
+                Button { name = "" } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.leading, 17)
+        .padding(.trailing, 9)
+        .frame(minHeight: 58)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(groupFill))
+    }
+
+    private var emailGroup: some View {
+        HStack(alignment: .top, spacing: 16) {
+            glyph(_EnvelopeGlyph(), flap: true).padding(.top, 13)
+            VStack(alignment: .leading, spacing: 0) {
+                emailRow(german ? "E-Mail-Adresse teilen" : "Share My Email", detail: Account.email, chosen: !hideEmail) { hideEmail = false }
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 0.5)
+                emailRow(german ? "E-Mail-Adresse verbergen" : "Hide My Email",
+                         detail: (german ? "Weiterleiten an:" : "Forward To:") + "\n" + Account.relayEmail, chosen: hideEmail) { hideEmail = true }
+            }
+        }
+        .padding(.leading, 17)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(groupFill))
+    }
+
+    private func emailRow(_ title: String, detail: String, chosen: Bool, choose: @escaping @MainActor () -> Void) -> some View {
+        Button(action: choose) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: title)
+                        .font(.system(size: 17))
+                        .foregroundStyle(Color.primary)
+                    // One line each, like iOS: a long address shrinks rather than breaking.
+                    ForEach(detail.split(separator: "\n").map(String.init), id: \.self) { part in
+                        Text(verbatim: part)
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                }
+                Spacer(minLength: 0)
+                if chosen {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color(red: 0.0, green: 0.48, blue: 1.0))
+                } else {
+                    Circle().strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1.2).frame(width: 20, height: 20)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.trailing, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A head and shoulders, filled, in a square.
+private struct _PersonGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = rect.width / 18
+        var path = Path(ellipseIn: CGRect(x: rect.minX + 5.5 * s, y: rect.minY + 1 * s, width: 7 * s, height: 7 * s))
+        path.addPath(Path(roundedRect: CGRect(x: rect.minX + 2 * s, y: rect.minY + 10 * s, width: 14 * s, height: 7 * s), cornerRadius: 3.5 * s))
+        return path
+    }
+}
+
+/// A closed envelope's body.
+private struct _EnvelopeGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = rect.width / 18
+        return Path(roundedRect: CGRect(x: rect.minX, y: rect.minY + 3 * s, width: 18 * s, height: 12.5 * s), cornerRadius: 1.8 * s)
+    }
+}
+
+/// The envelope's flap, drawn over its body.
+private struct _EnvelopeFlap: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = rect.width / 18
+        var flap = Path()
+        flap.move(to: CGPoint(x: rect.minX + 0.8 * s, y: rect.minY + 4 * s))
+        flap.addLine(to: CGPoint(x: rect.minX + 9 * s, y: rect.minY + 10.4 * s))
+        flap.addLine(to: CGPoint(x: rect.minX + 17.2 * s, y: rect.minY + 4 * s))
+        return flap
     }
 }

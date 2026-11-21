@@ -2352,6 +2352,12 @@
           "noFixture": "Nothing to show: every evaluation fails, which the app handles as on a device without biometry."
         },
         {
+          "api": "AuthenticationServices: Sign in with Apple (ASAuthorizationController / ASAuthorizationAppleIDProvider / ASAuthorizationAppleIDCredential / SignInWithAppleButton / ASAuthorizationAppleIDButton)",
+          "status": "partial",
+          "notes": "In the drawn iPhone (new-website#707): an app's own controller with an Apple ID request shows iOS's sheet over the dimmed app (the app's icon and name, the phone's made-up Apple Account, the name and Share or Hide My Email when asked for, Continue), then Face ID, and hands the app a credential: a stable user identifier, the name and chosen email the first time only, the state, an authorization code and a JWT identity token with Apple's claims and the nonce, not signed by Apple. A second sign-in shows the shorter sheet and gives no name or email; the close button gives ASAuthorizationError.canceled; getCredentialState answers authorized while signed in. Kept with the phone's other answers, so removing the app forgets it. The buttons are words only, never Apple's logo. Password requests find no saved passwords; in a plain page there is no account and requests fail with unknown (2026-11-21).",
+          "noFixture": "A system sheet in the drawn iPhone; Examples/AppleSignIn and Playwright/apple-sign-in-probe.mjs drive it, DrawnPhonePromptsTests holds the sheet and its answers."
+        },
+        {
           "api": "Keychain internet passwords (kSecAttrProtocol, Port, Path, SecurityDomain, AuthenticationType) / SecAccessControl / kSecUseAuthenticationUI / CFErrorGetDomain, GetCode, CopyUserInfo",
           "status": "partial",
           "notes": "On wasm (KeychainAccess): internet-password items are told apart by account, server, protocol, port, path, security domain and authentication type, as Apple's are, and queries match on those attributes, numbers included. An access control is kept with its item but gates nothing, since a page has no presence, biometry or passcode prompt; the authentication UI and operation prompt keys are accepted and change nothing. The CFError functions read the NSError a CFError is (2026-11-06).",
