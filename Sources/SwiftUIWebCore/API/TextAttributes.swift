@@ -119,7 +119,8 @@ extension Text {
     /// Creates a timer over an interval: counting down, the time left to its end; counting up,
     /// the time since its start (a live `.timer` text; it does not stop at the bounds or pause).
     public init(timerInterval: ClosedRange<Date>, pauseTime: Date? = nil, countsDown: Bool = true, showsHours: Bool = true) {
-        self.init(storage: .date(countsDown ? timerInterval.upperBound : timerInterval.lowerBound, .timer))
+        // Counting down, it stops at 0:00 once the interval ends, as SwiftUI's does.
+        self.init(storage: .date(countsDown ? timerInterval.upperBound : timerInterval.lowerBound, countsDown ? DateStyle(kind: .countdown) : .timer))
     }
 
     /// Creates a text view that displays the formatted representation of a value.
@@ -129,7 +130,7 @@ extension Text {
 
     /// A predefined style used to display a `Date`.
     public struct DateStyle: Hashable, Sendable {
-        package enum Kind: Hashable, Sendable { case time, date, relative, offset, timer }
+        package enum Kind: Hashable, Sendable { case time, date, relative, offset, timer, countdown }
         package let kind: Kind
 
         /// A style displaying only the time component for a date ("8:26 PM").
@@ -186,8 +187,9 @@ package enum _DateText {
         case .offset:
             let seconds = date.timeIntervalSince(context.now)
             return (seconds < 0 ? "-" : "+") + unitString(abs(seconds))
-        case .timer:
-            let seconds = Int(abs(date.timeIntervalSince(context.now)).rounded(.down))
+        case .timer, .countdown:
+            let distance = date.timeIntervalSince(context.now)
+            let seconds = style.kind == .countdown ? Int(max(0, distance).rounded(.up)) : Int(abs(distance).rounded(.down))
             let hours = seconds / 3600, minutes = (seconds % 3600) / 60, rest = seconds % 60
             let two = { (value: Int) in value < 10 ? "0\(value)" : "\(value)" }
             return hours > 0 ? "\(hours):\(two(minutes)):\(two(rest))" : "\(minutes):\(two(rest))"

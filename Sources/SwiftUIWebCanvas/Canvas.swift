@@ -3,6 +3,7 @@ import SwiftUIWebCore
 import JavaScriptEventLoop
 import JavaScriptKit
 import UIKitWebCore
+import SwiftUIWebWidgetLauncher
 @_exported import WebGraphicsCanvas
 
 /// A SwiftUI `Runtime` in the browser: the substrate's `CanvasSceneHost` (decision 0014) with the
@@ -23,6 +24,9 @@ public final class CanvasHost {
         MediaHost.install()
         SpeechHost.install()
         NotificationsHost.install()
+        // The app's widget extension, when it has one: its Live Activities and widgets reach the
+        // drawn iPhone (new-website#643, #638).
+        _ = swiftui_web_launch_widgets()
         GeolocationHost.install()
         NetworkHost.install()
         DataHost.install()

@@ -8,6 +8,12 @@ import UserNotifications
 import WebFoundation
 
 #if !os(WASI)
+/// Every suite using the one notification centre or the drawn iPhone, one after another
+/// (new-website#643): the centre, its delegate, the host's hooks and the phone the frameworks
+/// reach are process-wide.
+@Suite(.serialized) enum NotificationCentreSuites {}
+
+extension NotificationCentreSuites {
 @Suite(.serialized) struct UserNotificationsTests {
     final class Handler: NSObject, UNUserNotificationCenterDelegate {
         var presented: [String] = []
@@ -33,6 +39,7 @@ import WebFoundation
         _UserNotificationsHost.permission = nil
         _UserNotificationsHost.requestPermission = nil
         _UserNotificationsHost.show = nil
+        _UserNotificationsHost.phone = nil
         UNUserNotificationCenter._resetWithoutHost()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -101,5 +108,6 @@ import WebFoundation
         #expect(handler.presented == ["chad", "quiet"] && shown.count == 1 && center.pendingRequests.isEmpty)
         withoutHost()
     }
+}
 }
 #endif
