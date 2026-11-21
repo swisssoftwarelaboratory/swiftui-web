@@ -31,7 +31,9 @@ let package = Package(
                 .product(name: "SwiftUI", package: "SwiftUIWeb"),
                 .product(name: "WidgetKit", package: "SwiftUIWeb"),
             ],
-            swiftSettings: [.unsafeFlags(["-Xfrontend", "-entry-point-function-name", "-Xfrontend", "swiftui_web_widgets_main"])]
+            swiftSettings: [.unsafeFlags(["-Xfrontend", "-entry-point-function-name", "-Xfrontend", "swiftui_web_widgets_main"])],
+            // The launcher only names the entry weakly: the link keeps it.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "--undefined=swiftui_web_widgets_main"], .when(platforms: [.wasi]))]
         ),
     ]
 )
