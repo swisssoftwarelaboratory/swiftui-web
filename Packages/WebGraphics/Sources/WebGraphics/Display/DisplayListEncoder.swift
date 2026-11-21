@@ -38,6 +38,8 @@ public enum DisplayOp: Double, Sendable {
     /// beginCullBlock: bounds, then the index of the op after its `endCullBlock` (where a painter
     /// skipping the block goes on)
     case beginCullBlock = 28, endCullBlock = 29
+    /// path, bounds, radius, bend, corner radius: `backdropBlur` seen through a lens (new-website#649)
+    case backdropLens = 30
 }
 
 /// Path element tags inside an encoded path: tag, then coordinates.
@@ -138,6 +140,7 @@ public enum DisplayListEncoder {
             case .beginMasked: out.ops.append(DisplayOp.beginMasked.rawValue)
             case .endGroup: out.ops.append(DisplayOp.endGroup.rawValue)
             case .backdropBlur(let p, let bounds, let radius, let saturation): out.ops.append(DisplayOp.backdropBlur.rawValue); path(p); rect(bounds); out.ops += [radius, saturation]
+            case .backdropLens(let p, let bounds, let radius, let bend, let corner): out.ops.append(DisplayOp.backdropLens.rawValue); path(p); rect(bounds); out.ops += [radius, bend, corner]
             case .concat(let t): out.ops += [DisplayOp.concat.rawValue, t.a, t.b, t.c, t.d, t.tx, t.ty]
             case .fillRect(let r, let c): out.ops.append(DisplayOp.fillRect.rawValue); rect(r); color(c)
             case .fillRRect(let r, let radius, let c): out.ops.append(DisplayOp.fillRRect.rawValue); rect(r); out.ops.append(radius); color(c)
@@ -253,6 +256,7 @@ public enum DisplayListDecoder {
             case .beginMasked: out.append("beginMasked")
             case .endGroup: out.append("endGroup")
             case .backdropBlur: let p = path(); let bounds = f(rect()); out.append("backdropBlur \(p) \(bounds) r\(next()) sat\(next())")
+            case .backdropLens: let p = path(); let bounds = f(rect()); out.append("backdropLens \(p) \(bounds) r\(next()) bend\(next()) corner\(next())")
             case .concat: out.append("concat \(next()),\(next()),\(next()),\(next()),\(next()),\(next())")
             case .fillGradient:
                 let p = path(); let g = gradientText(); out.append("fillGradient \(p) \(g)\(next() == 1 ? " eo" : "")")
