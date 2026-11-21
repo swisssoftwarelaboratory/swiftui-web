@@ -20,7 +20,7 @@ public final class CanvasHost {
     /// The platform hosts (audio, notifications, location, fetch, storage) are installed before `windows`
     /// is read: reading it makes the `App` value, whose delegate may already open its model
     /// container (Countries' AppEnvironment.bootstrap, decision 0021).
-    public static func launch(windows: @autoclosure @MainActor () -> [_WindowDescriptor] = [], _ root: @escaping @MainActor () -> AnyView) {
+    public static func launch(windows: @autoclosure @escaping @MainActor () -> [_WindowDescriptor] = [], _ root: @escaping @MainActor () -> AnyView) {
         JavaScriptEventLoop.installGlobalExecutor()
         MediaHost.install()
         SpeechHost.install()
@@ -35,7 +35,6 @@ public final class CanvasHost {
         RegexHost.install()
         let host = CanvasHost()
         KeyboardHost.install()
-        let windows = windows()
         // Open windows are remembered in localStorage and reopened on the next load (sw-windows).
         if let storage = JSObject.global.localStorage.object {
             // The drawn iPhone's permission answers stay between visits, as on the viewer's
@@ -47,19 +46,60 @@ public final class CanvasHost {
                     if let value { _ = storage.setItem?(key, value) } else { _ = storage.removeItem?(key) }
                 }
             }
-            host.runtime.windowStateStore = (get: { storage.getItem?("swiftuiweb.windows").string },
-                                             set: { _ = storage.setItem?("swiftuiweb.windows", $0) })
+            host.runtime.windowStateStore = (get: { storage.getItem?(_AppSandbox.prefix + "windows").string },
+                                             set: { guard !_AppSandbox.isErased else { return }; _ = storage.setItem?(_AppSandbox.prefix + "windows", $0) })
         }
         // Documents open through a file input and save as downloads (sw-windows).
         host.runtime.documentOpenHandler = { [weak host] types, completion in host?.host.openFile(extensions: types.compactMap(\.preferredFilenameExtension), completion: completion) }
         host.runtime.documentSaveHandler = { [weak host] data, name, _, _ in host?.host.download(Array(data), name: name); return nil }
-        host.runtime.installWindows(windows)
-        host.mount(root())
-        // An app-level `@StateObject` or `@State` change re-reads the app's body (decision 0021).
-        _appRemount = (host.runtime, { [weak host] in host?.mount(root()) })
-        _appDidMount?(host.runtime)
-        host.runtime.restoreWindows()
         retained = host
+        // The app starts: its `App` value, its windows and its root view.
+        let start: @MainActor () -> Void = { [weak host] in
+            guard let host else { return }
+            host.runtime.installWindows(windows())
+            host.mount(root())
+            // An app-level `@StateObject` or `@State` change re-reads the app's body (decision 0021).
+            _appRemount = (host.runtime, { [weak host] in host?.mount(root()) })
+            _appDidMount?(host.runtime)
+            host.runtime.restoreWindows()
+        }
+        guard host.runtime.drawsPhone else { start(); return }
+        // Removing the app on the drawn iPhone's home screen forgets its data and loads the page
+        // again (new-website#709): the phone then starts on its home screen, the app freshly
+        // installed and not running until it is opened, as on iOS.
+        _DrawnPhoneSystem.reinstall = { reinstall() }
+        if takeFreshInstall() {
+            host.runtime.phoneStartsFreshlyInstalled(launch: start)
+        } else {
+            start()
+        }
+    }
+
+    /// The flag a removal leaves for the next load, in the tab's own session storage.
+    private static var freshInstallKey: String { _AppSandbox.prefix + "phone.freshInstall" }
+
+    /// Whether this load follows a removal (the flag is gone once read).
+    private static func takeFreshInstall() -> Bool {
+        guard let session = JSObject.global.sessionStorage.object, session.getItem?(freshInstallKey).string != nil else { return false }
+        _ = session.removeItem?(freshInstallKey)
+        return true
+    }
+
+    /// Forgets everything the browser keeps for the app (`_AppSandbox`) and loads the page
+    /// again, so nothing of the app's own memory survives either.
+    private static func reinstall() {
+        _AppSandbox.isErased = true
+        for name in ["localStorage", "sessionStorage"] {
+            guard let storage = JSObject.global[name].object else { continue }
+            var keys: [String] = []
+            let count = Int(storage.length.number ?? 0)
+            for index in 0..<count {
+                if let key = storage.key?(index).string, _AppSandbox.owns(key) { keys.append(key) }
+            }
+            for key in keys { _ = storage.removeItem?(key) }
+        }
+        _ = JSObject.global.sessionStorage.object?.setItem?(freshInstallKey, "1")
+        _ = JSObject.global.location.object?.reload?()
     }
 
     nonisolated(unsafe) private static var retained: CanvasHost?

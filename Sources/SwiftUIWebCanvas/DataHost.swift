@@ -1,5 +1,5 @@
 // The browser behind SwiftData's stores (decision 0021, pf-swiftdata): a container that is not
-// in-memory-only keeps its rows in localStorage under `swiftuiweb.swiftdata.<name>` — one JSON
+// in-memory-only keeps its rows in localStorage under `swiftuiweb.swiftdata.<name>` (inside the app's own prefix, `_AppSandbox`) — one JSON
 // document per store, written at every save, read when a container of that name opens. The
 // page's origin bounds it as it bounds every localStorage key.
 //
@@ -12,10 +12,12 @@
 #if os(WASI)
 import JavaScriptKit
 import SwiftData
+import WebFoundation   // `_AppSandbox`
 
 @MainActor
 enum DataHost {
-    static let prefix = "swiftuiweb.swiftdata."
+    /// Inside the app's own prefix (`_AppSandbox`, new-website#709).
+    static var prefix: String { _AppSandbox.prefix + "swiftdata." }
 
     /// What the browser said when it refused storage.
     struct StorageError: Error, CustomStringConvertible {
@@ -49,6 +51,7 @@ enum DataHost {
         _ModelStore.Host.store = (
             load: { name in try run("get", prefix + name) },
             save: { name, json in
+                guard !_AppSandbox.isErased else { return }
                 if let json { _ = try run("set", prefix + name, json) } else { _ = try run("remove", prefix + name) }
             }
         )

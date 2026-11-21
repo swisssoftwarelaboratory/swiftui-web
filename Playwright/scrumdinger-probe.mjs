@@ -139,7 +139,8 @@ await page.reload({ waitUntil: 'commit' });
 await loaded();
 shown = await settle(t => t.includes('Design review'));
 expect(shown.includes('Design review'), 'the scrum did not survive a reload: ' + JSON.stringify(shown));
-const stored = await page.evaluate(() => Object.keys(localStorage));
+// An app with a bundle identifier keeps its keys under `swiftuiweb.app[<id>].` (new-website#709).
+const stored = await page.evaluate(() => Object.keys(localStorage).map(k => k.replace(/^swiftuiweb\.app\[[^\]]*\]\./, 'swiftuiweb.')));
 expect(stored.includes('swiftuiweb.files/Documents/dailyScrumsKey'), 'the scrums file is not in localStorage: ' + JSON.stringify(stored));
 
 // The detail screen from the card, then the meeting.
