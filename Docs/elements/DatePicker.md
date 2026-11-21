@@ -111,12 +111,42 @@ The compact picker is iOS's pills (`datePills`): the label leading and one capsu
 the trailing edge, in a form row or anywhere else, 34.5 tall for a date alone and 36 with a
 time; texts in the locale's way ("Mar 15, 2025" and "11:09\u{202F}AM" in en_US, "13 Oct 2026"
 and "05:30" in en_GB, "13.10.2026" in German). A press on the time pill opens iOS 27's frosted
-panel (230 × 204, 26 pt corners) with the time wheel in it, under a pill in the upper half
-(28 below it) and over one lower down (its bottom 11 below the pill's top), and the pill's
-text turns to the tint while it is open; a press outside closes it. A pill an app lays an
+panel (232 × 204, 26 pt corners) with the time wheel in it, and the pill's text turns to the
+tint while it is open; a press outside closes it. Placement (re-measured with pills at ten
+heights, new-website#674): a pill whose centre is in the window's upper half gets its panel
+below, the panel's top 6 below the pill's centre (over the pill's lower part); lower down above,
+its bottom 6 above the centre; the panel's trailing edge 41 left of the pill's, 16 kept from the
+window's sides. A pill an app lays an
 almost invisible picker over (Paulo's "Started 06:40") opens it the same way: a background's
-or overlay's views now take presses and reach accessibility, as in SwiftUI. The date pill
-still opens the macOS-style calendar in that panel.
+or overlay's views now take presses and reach accessibility, as in SwiftUI.
+
+## iOS calendar (iOS 27, iPhone 16 and SE, `ios/datepicker/graphical`, `ios/datepicker/panels`, new-website#674, 2026-11-21)
+
+The date pill opens iOS 27's own calendar in a 320 × 332 panel, and `.graphical` on iOS is the
+same calendar in the app's layout (`IOSCalendarNode`, `_IOSCalendar`). Measured with the probe
+app `ios-in-browser/swipe-harness/picker-probe-674`:
+
+- Header centred 34.7 below the top: the month and year in 17 pt semibold (20 in from the
+  panel's side, 12 in `.graphical`), a tinted chevron 8 after it; the previous and next month
+  chevrons (10 × 17.4) centred 68.3 and 22.7 from the trailing edge in the panel (59 and 15.7 in
+  `.graphical`), in the label colour in the panel and in the tint in `.graphical`.
+- Weekday names in 13 pt semibold grey ("MON", German "MO"), centred 77.4 below the top. The
+  weeks start on Monday: iOS takes the first day from the phone's calendar, not from an app's
+  locale (en_US in the simulator still starts on Monday), and the drawn iPhone is Swiss.
+- Only the month's own days, in 20 pt, from 86.4 below the top. The weeks share one band (228 in
+  the panel, 0.709 of the width in `.graphical`), so a five-week month has taller rows; the
+  panel's columns are 10.3 in from its sides, `.graphical`'s fill its width.
+- The selection is a filled circle as wide as the shorter of a cell's sides: black with white
+  semibold text (white with black in the dark), the tint when it is today; today otherwise in
+  the tint on the tint at 12 %. Picking a day keeps the panel open, as on iOS.
+- The title opens a month and a year wheel (291 tall, 39.4 below the panel's top, 54 in
+  `.graphical`), the title turning to the tint with its chevron pointing down; the wheel moves
+  the shown month only.
+- `.graphical` with the time adds a 38 pt "Time" row with the time pill under the calendar.
+- The panels come and go as a UIKit popover (the confirmation dialog's springs, fitted to the
+  panel's frames: in omega 18.8, zeta 0.80; out 17.9, 0.85): from a fifth of their size about the
+  pill's centre line and the panel's edge nearest the pill, fading in, the height unrolling from
+  that edge; back the same way. The panel is (32, 32, 32) in the dark.
 
 ## macOS 27 (regenerated 2026-10-11 under decision 0019)
 
@@ -129,6 +159,6 @@ Docs/elements/DarkMode.md (`dark/chrome`). Tier A exact, Tier C `basic` 2.5 %.
 ## Not yet covered
 
 Calendars other than the Gregorian; month names beyond English, German, French and Italian;
-iOS's own graphical calendar (the date pill's panel and `.graphical` on iOS); the panel growing
-out of its pill and back; the wheels' slight sideways perspective; the exact hand widths and the
+the calendar's sideways slide between months (it changes at once) and paging it with a swipe;
+the frosted blur behind the panel; the wheels' slight sideways perspective; the exact hand widths and the
 stepper's corner radius (approximate); typing on iOS.

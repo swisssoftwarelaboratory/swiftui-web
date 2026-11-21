@@ -1,0 +1,21 @@
+{
+  "fixture" : "ios\/datepicker\/graphical",
+  "frames" : {
+    "calendar" : {
+      "height" : 324.5,
+      "width" : 343,
+      "x" : 16,
+      "y" : 0
+    },
+    "stack" : {
+      "height" : 380,
+      "width" : 375,
+      "x" : 0,
+      "y" : 0
+    }
+  },
+  "size" : {
+    "height" : 380,
+    "width" : 375
+  }
+}

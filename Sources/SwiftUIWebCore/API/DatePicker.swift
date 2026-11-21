@@ -63,7 +63,10 @@ public struct DatePicker<Label: View>: View {
         let date = selection.wrappedValue
         let binding = _DateBinding(selection, minimum: minimum, maximum: maximum)
         let content: AnyView
-        if style._kind == .graphical {
+        if style._kind == .graphical, platform.isIOS, components.contains(.date) {
+            // iOS 27's own calendar (new-website#674), with a "Time" row when the time is shown too.
+            content = AnyView(_IOSCalendar(date: date, binding: binding, inPanel: false, showsTime: components.contains(.hourAndMinute)))
+        } else if style._kind == .graphical {
             content = AnyView(_GraphicalDatePicker(date: date, binding: binding, components: components))
         } else if style._kind == .wheel, platform.isIOS {
             content = AnyView(_WheelDateHost(date: date, binding: binding, components: components))
@@ -338,11 +341,23 @@ public struct _WheelDateHost: View {
     /// In the compact picker's panel: the panel's size (the wheel centred in it, its band inset
     /// from the panel's sides); nil for a wheel in the app's own layout.
     package let panelSize: CGSize?
-    package init(date: Date, binding: _DateBinding, components: DatePickerComponents, panelSize: CGSize? = nil) {
+    /// iOS's calendar header opens a month and a year column instead (new-website#674): the
+    /// wheel as wide as the calendar, its band `bandInset` in from the sides.
+    package let monthAndYear: Bool
+    package let bandInset: CGFloat?
+    package init(date: Date, binding: _DateBinding, components: DatePickerComponents, panelSize: CGSize? = nil,
+                 monthAndYear: Bool = false, bandInset: CGFloat? = nil) {
         self.date = date
         self.binding = binding
         self.components = components
         self.panelSize = panelSize
+        self.monthAndYear = monthAndYear
+        self.bandInset = bandInset
+    }
+
+    /// The same wheel showing another date.
+    package func showing(_ date: Date) -> _WheelDateHost {
+        _WheelDateHost(date: date, binding: binding, components: components, panelSize: panelSize, monthAndYear: monthAndYear, bandInset: bandInset)
     }
     public typealias Body = Never
     public static func _makeNode(_ context: _NodeContext<_WheelDateHost>) -> TypedNode<_WheelDateHost> {

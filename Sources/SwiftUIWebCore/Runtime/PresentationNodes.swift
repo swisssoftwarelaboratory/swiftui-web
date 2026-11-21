@@ -62,6 +62,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     /// arrow's tip) or menu (glass growing out of and back into its button).
     package var pops: Bool {
         guard environment.platformProfile.isIOS else { return false }
+        if isSystemPicker { return true }
         switch kind {
         case .alert: return true
         case .dialog: return metrics.dialogsArePopovers
@@ -110,7 +111,10 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     }
 
     private func runPop(entering: Bool) {
-        let springs = Self.popSprings(kind: kind, entering: entering)
+        // A picker's panel is a UIKit popover: the confirmation dialog's springs (fitted to the
+        // date panel's frames in the simulator, new-website#674: omega 18.8, zeta 0.80 in;
+        // 17.9, 0.85 out).
+        let springs = Self.popSprings(kind: isSystemPicker ? .dialog : kind, entering: entering)
         if pop.count != springs.count {
             pop = springs.map { _ in Motion(position: entering ? 0 : 1, restDistance: 0.0005, restSpeed: 0.01) }
         }
@@ -159,7 +163,11 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     private var slideBegan = 0.0
     /// iOS's compact date picker's panel (new-website#665): placed by the pill as measured on
     /// iOS 27, drawn as the frosted card with no arrow.
-    package var isSystemPicker = false
+    package var isSystemPicker = false {
+        didSet { popsIn = pops && anchor?.hasBeenPlaced == true }
+    }
+    /// Whether the system picker's panel opened below its pill (else above it).
+    private var systemPickerBelow = true
     /// Laid out at least once (a sheet never shown is removed at once).
     package private(set) var hasLaidOut = false
     /// Dismissed, sliding off: no longer hit, unmounted at the bottom.
@@ -539,14 +547,18 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             if isSystemPicker, environment.platformProfile.isIOS {
                 let card = CGSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
                 let below = source.midY < window.height / 2
-                let centerX = source.midX + (below ? PlatformMetrics.timePopoverBelowShift : PlatformMetrics.timePopoverAboveShift)
-                let y = below ? source.maxY + PlatformMetrics.timePopoverBelowGap : source.minY + PlatformMetrics.timePopoverAboveOverlap - card.height
+                let edge = PlatformMetrics.systemPickerEdgeFromPillCenter
+                let y = below ? source.midY + edge : source.midY - edge - card.height
                 let margin: CGFloat = 16
-                origin = CGPoint(x: min(max(centerX - card.width / 2, margin), max(margin, window.width - card.width - margin)),
+                let x = source.maxX - PlatformMetrics.systemPickerTrailingInset - card.width
+                origin = CGPoint(x: min(max(x, margin), max(margin, window.width - card.width - margin)),
                                  y: min(max(y, runtime.safeAreaInsets.top), max(0, window.height - card.height - runtime.safeAreaInsets.bottom)))
                 panel = CGRect(origin: origin, size: card)
                 arrow = nil
                 contentFrame = panel
+                // It grows out of the pill's centre line, from its edge nearest the pill.
+                popSource = source
+                systemPickerBelow = below
                 target.place(at: contentFrame.origin, anchor: .topLeading, proposal: ProposedViewSize(contentFrame.size), by: runtime.root)
                 return
             }
@@ -825,10 +837,33 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if iOS && isSystemPicker {
             // The compact date picker's frosted card: a wide soft shadow, the card, its content clipped to it.
             let radius = PlatformMetrics.systemPickerCornerRadius
+            // Coming and going (new-website#674, measured in the simulator): the panel scales
+            // from a fifth of its size about the pill's centre line and its edge nearest the
+            // pill, fading in as it grows, while its height unrolls from that edge (the card
+            // is as tall as its scale times its height before scaling); back the same way.
+            let progress = popProgress
+            let popping = abs(progress - 1) > 0.0005
+            var rect = rect
+            if popping {
+                let scale = 0.2 + 0.8 * progress
+                let source = context.absoluteRect(popSource)
+                let anchor = CGPoint(x: source.midX, y: systemPickerBelow ? rect.minY : rect.maxY)
+                let height = rect.height * CGFloat(max(0.0, scale))
+                rect = CGRect(x: rect.minX, y: systemPickerBelow ? rect.minY : rect.maxY - height, width: rect.width, height: height)
+                list.append(.beginGroup(opacity: min(1, max(0, progress))))
+                list.append(.save)
+                list.append(.concat(CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: anchor.x * (1 - scale), ty: anchor.y * (1 - scale))))
+            }
+            defer {
+                if popping {
+                    list.append(.restore)
+                    list.append(.endGroup)
+                }
+            }
             for (spread, alpha) in [(1.0, 0.03), (6.0, 0.016), (16.0, 0.01), (30.0, 0.006)] {
                 list.append(.fillRRect(rect.insetBy(dx: -spread, dy: -spread).offsetBy(dx: 0, dy: spread / 3), cornerRadius: radius + spread, black(alpha)))
             }
-            list.append(.fillRRect(rect, cornerRadius: radius, PlatformMetrics.systemPickerFill))
+            list.append(.fillRRect(rect, cornerRadius: radius, environment.colorScheme == .dark ? PlatformMetrics.systemPickerFillDark : PlatformMetrics.systemPickerFill))
             list.append(.strokePath(Path(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), cornerRadius: radius), style: StrokeStyle(lineWidth: 0.5), black(0.1)))
             list.append(.save)
             list.append(.clipRRect(rect, cornerRadius: radius))
