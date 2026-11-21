@@ -15,15 +15,35 @@ public struct ContainerBackgroundPlacement: Sendable {
     public static let tabView = ContainerBackgroundPlacement("tabView")
 }
 
+/// A widget's container background, as its view sets it (`containerBackground(for: .widget)`):
+/// the widget's host draws it behind the whole widget, under the content margins
+/// (new-website#638).
+public struct _WidgetContainerBackgroundKey: PreferenceKey {
+    public static var defaultValue: AnyView? { nil }
+    public static func reduce(value: inout AnyView?, nextValue: () -> AnyView?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
 extension View {
     /// Sets the container background of the enclosing container using a view.
+    @ViewBuilder
     nonisolated public func containerBackground<V: View>(for container: ContainerBackgroundPlacement, alignment: Alignment = .center,
                                                          @ViewBuilder content: () -> V) -> some View {
-        background(alignment: alignment, content: content)
+        if container.name == "widget" {
+            preference(key: _WidgetContainerBackgroundKey.self, value: AnyView(ZStack(alignment: alignment) { content() }))
+        } else {
+            background(alignment: alignment, content: content)
+        }
     }
 
     /// Sets the container background of the enclosing container using a style.
+    @ViewBuilder
     nonisolated public func containerBackground<S: ShapeStyle>(_ style: S, for container: ContainerBackgroundPlacement) -> some View {
-        background(style)
+        if container.name == "widget" {
+            preference(key: _WidgetContainerBackgroundKey.self, value: AnyView(Rectangle().fill(style)))
+        } else {
+            background(style)
+        }
     }
 }

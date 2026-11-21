@@ -20,6 +20,34 @@ public enum _UserNotificationsHost {
     nonisolated(unsafe) public static var requestPermission: ((@escaping @MainActor (UNAuthorizationStatus) -> Void) -> Void)?
     /// Shows a notification; `onClick` is the user opening it.
     nonisolated(unsafe) public static var show: ((_ title: String, _ body: String, _ identifier: String, _ onClick: @escaping @MainActor @Sendable () -> Void) -> Void)?
+
+    // The drawn iPhone (new-website#643): set by a host that draws one. While `phone` answers
+    // true, delivery follows iOS: the delegate is asked only while the app is in the
+    // foreground, and what it picks (a banner, the list) is shown by the phone; in the
+    // background a notification goes on the lock screen's list with a banner over the home
+    // screen.
+
+    /// Whether the app runs in the drawn iPhone now.
+    nonisolated(unsafe) public static var phone: (@MainActor () -> Bool)?
+    /// Whether the app fills the drawn iPhone's screen, nothing over it.
+    nonisolated(unsafe) public static var appIsInForeground: (@MainActor () -> Bool)?
+    /// Shows a delivered notification on the phone; `onOpen` is the person opening it.
+    nonisolated(unsafe) public static var present: (@MainActor (_ notification: _PresentedNotification, _ onOpen: @escaping @MainActor () -> Void) -> Void)?
+    /// Takes delivered notifications off the phone.
+    nonisolated(unsafe) public static var withdraw: (@MainActor (_ identifiers: [String]) -> Void)?
+}
+
+/// What the drawn iPhone shows of a delivered notification.
+public struct _PresentedNotification: Sendable {
+    public let identifier: String
+    public let title: String
+    public let subtitle: String
+    public let body: String
+    public let date: Date
+    /// A banner over the app or the home screen.
+    public let banner: Bool
+    /// On the lock screen's list and the pull-down.
+    public let list: Bool
 }
 
 // MARK: - Authorization
@@ -156,9 +184,61 @@ open class UNNotificationTrigger: @unchecked Sendable {
 /// After an interval.
 public final class UNTimeIntervalNotificationTrigger: UNNotificationTrigger, @unchecked Sendable {
     public let timeInterval: TimeInterval
+    private let created = Date()
     public init(timeInterval: TimeInterval, repeats: Bool) {
         self.timeInterval = timeInterval
         super.init(repeats: repeats)
+    }
+    /// When it fires next.
+    public func nextTriggerDate() -> Date? {
+        let now = Date()
+        guard repeats, timeInterval > 0 else {
+            let at = created.addingTimeInterval(timeInterval)
+            return at > now || repeats ? at : nil
+        }
+        let periods = (now.timeIntervalSince(created) / timeInterval).rounded(.down) + 1
+        return created.addingTimeInterval(periods * timeInterval)
+    }
+}
+
+/// At a date and time on the calendar ("every day at 7:00", "Wednesday 8:10").
+public final class UNCalendarNotificationTrigger: UNNotificationTrigger, @unchecked Sendable {
+    public let dateComponents: DateComponents
+    public init(dateMatching dateComponents: DateComponents, repeats: Bool) {
+        self.dateComponents = dateComponents
+        super.init(repeats: repeats)
+    }
+
+    /// The next date after now its components match, in the person's calendar.
+    public func nextTriggerDate() -> Date? { Self.next(after: Date(), matching: dateComponents) }
+
+    /// The first moment after `date` whose year, month, day, weekday, hour, minute and second
+    /// match the given components (unspecified time parts are 0 below the largest given one).
+    package static func next(after date: Date, matching wanted: DateComponents, calendar: Calendar = .current) -> Date? {
+        let start = calendar.startOfDay(for: date)
+        for offset in 0..<(366 * 8) {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+            let parts = calendar.dateComponents([.year, .month, .day, .weekday], from: day)
+            if let year = wanted.year, year != parts.year { continue }
+            if let month = wanted.month, month != parts.month { continue }
+            if let dayOfMonth = wanted.day, dayOfMonth != parts.day { continue }
+            if let weekday = wanted.weekday, weekday != parts.weekday { continue }
+            // Every hour (or minute) of the day when it is left open, the first that is later.
+            let hours = wanted.hour.map { [$0] } ?? Array(0..<24)
+            let minutes = wanted.minute.map { [$0] } ?? (wanted.hour == nil && wanted.second == nil ? [0] : Array(0..<60))
+            let seconds = wanted.second.map { [$0] } ?? [0]
+            for hour in hours {
+                for minute in minutes {
+                    for second in seconds {
+                        var at = DateComponents()
+                        at.year = parts.year; at.month = parts.month; at.day = parts.day
+                        at.hour = hour; at.minute = minute; at.second = second
+                        if let candidate = calendar.date(from: at), candidate > date { return candidate }
+                    }
+                }
+            }
+        }
+        return nil
     }
 }
 
@@ -229,14 +309,35 @@ public protocol UNUserNotificationCenterDelegate: AnyObject {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void)
     func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?)
+    /// The same two callbacks as `async` methods (Swift imports Apple's either way; a delegate
+    /// writes one form): the completion-handler forms run these unless the delegate writes them.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async
 }
 
 extension UNUserNotificationCenterDelegate {
     public func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                                       withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([]) }
+                                       withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let box = _Unchecked((self as any UNUserNotificationCenterDelegate, completionHandler))
+        Task { box.value.1(await box.value.0.userNotificationCenter(center, willPresent: notification)) }
+    }
     public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                       withCompletionHandler completionHandler: @escaping () -> Void) { completionHandler() }
+                                       withCompletionHandler completionHandler: @escaping () -> Void) {
+        let box = _Unchecked((self as any UNUserNotificationCenterDelegate, completionHandler))
+        Task {
+            await box.value.0.userNotificationCenter(center, didReceive: response)
+            box.value.1()
+        }
+    }
     public func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?) {}
+    public func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [] }
+    public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {}
+}
+
+/// Carries a value the delegate's two forms hand between them (Apple's run on the main queue).
+struct _Unchecked<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
 }
 
 // MARK: - The centre
@@ -297,14 +398,29 @@ public final class UNUserNotificationCenter: @unchecked Sendable {
             completionHandler?(UNError.notAuthorized)
             return
         }
+        // A request with an identifier already pending replaces it, as on iOS.
+        pendingRequests.removeAll { $0.identifier == request.identifier }
         pendingRequests.append(request)
-        // Delivery is asynchronous, on the main actor, as iOS delivers after `add` returns.
-        let interval = (request.trigger as? UNTimeIntervalNotificationTrigger)?.timeInterval ?? 0
+        schedule(request, after: Self.wait(for: request.trigger))
+        completionHandler?(nil)
+    }
+
+    /// Seconds until a trigger fires (0 without one).
+    static func wait(for trigger: UNNotificationTrigger?) -> TimeInterval {
+        switch trigger {
+        case let interval as UNTimeIntervalNotificationTrigger: return interval.timeInterval
+        case let calendar as UNCalendarNotificationTrigger: return max(0, calendar.nextTriggerDate()?.timeIntervalSinceNow ?? .infinity)
+        default: return 0
+        }
+    }
+
+    /// Delivery is asynchronous, on the main actor, as iOS delivers after `add` returns.
+    private func schedule(_ request: UNNotificationRequest, after wait: TimeInterval) {
+        guard wait.isFinite else { return }
         Task { @MainActor [weak self] in
-            if interval > 0 { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
             self?.deliver(request)
         }
-        completionHandler?(nil)
     }
 
     public func add(_ request: UNNotificationRequest) async throws {
@@ -316,8 +432,17 @@ public final class UNUserNotificationCenter: @unchecked Sendable {
     @MainActor
     private func deliver(_ request: UNNotificationRequest) {
         guard pendingRequests.contains(where: { $0 === request }) else { return }   // removed before it fired
-        pendingRequests.removeAll { $0 === request }
+        if let trigger = request.trigger, trigger.repeats {
+            // A repeating request stays pending and fires again.
+            schedule(request, after: max(1, Self.wait(for: trigger)))
+        } else {
+            pendingRequests.removeAll { $0 === request }
+        }
         let notification = UNNotification(request: request)
+        if _UserNotificationsHost.phone?() == true {
+            deliverOnPhone(notification)
+            return
+        }
         deliveredNotifications.append(notification)
         let show = { [weak self] in
             guard let self else { return }
@@ -337,14 +462,63 @@ public final class UNUserNotificationCenter: @unchecked Sendable {
         }
     }
 
+    /// In the drawn iPhone, as iOS delivers: in the foreground the delegate picks what shows
+    /// (nothing without a delegate); otherwise it goes on the lock screen's list, with a banner
+    /// over the home screen. Opening it takes it out of the delivered ones and tells the delegate.
+    @MainActor
+    private func deliverOnPhone(_ notification: UNNotification) {
+        let foreground = _UserNotificationsHost.appIsInForeground?() ?? false
+        let present: @MainActor (UNNotificationPresentationOptions) -> Void = { [weak self] options in
+            guard let self else { return }
+            // `.alert` (the old name for both) shows both.
+            let alert = options.contains(UNNotificationPresentationOptions(rawValue: 1 << 2))
+            let banner = options.contains(.banner) || alert
+            let list = options.contains(.list) || alert
+            guard banner || list else { return }
+            if list { self.deliveredNotifications.append(notification) }
+            let content = notification.request.content
+            let shown = _PresentedNotification(identifier: notification.request.identifier, title: content.title, subtitle: content.subtitle,
+                                               body: content.body, date: notification.date, banner: banner, list: list)
+            _UserNotificationsHost.present?(shown) { [weak self] in
+                guard let self else { return }
+                self.deliveredNotifications.removeAll { $0 === notification }
+                let response = UNNotificationResponse(notification: notification, actionIdentifier: UNNotificationDefaultActionIdentifier)
+                self.delegate?.userNotificationCenter(self, didReceive: response) {}
+            }
+        }
+        guard foreground else {
+            present([.banner, .list])
+            return
+        }
+        guard let delegate else { return }
+        nonisolated(unsafe) let presentNow = present
+        delegate.userNotificationCenter(self, willPresent: notification) { options in
+            // Apple calls back on the main queue; a delegate may answer from anywhere.
+            Task { @MainActor in presentNow(options) }
+        }
+    }
+
     public func getPendingNotificationRequests(completionHandler: @escaping ([UNNotificationRequest]) -> Void) { completionHandler(pendingRequests) }
     public func pendingNotificationRequests() async -> [UNNotificationRequest] { pendingRequests }
     public func removePendingNotificationRequests(withIdentifiers identifiers: [String]) { pendingRequests.removeAll { identifiers.contains($0.identifier) } }
     public func removeAllPendingNotificationRequests() { pendingRequests.removeAll() }
     public func getDeliveredNotifications(completionHandler: @escaping ([UNNotification]) -> Void) { completionHandler(deliveredNotifications) }
     public func deliveredNotifications() async -> [UNNotification] { deliveredNotifications }
-    public func removeDeliveredNotifications(withIdentifiers identifiers: [String]) { deliveredNotifications.removeAll { identifiers.contains($0.request.identifier) } }
-    public func removeAllDeliveredNotifications() { deliveredNotifications.removeAll() }
+    public func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {
+        deliveredNotifications.removeAll { identifiers.contains($0.request.identifier) }
+        Self.withdrawOnPhone(identifiers)
+    }
+    public func removeAllDeliveredNotifications() {
+        let identifiers = deliveredNotifications.map(\.request.identifier)
+        deliveredNotifications.removeAll()
+        Self.withdrawOnPhone(identifiers)
+    }
+
+    /// The drawn iPhone takes them off its lock screen too (any thread: on the main actor).
+    private static func withdrawOnPhone(_ identifiers: [String]) {
+        guard _UserNotificationsHost.withdraw != nil, !identifiers.isEmpty else { return }
+        Task { @MainActor in _UserNotificationsHost.withdraw?(identifiers) }
+    }
     public func setBadgeCount(_ newBadgeCount: Int) async throws {}
     /// The badge has nowhere to show in a browser tab; the handler is told it went through.
     public func setBadgeCount(_ newBadgeCount: Int, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)? = nil) {

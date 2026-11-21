@@ -155,7 +155,7 @@ let package = Package(
                            .product(name: "WebImageIO", package: "WebGraphics", condition: .when(platforms: [.wasi]))],
             swiftSettings: framework
         ),
-        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        .target(name: "WidgetKit", dependencies: ["SwiftUI", "ActivityKit", "AppIntents", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         // Live Activities and alarms: neither is enabled on the web (no Lock Screen); the types
         // are values, so an app's code for them compiles and its "off" path runs. iOS-only
         // frameworks, so these root modules shadow nothing in a macOS build.
@@ -225,9 +225,14 @@ let package = Package(
                 .product(name: "UIKitWebCore", package: "UIKitWeb"),
                 .product(name: "WebGraphicsCanvas", package: "WebGraphics"),
                 .product(name: "JavaScriptEventLoop", package: "JavaScriptKit", condition: .when(platforms: [.wasi])),
+                // The app's widget extension, started at launch when the app has one (new-website#643).
+                "SwiftUIWebWidgetLauncher",
             ],
             swiftSettings: framework
         ),
+        // Calls an app's widget extension's renamed `@main` (`swiftui_web_widgets_main`) through a
+        // weak reference: null, and nothing runs, for an app without one (new-website#643).
+        .target(name: "SwiftUIWebWidgetLauncher"),
         // FixtureKit is the SwiftUIWeb twin of Harness/Sources/FixtureKit; SwiftUIWebFixtures compiles
         // the fixture sources shared with Harness/ (which builds them against Apple's SwiftUI).
         .target(
@@ -246,7 +251,7 @@ let package = Package(
         // to load it. Disable overlay lookup for those test builds.
         .testTarget(
             name: "CoreRuntimeTests",
-            dependencies: ["SwiftUI", "Charts", "MapKit", "CoreLocation", "AVKit", "Speech", "SwiftData", "UserNotifications", "WebKit", "StoreKit", "AppIntents", "SwiftUIWebTestSupport", "FixtureKit", "SwiftUIWebFixtures", .product(name: "WebFoundation", package: "WebGraphics")],
+            dependencies: ["SwiftUI", "Charts", "MapKit", "CoreLocation", "AVKit", "Speech", "SwiftData", "UserNotifications", "WidgetKit", "ActivityKit", "WebKit", "StoreKit", "AppIntents", "SwiftUIWebTestSupport", "FixtureKit", "SwiftUIWebFixtures", .product(name: "WebFoundation", package: "WebGraphics")],
             swiftSettings: [.treatAllWarnings(as: .error), .unsafeFlags(["-disable-cross-import-overlays"], .when(platforms: [.wasi, .linux]))]
         ),
         // Core Data against a model the plugin generates (Tests/CoreDataTests/Library.xcdatamodeld).

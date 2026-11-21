@@ -32,8 +32,14 @@ extension Runtime: HostedScene {
             if newValue {
                 let phone = DrawnPhone(runtime: self)
                 drawnPhone = phone
+                DrawnPhone.current = phone
+                _DrawnPhoneSystem.present = true
                 phone.reset()
             } else {
+                if DrawnPhone.current === drawnPhone {
+                    DrawnPhone.current = nil
+                    _DrawnPhoneSystem.present = false
+                }
                 drawnPhone = nil
             }
             phoneDidChange()
@@ -66,6 +72,10 @@ extension Runtime: HostedScene {
         switch action {
         case "banner": phone.showBanner()
         case "side": phone.sideButton()
+        case "note":
+            // A made-up notification from the app, as a test page's control sends it.
+            _DrawnPhoneSystem.deliver(identifier: "debug-\(phone.notes.count)", title: "Test notification", subtitle: "",
+                                      body: "Sent from the test page.", date: Date(), banner: true, list: true, onOpen: {})
         default: break
         }
         return phone.debugDescription + "\nscenePhase=\(scenePhase)"

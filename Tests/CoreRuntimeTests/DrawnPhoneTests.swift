@@ -9,6 +9,7 @@ import SwiftUIWebCore
 import SwiftUIWebHeadless
 
 #if !os(WASI)
+extension NotificationCentreSuites {
 @Suite @MainActor struct DrawnPhoneTests {
     @Observable final class Model {
         var taps = 0
@@ -218,5 +219,6 @@ import SwiftUIWebHeadless
         #expect(state(r)["bannerShown"] == "false")
         #expect(Double(state(r)["banner"]!)! < -1600)
     }
+}
 }
 #endif
