@@ -115,6 +115,9 @@ for RES in "$SCRATCH"/wasm32-unknown-wasip1/$CONFIG/*.resources "$SCRATCH"/$CONF
   (cd "$RES" && find . -type f ! -path '*.xcassets/*' ! -name '*.xcstrings' ! -name 'Info.plist' | while read -r f; do
     mkdir -p "$OLDPWD/$BUNDLE/assets/$(dirname "$f")" && cp "$f" "$OLDPWD/$BUNDLE/assets/$f"; done)
 done
+# The drawn phone's photo library (Docs/elements/PhotosPicker.md): the app's own demo photos (its
+# package's `Photos` folder), then the everyday set every app shares, newest first.
+python3 "$ROOT/scripts/photos.py" Photos "$ROOT/Fixtures/Photos/Everyday" --out "$BUNDLE/assets/photos"
 # The full SF Symbol layout table (sw-symbols): fetched by the host on the first symbol outside
 # the built-in set.
 cp "$ROOT/Fixtures/Goldens/symbol/metrics-full.txt" "$BUNDLE/assets/symbol-metrics.txt"
