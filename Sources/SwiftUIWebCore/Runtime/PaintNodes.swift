@@ -103,7 +103,22 @@ package final class LayeredNode<Content: View, Modifier: ViewModifier, Layer: Vi
         }
     }
 
+    /// A background's or overlay's views take presses and reach accessibility as in SwiftUI
+    /// (below or above the content); they paint with their target (`paintTarget`), not again.
+    override package func paintedChildren(of target: ViewNode) -> [ViewNode] {
+        let base = super.paintedChildren(of: target)
+        guard mode != .mask, !base.isEmpty, let slot = slots[ObjectIdentifier(target)] else { return base }
+        let layerNodes = slot.layer.layoutChildren
+        return mode == .background ? layerNodes + base : base + layerNodes
+    }
+
+    private func isLayerNode(_ node: ViewNode) -> Bool {
+        slots.values.contains { $0.layer.layoutChildren.contains { $0 === node } }
+    }
+
     override package func paintTarget(_ target: ViewNode, in node: ViewNode, into list: inout DisplayList, context: PaintContext) {
+        // A layer's own view arrives here through `paintedChildren`: its target paints it.
+        if isLayerNode(target) { return }
         let layerNodes = layer(for: target).layoutChildren
         switch mode {
         case .background:

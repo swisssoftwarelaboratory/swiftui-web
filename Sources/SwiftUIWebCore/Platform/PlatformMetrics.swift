@@ -532,24 +532,35 @@ package final class PlatformMetricsTable: @unchecked Sendable {
     package var dateFieldBorderDark = RGBA(red: 35.0 / 255, green: 35.0 / 255, blue: 35.0 / 255, alpha: 219.0 / 255)  // its 1 pt edge outside
     package var calendarOutOfRangeAlpha = 66.0 / 255                 // days outside the picker's range (datepicker/looks: 189 on 26.6, which greys the neighbouring months lighter, 230)
     package var graphicalDateTimeSpacing: CGFloat = 18               // the calendar to the clock when both components are graphical (datepicker/looks `both`: 275.5 wide)
-    // The iOS wheel (ios/datepicker/wheel, iPhone SE simulator, iOS 26): a 320 × 216 picker whose
-    // rows sit on a cylinder (31, 58.5 and 76.5 from the centre), the 23 pt labels shrinking and
-    // fading away from the selected row, which lies on a 30 pt band 9 in from both sides.
+    // The iOS wheel (ios/datepicker/wheel, iPhone SE simulator, iOS 26; rows and columns
+    // re-measured on iOS 27, iPhone 16, new-website#665): a 320 × 216 picker whose rows sit on a
+    // cylinder (31, 58.5 and 76.5 from the centre). The selected row is drawn larger: the others
+    // are 0.873 as wide and, turned away on the cylinder, 0.827, 0.636 and 0.38 as tall, fading
+    // to 35, 33 and 19 %. Each column's texts line up on an edge and shrink towards their own
+    // centre (`WheelDateNode.columns`); the selected row lies on a 32 pt band 9 in from both sides.
     package var wheelSize = CGSize(width: 320, height: 216)
     package var wheelRowOffsets: [CGFloat] = [0, 31, 58.5, 76.5]
-    package var wheelRowScales: [CGFloat] = [1, 0.9, 0.8, 0.7]
+    package var wheelRowScaleX: CGFloat = 0.873
+    package var wheelRowScalesY: [CGFloat] = [1, 0.827, 0.636, 0.38]
     package var wheelRowAlphas: [Double] = [1, 0.35, 0.33, 0.19]
     package var wheelFontSize: CGFloat = 23
-    package var wheelBandHeight: CGFloat = 30
+    package var wheelBandHeight: CGFloat = 32
     package var wheelBandInset: CGFloat = 9
     package var wheelBandCornerRadius: CGFloat = 12
     package var wheelBandFill = RGBA(r: 115, g: 115, b: 128, a: 0.08)
-    package var wheelMonthLeading: CGFloat = 28.5                    // the month names' left edge
-    package var wheelDayTrailing: CGFloat = 192.5                    // the day numbers' right edge
-    package var wheelYearLeading: CGFloat = 230
-    package var wheelHourTrailing: CGFloat = 94
-    package var wheelMinuteLeading: CGFloat = 142
-    package var wheelPeriodLeading: CGFloat = 200.5
+    // The compact time picker's panel (iOS 27, iPhone 16, new-website#665): the wheel in a
+    // 230 × 204 frosted card with 26 pt corners, its band 16 in from the card's sides. Under a
+    // pill in the upper half of the window it opens 28 below the pill, its centre 84 left of the
+    // pill's; lower down it opens over the pill, its bottom 11 below the pill's top and its
+    // centre 122 left of the pill's; it keeps 16 from the window's sides.
+    package var timePopoverSize = CGSize(width: 230, height: 204)
+    package var timePopoverBandInset: CGFloat = 16
+    package var systemPickerCornerRadius: CGFloat = 26
+    package var systemPickerFill = RGBA(r: 253, g: 253, b: 254)
+    package var timePopoverBelowGap: CGFloat = 28
+    package var timePopoverBelowShift: CGFloat = -84
+    package var timePopoverAboveOverlap: CGFloat = 11
+    package var timePopoverAboveShift: CGFloat = -122
     package var calendarHighlightAlpha = 35.0 / 255                  // 220
     package var calendarHighlightInset: CGFloat = 1
     package var calendarHighlightCornerRadius: CGFloat = 3           // approximate

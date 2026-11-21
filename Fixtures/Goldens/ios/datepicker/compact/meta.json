@@ -1,8 +1,8 @@
 {
-  "generated" : "2026-09-19T02:42:36Z",
-  "host" : "iPhoneSimulator 26.0 SwiftUIWeb SE",
-  "macOS" : "26.0.0",
+  "generated" : "2026-11-20T23:46:48Z",
+  "host" : "iPhoneSimulator 27.0 SwiftUIWeb SE iOS-27-0",
+  "macOS" : "27.0.0",
   "platformProfile" : "iOS",
   "scale" : 2,
-  "swiftUI" : "7.0.71.1.103"
+  "swiftUI" : "8.0.84.1.104"
 }

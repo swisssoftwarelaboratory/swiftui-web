@@ -72,9 +72,11 @@ public struct DatePicker<Label: View>: View {
             content = AnyView(_DateFieldHost(date: date, binding: binding, components: components, stepper: style._kind != .field,
                                              opensPopover: style._kind == .compact && !platform.isIOS))
         }
-        // A grouped form row (or any iOS list row) spans its width: the label leading, the field trailing.
+        // A grouped form row (or any iOS list row) spans its width: the label leading, the field
+        // trailing; so does an iOS compact picker anywhere (its pills at the trailing edge).
+        let pills = platform.isIOS && style._kind != .graphical && style._kind != .wheel
         return _FormLabeledRow(label: labelsHidden ? nil : AnyView(_ControlLabel(label: label)), content: content,
-                               mode: formStyle == .grouped || (platform.isIOS && inListRow) ? .groupedFull : .centered)
+                               mode: formStyle == .grouped || (platform.isIOS && inListRow) || pills ? .groupedFull : .centered)
     }
 }
 
@@ -333,10 +335,14 @@ public struct _WheelDateHost: View {
     package let date: Date
     package let binding: _DateBinding
     package let components: DatePickerComponents
-    package init(date: Date, binding: _DateBinding, components: DatePickerComponents) {
+    /// In the compact picker's panel: the panel's size (the wheel centred in it, its band inset
+    /// from the panel's sides); nil for a wheel in the app's own layout.
+    package let panelSize: CGSize?
+    package init(date: Date, binding: _DateBinding, components: DatePickerComponents, panelSize: CGSize? = nil) {
         self.date = date
         self.binding = binding
         self.components = components
+        self.panelSize = panelSize
     }
     public typealias Body = Never
     public static func _makeNode(_ context: _NodeContext<_WheelDateHost>) -> TypedNode<_WheelDateHost> {

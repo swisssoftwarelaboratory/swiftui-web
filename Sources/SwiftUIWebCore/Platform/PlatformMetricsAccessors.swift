@@ -447,19 +447,22 @@ extension PlatformMetrics {
     package static var graphicalDateTimeSpacing: CGFloat { current.graphicalDateTimeSpacing }
     package static var wheelSize: CGSize { current.wheelSize }
     package static var wheelRowOffsets: [CGFloat] { current.wheelRowOffsets }
-    package static var wheelRowScales: [CGFloat] { current.wheelRowScales }
+    package static var wheelRowScaleX: CGFloat { current.wheelRowScaleX }
+    package static var wheelRowScalesY: [CGFloat] { current.wheelRowScalesY }
     package static var wheelRowAlphas: [Double] { current.wheelRowAlphas }
     package static var wheelFontSize: CGFloat { current.wheelFontSize }
     package static var wheelBandHeight: CGFloat { current.wheelBandHeight }
     package static var wheelBandInset: CGFloat { current.wheelBandInset }
     package static var wheelBandCornerRadius: CGFloat { current.wheelBandCornerRadius }
     package static var wheelBandFill: RGBA { current.wheelBandFill }
-    package static var wheelMonthLeading: CGFloat { current.wheelMonthLeading }
-    package static var wheelDayTrailing: CGFloat { current.wheelDayTrailing }
-    package static var wheelYearLeading: CGFloat { current.wheelYearLeading }
-    package static var wheelHourTrailing: CGFloat { current.wheelHourTrailing }
-    package static var wheelMinuteLeading: CGFloat { current.wheelMinuteLeading }
-    package static var wheelPeriodLeading: CGFloat { current.wheelPeriodLeading }
+    package static var timePopoverSize: CGSize { current.timePopoverSize }
+    package static var timePopoverBandInset: CGFloat { current.timePopoverBandInset }
+    package static var systemPickerCornerRadius: CGFloat { current.systemPickerCornerRadius }
+    package static var systemPickerFill: RGBA { current.systemPickerFill }
+    package static var timePopoverBelowGap: CGFloat { current.timePopoverBelowGap }
+    package static var timePopoverBelowShift: CGFloat { current.timePopoverBelowShift }
+    package static var timePopoverAboveOverlap: CGFloat { current.timePopoverAboveOverlap }
+    package static var timePopoverAboveShift: CGFloat { current.timePopoverAboveShift }
     package static var calendarHighlightAlpha: Double { current.calendarHighlightAlpha }
     package static var calendarHighlightInset: CGFloat { current.calendarHighlightInset }
     package static var calendarHighlightCornerRadius: CGFloat { current.calendarHighlightCornerRadius }

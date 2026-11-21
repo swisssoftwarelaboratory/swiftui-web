@@ -139,25 +139,59 @@ import SwiftUIWebHeadless
         }, iOS: true)
         #expect(runtime.probeFrames["date"]?.size == CGSize(width: 320, height: 216))
         let wheel = runtime.root.descendants(where: { $0 is WheelDateNode }).first as! WheelDateNode
-        #expect(wheel.text(for: .month, offset: 0) == "March" && wheel.text(for: .month, offset: -1) == "February" && wheel.text(for: .month, offset: 10) == nil)
+        // Months go round, as on iOS.
+        #expect(wheel.text(for: .month, offset: 0) == "March" && wheel.text(for: .month, offset: -1) == "February" && wheel.text(for: .month, offset: 10) == "January")
+        // A column lands on its row, and the binding changes, once its spring has settled.
+        var clock = 0.0
+        runtime.wheelClock = { clock }
+        func settle() {
+            for _ in 0..<90 {
+                _ = runtime.advanceAnimations(elapsed: 1.0 / 60)
+                clock += 1.0 / 60
+            }
+            runtime.layout(in: CGSize(width: 400, height: 300))
+        }
         let frame = runtime.probeFrames["date"]!
-        // A press one row above the band in the day column selects the 14th.
-        let day = CGPoint(x: frame.minX + 185, y: frame.midY - 31)
+        // A press one row below the band in the day column turns the 16th into it.
+        let day = CGPoint(x: frame.minX + 185, y: frame.midY + 31)
         runtime.pointerDown(at: day)
         runtime.pointerUp(at: day)
-        #expect(parts(model.date).day == 14)
-        // A drag of two rows up in the year column adds two years.
+        #expect(parts(model.date).day == 15)
+        settle()
+        #expect(parts(model.date).day == 16)
+        // A slow drag of two rows up in the year column adds two years.
         let year = CGPoint(x: frame.minX + 250, y: frame.midY)
         runtime.pointerDown(at: year)
-        runtime.pointerMoved(to: CGPoint(x: year.x, y: year.y - 62))
+        for k in 1...20 {
+            clock += 0.05
+            runtime.pointerMoved(to: CGPoint(x: year.x, y: year.y - CGFloat(k) * 3.1))
+        }
+        clock += 0.3
         runtime.pointerUp(at: CGPoint(x: year.x, y: year.y - 62))
+        settle()
         #expect(parts(model.date).year == 2027)
-        // The time wheel: the period column flips the half day (AM sits a row above the selected PM).
+        // The time wheel (en_US, 12-hour): the period column flips the half day (AM sits a row
+        // above the selected PM).
         let time = runtime.probeFrames["time"]!
         let am = CGPoint(x: time.minX + 216, y: time.midY - 31)
         runtime.pointerDown(at: am)
         runtime.pointerUp(at: am)
+        settle()
         #expect(parts(model.date).hour == 3)
+    }
+
+    @Test func theWheelFollowsTheLocale() {
+        let gb = runtime(DatePicker("", selection: .constant(Self.fixed), displayedComponents: .hourAndMinute).datePickerStyle(.wheel).labelsHidden()
+            .environment(\.locale, Locale(identifier: "en_GB")).environment(\.timeZone, TimeZone(secondsFromGMT: 0)!), iOS: true)
+        let gbWheel = gb.root.descendants(where: { $0 is WheelDateNode }).first as! WheelDateNode
+        // 24-hour: two columns, the hours zero-padded and going round the whole day.
+        #expect(gbWheel.columns.map(\.kind) == [.hour, .minute])
+        #expect(gbWheel.text(for: .hour, offset: 0) == "15" && gbWheel.text(for: .hour, offset: 9) == "00")
+        let de = runtime(DatePicker("", selection: .constant(Self.fixed), displayedComponents: .date).datePickerStyle(.wheel).labelsHidden()
+            .environment(\.locale, Locale(identifier: "de_CH")).environment(\.timeZone, TimeZone(secondsFromGMT: 0)!), iOS: true)
+        let deWheel = de.root.descendants(where: { $0 is WheelDateNode }).first as! WheelDateNode
+        #expect(deWheel.columns.map(\.kind) == [.day, .month, .year])
+        #expect(deWheel.text(for: .day, offset: 0) == "15." && deWheel.text(for: .month, offset: 7) == "Oktober")
     }
 
     @Test func localesOrderTheFieldAndBothGraphicalComponentsShareARow() {
