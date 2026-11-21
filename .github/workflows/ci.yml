@@ -24,6 +24,8 @@ jobs:
           swiftly install $SWIFT_VERSION --use --assume-yes
       - name: Progress outputs are current (Docs/TODO.md from Docs/todo.json)
         run: python3 scripts/gen-progress.py --check
+      - name: Build scripts' tests (an app's Info dictionary, scripts/info_plist.py)
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Native tests
         run: . ~/.swiftly/env.sh && swift test
       - name: UIKitWeb tests

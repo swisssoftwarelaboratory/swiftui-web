@@ -102,7 +102,10 @@ extension Runtime {
     /// The host's image loader; without one every `AsyncImage` fails.
     public var imageLoader: (any _ImageLoading)? {
         get { _imageLoader }
-        set { _imageLoader = newValue }
+        set {
+            _imageLoader = newValue
+            _PhotoLibrary.prefetch = newValue.map { loader in { [weak loader] url in _ = loader?.state(for: url) } }
+        }
     }
 
     /// Tells the runtime a load finished: every `AsyncImage` re-evaluates its phase.

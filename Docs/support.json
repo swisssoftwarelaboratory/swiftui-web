@@ -2228,7 +2228,7 @@
         {
           "api": "Bundle",
           "status": "partial",
-          "notes": "`main`, `init?(path:)`, `init?(url:)`, `init(for:)` (one bundle: the app), `url(forResource:withExtension:subdirectory:)` and `path(forResource:ofType:)` relative to the host's assets directory, `localizedString(forKey:value:table:)` answering the key, `bundleIdentifier` and `infoDictionary` from the host; SwiftPM's generated `Bundle.module` compiles, `Color(_:bundle:)` and `Image(_:bundle:)` take the label on wasm; a package target's processed resources are not yet copied into the bundle (2026-10-12)",
+          "notes": "`main`, `init?(path:)`, `init?(url:)`, `init(for:)` (one bundle: the app), `url(forResource:withExtension:subdirectory:)` and `path(forResource:ofType:)` relative to the host's assets directory, `localizedString(forKey:value:table:)` answering the key, `bundleIdentifier`, `infoDictionary` and `object(forInfoDictionaryKey:)` from the app's Xcode target as Xcode builds them (its `INFOPLIST_FILE` and `INFOPLIST_KEY_*` settings, `scripts/info_plist.py`, 2026-11-20); SwiftPM's generated `Bundle.module` compiles, `Color(_:bundle:)` and `Image(_:bundle:)` take the label on wasm; a package target's processed resources are not yet copied into the bundle (2026-10-12)",
           "noFixture": "Paths, not a screen; WasmFoundationTests."
         },
         {

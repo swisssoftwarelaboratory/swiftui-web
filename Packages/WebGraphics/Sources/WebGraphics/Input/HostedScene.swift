@@ -40,6 +40,17 @@ public protocol HostedScene: AnyObject {
     /// and home indicator, which the root view is laid out inside unless it extends into it.
     /// Set by hosts that know it (a page in a phone's browser, a drawn phone around the app).
     var hostSafeAreaInsets: [CGFloat] { get set }
+    /// Whether the scene draws its own on-screen keyboard while a text field has focus (the
+    /// iPhone look on a computer, which has no on-screen keyboard of its own; new-website#648).
+    var drawsSoftwareKeyboard: Bool { get set }
+    /// The host's edit of the focused input element for the drawn keyboard (`SoftwareKeyboard`):
+    /// returns false when it could not, and the scene edits the field itself.
+    var softwareKeyboardEditHandler: (@MainActor @Sendable (SoftwareKeyboardEdit, Int) -> Bool)? { get set }
+    /// A real key went down (the DOM `key`), or every one is up: the drawn key follows.
+    func softwareKeyboardHardwareKeyDown(_ key: String)
+    func softwareKeyboardHardwareKeysUp()
+    /// Whether the drawn keyboard covers `point` (points).
+    func softwareKeyboardContains(_ point: CGPoint) -> Bool
     /// Whether the page is visible, and whether its window has focus (the scene phase).
     var hostIsVisible: Bool { get set }
     var hostIsFocused: Bool { get set }
@@ -226,6 +237,27 @@ public protocol HostedScene: AnyObject {
     /// Platform elements the host places over the painted content after a render: a video
     /// player, a web view. The scene paints a stand-in underneath for hosts without them.
     func hostElements() -> [HostElement]
+
+    // MARK: The drawn iPhone (new-website#651)
+
+    /// Whether the scene draws an iPhone's own screen around the app: status bar, island, home
+    /// indicator, the home screen and lock screen behind and over it, and the moves between
+    /// them, which take the presses that start at the screen's edges. The host draws the
+    /// frame and the side button around the canvas and sets this before the first frame.
+    var drawsPhone: Bool { get set }
+    /// The viewer's clock as their own clock writes it, without AM or PM ("9:41", "21:41"),
+    /// and the date as the lock screen writes it ("Friday 20 November"), for the status bar and
+    /// the lock screen.
+    var phoneClock: (@MainActor @Sendable () -> (time: String, date: String))? { get set }
+    /// The app's name under its icon on the home screen.
+    var phoneAppName: String { get set }
+    /// The frame's side button was pressed: the screen goes dark on its lock screen, or wakes.
+    func phoneSideButtonPressed()
+    /// The host's once-a-second tick: the scene paints again when the clock's text changed.
+    func phoneClockTick()
+    /// For probes (`__swiftuiwebDebug.phone(action)`): "banner" drops a banner in, "side"
+    /// presses the side button; every call returns where the phone stands, as `key=value` lines.
+    func phoneDebug(_ action: String) -> String
 }
 
 /// Where a scroll view a host's native scroller drives stands (`HostedScene.nativeScrollTarget`):
@@ -350,6 +382,25 @@ public struct ColorPanelRequest: Equatable, Sendable {
         self.supportsOpacity = supportsOpacity
         self.anchor = anchor
     }
+}
+
+/// Scenes without a drawn iPhone draw none.
+extension HostedScene {
+    public var drawsPhone: Bool {
+        get { false }
+        set {}
+    }
+    public var phoneClock: (@MainActor @Sendable () -> (time: String, date: String))? {
+        get { nil }
+        set {}
+    }
+    public var phoneAppName: String {
+        get { "" }
+        set {}
+    }
+    public func phoneSideButtonPressed() {}
+    public func phoneClockTick() {}
+    public func phoneDebug(_ action: String) -> String { "" }
 }
 
 extension HostedScene {

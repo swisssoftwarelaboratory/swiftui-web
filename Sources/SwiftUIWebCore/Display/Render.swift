@@ -14,6 +14,17 @@ extension Runtime {
     }
 
     private func render(scale: CGFloat, keepingSegments: Bool) -> DisplayList {
+        guard let phone = drawnPhone else { return renderApp(scale: scale, keepingSegments: keepingSegments) }
+        // Inside the drawn iPhone: the app's own list among the phone's places. Stored segments
+        // only while the app fills the screen unmoved (a card or a zoom moves what they hold).
+        let still = phone.appIsFull && phone.coverAmount == 0
+        let app = phone.appIsSeen ? renderApp(scale: scale, keepingSegments: keepingSegments && still) : DisplayList()
+        var list = DisplayList()
+        phone.compose(app: app, into: &list)
+        return list
+    }
+
+    private func renderApp(scale: CGFloat, keepingSegments: Bool) -> DisplayList {
         recordingSegments = keepingSegments
         defer { recordingSegments = false }
         // The root's profile is current from the first node on: a node whose paint override
@@ -32,6 +43,7 @@ extension Runtime {
         }
         toolbar?.paint(into: &list, context: context)
         paintPresentations(into: &list, context: context)
+        if systemKeyboard.isVisible { systemKeyboard.paint(into: &list, context: context) }
         paintFocusRing(into: &list, context: context)
         paintTooltip(into: &list, context: context)
         // The dragged copy paints its views a second time, elsewhere: never as their segments.

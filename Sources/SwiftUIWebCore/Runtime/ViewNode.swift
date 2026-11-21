@@ -309,7 +309,7 @@ open class ViewNode {
         // what it changed and the path to it, not the whole window (new-website#216: every
         // keystroke placed all four tabs of an app, 20 ms).
         let key = PlacementKey(proposal: proposal, size: frame.size, overlap: safeAreaOverlap, extension: safeAreaExtension,
-                               platformOverlap: platformSafeAreaOverlap, generation: runtime.layoutGeneration)
+                               platformOverlap: platformSafeAreaOverlap, keyboard: keyboardSafeAreaDepth, generation: runtime.layoutGeneration)
         if placementIsCurrent, lastPlacement == key, presentation == nil, runtime.mayKeepPlacements {
             runtime.keptPlacements += 1
             return
@@ -329,6 +329,7 @@ open class ViewNode {
         var overlap: EdgeInsets
         var `extension`: EdgeInsets
         var platformOverlap: EdgeInsets
+        var keyboard: EdgeInsets
         var generation: UInt64
     }
     private var lastPlacement: PlacementKey?
@@ -532,10 +533,22 @@ open class ViewNode {
     package var safeAreaOverlap = EdgeInsets()
     package var safeAreaExtension = EdgeInsets()
     package var platformSafeAreaOverlap = EdgeInsets()
+    /// How deep each region of the safe area reaches from the screen's edges
+    /// (`ignoresSafeArea(_:edges:)`, new-website#648): the container's (the status bar, the
+    /// home indicator, bars and insets a view adds) and the keyboard's. The unsafe region is
+    /// the deeper of the two, never their sum (iOS 27: the home indicator's 34 under a 328
+    /// keyboard is 328); ignoring one leaves the other.
+    package var containerSafeAreaDepth = EdgeInsets()
+    package var keyboardSafeAreaDepth = EdgeInsets()
 
     /// The insets this node adds to the safe area of its children (`safeAreaInset`, a navigation
     /// bar, the host's own safe area); zero for other nodes.
     package func providedSafeAreaInsets(for child: ViewNode) -> EdgeInsets { EdgeInsets() }
+
+    /// The insets this node adds by region: the container's (the root adds the keyboard's too).
+    package func providedRegionSafeAreaInsets(for child: ViewNode) -> (container: EdgeInsets, keyboard: EdgeInsets) {
+        (providedSafeAreaInsets(for: child), EdgeInsets())
+    }
 
     /// Sets `child`'s safe area from its frame in this node: per edge, a child edge inside the
     /// safe boundary gets nothing; one on the boundary may extend through the whole unsafe
@@ -544,12 +557,14 @@ open class ViewNode {
     /// put, one whose frame touches it extends under the bar, through a frame or padding on the
     /// other edges).
     package func assignSafeArea(to child: ViewNode) {
-        assignSafeArea(to: child, in: CGRect(origin: .zero, size: frame.size), own: providedSafeAreaInsets(for: child))
+        assignSafeArea(to: child, in: CGRect(origin: .zero, size: frame.size), own: providedSafeAreaInsets(for: child),
+                       regions: providedRegionSafeAreaInsets(for: child))
     }
 
     /// The rule above against `bounds` (in this node's space) with `own` unsafe depths at its
     /// edges: the root places a presentation's content in the presentation's own area.
-    package final func assignSafeArea(to child: ViewNode, in bounds: CGRect, own: EdgeInsets) {
+    package final func assignSafeArea(to child: ViewNode, in bounds: CGRect, own: EdgeInsets,
+                                      regions: (container: EdgeInsets, keyboard: EdgeInsets)? = nil) {
         let frame = child.frame.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
         let size = bounds.size
         func edge(_ distance: CGFloat, boundary: CGFloat, depth: CGFloat) -> (overlap: CGFloat, reach: CGFloat) {
@@ -558,7 +573,7 @@ open class ViewNode {
             let inside = boundary - distance
             return (min(depth, inside), max(0, depth - inside))
         }
-        func assign(_ overlap: EdgeInsets, _ reach: EdgeInsets) -> (EdgeInsets, EdgeInsets) {
+        func assign(_ overlap: EdgeInsets, _ reach: EdgeInsets, own: EdgeInsets = own) -> (EdgeInsets, EdgeInsets) {
             let top = edge(frame.minY, boundary: overlap.top + own.top, depth: overlap.top + own.top + reach.top)
             let leading = edge(frame.minX, boundary: overlap.leading + own.leading, depth: overlap.leading + own.leading + reach.leading)
             let bottom = edge(size.height - frame.maxY, boundary: overlap.bottom + own.bottom, depth: overlap.bottom + own.bottom + reach.bottom)
@@ -568,6 +583,12 @@ open class ViewNode {
         }
         (child.safeAreaOverlap, child.safeAreaExtension) = assign(safeAreaOverlap, safeAreaExtension)
         child.platformSafeAreaOverlap = assign(platformSafeAreaOverlap, safeAreaExtension).0
+        let regions = regions ?? (own, EdgeInsets())
+        func plus(_ a: EdgeInsets, _ b: EdgeInsets) -> EdgeInsets {
+            EdgeInsets(top: a.top + b.top, leading: a.leading + b.leading, bottom: a.bottom + b.bottom, trailing: a.trailing + b.trailing)
+        }
+        child.containerSafeAreaDepth = plus(containerSafeAreaDepth, regions.container)
+        child.keyboardSafeAreaDepth = plus(keyboardSafeAreaDepth, regions.keyboard)
     }
 
     /// Whether this node reads its own geometry during layout (GeometryReader, probes): a scroll

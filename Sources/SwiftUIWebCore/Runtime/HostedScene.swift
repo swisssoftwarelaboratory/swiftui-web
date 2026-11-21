@@ -18,7 +18,57 @@ extension Runtime: HostedScene {
         var animating = advanceScrollAnimations(elapsed: elapsed)
         if advanceAnimations(elapsed: elapsed) { animating = true }
         if !platformHosts.isEmpty, advancePlatformHosts(elapsed: elapsed) { animating = true }
+        if systemKeyboard.isUp || systemKeyboard.isVisible, systemKeyboard.advance(elapsed: elapsed) { animating = true }
+        if let phone = drawnPhone, phone.advance(elapsed: elapsed) { animating = true }
         return animating
+    }
+
+    // MARK: The drawn iPhone (new-website#651)
+
+    public var drawsPhone: Bool {
+        get { drawnPhone != nil }
+        set {
+            guard newValue != (drawnPhone != nil) else { return }
+            if newValue {
+                let phone = DrawnPhone(runtime: self)
+                drawnPhone = phone
+                phone.reset()
+            } else {
+                drawnPhone = nil
+            }
+            phoneDidChange()
+        }
+    }
+
+    public var phoneClock: (@MainActor @Sendable () -> (time: String, date: String))? {
+        get { drawnPhone?.clock }
+        set {
+            drawnPhone?.clock = newValue
+            drawnPhone?.readClock()
+        }
+    }
+
+    public var phoneAppName: String {
+        get { drawnPhone?.appName ?? "" }
+        set { drawnPhone?.appName = newValue }
+    }
+
+    public func phoneSideButtonPressed() {
+        drawnPhone?.sideButton()
+    }
+
+    public func phoneClockTick() {
+        if drawnPhone?.readClock() == true { requestRepaint() }
+    }
+
+    public func phoneDebug(_ action: String) -> String {
+        guard let phone = drawnPhone else { return "" }
+        switch action {
+        case "banner": phone.showBanner()
+        case "side": phone.sideButton()
+        default: break
+        }
+        return phone.debugDescription + "\nscenePhase=\(scenePhase)"
     }
 
     /// Animations begun in this frame start when it is shown (`HostedScene`).

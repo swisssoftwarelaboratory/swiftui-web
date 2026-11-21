@@ -207,7 +207,7 @@ let package = Package(
         // store, no photo library): `simd`'s functions over the standard library's vectors,
         // `Metal` with no device, `QuartzCore` (UIKitWeb's layers, and a Metal layer with no
         // drawable), `CoreAudio` (AudioToolbox's CoreAudioTypes), `HealthKit` with no store,
-        // `PhotosUI` with an inert picker. Apps take the paths they have for missing hardware.
+        // `PhotosUI` with the drawn phone's photos picker. Apps take the paths they have for missing hardware.
         .target(name: "simd", swiftSettings: framework),
         .target(name: "Metal", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(

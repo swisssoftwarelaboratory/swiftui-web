@@ -72,16 +72,24 @@ light-blue-to-grey vertical gradient over a faint inner shadow, 13 pt numerals a
 macOS 26.6 drew those fields 24 tall and 137.5 wide (the 26.2 goldens: 22 and 160), so the
 fixture stays out of the golden set; `DatePickerEditingTests` hold the formats.
 
-## iOS wheel (iPhone SE simulator, iOS 26, `ios/datepicker/wheel`, 2026-10-04; approximate)
+## iOS wheel (iOS 27, iPhone 16, new-website#665, 2026-11-21)
 
-A 320 × 216 picker: the selected row on a 30 pt band 9 in from both sides ((115, 115, 128) at
-8 %, 12 pt corners), its 23 pt labels in the label colour; the rows above and below sit on a
-cylinder 31, 58.5 and 76.5 from the centre, drawn at 90 / 80 / 70 % size and 35 / 33 / 19 %
-black. The date's columns: month names from 28.5, days right-aligned at 192.5, years from 230;
-the time's: hours right-aligned at 94, minutes from 142, the period from 200.5. A press on a
-neighbouring row selects it; a vertical drag turns the column a row every 31 pt. The capture
-shows the time in the simulator's own zone (the wheel ignores `environment(\.timeZone)` on
-iOS), so the time column's digits are compared loosely.
+A 320 × 216 picker: the selected row on a 32 pt band 9 in from both sides ((115, 115, 128) at
+8 %, 12 pt corners), its 23 pt labels full size and in the label colour. Outside the band the
+rows are 0.873 as wide and, turned away on a cylinder 31, 58.5 and 76.5 from the centre,
+0.827 / 0.636 / 0.38 as tall at 35 / 33 / 19 % black, each column's rows shrinking towards
+their own pivot; a row crossing the band's edge is split between the two looks, as on iOS.
+The columns follow the locale (`WheelDateNode.columns`, measured from the simulator with a
+probe app): en_US "5 | 30 | AM" and "October | 13 | 2026"; en_GB and de_CH 24-hour "05 | 30";
+dates day first ("13 | October | 2026", German "13. | Oktober | 2026", French months);
+date and time together "Tue 13 Oct | 05 | 30" (en_US "Tue Oct 13 | 5 | 30 | AM"), today as
+"Today". Hours, minutes, months and days go round; a 12-hour column turns the period over
+between 11 and 12. A finger turns a column as UIPickerView does: it follows the drag, coasts
+from the finger's speed with friction tuned to stop on a row (or springs onto the nearest,
+critical ω 18), and the binding changes when the column comes to rest; a press on a row above
+or below turns it into the band. iOS 27's golden harness draws the wheels blank, so
+`ios/datepicker/wheel` stays the iOS 26 capture; the iOS 27 comparison was made against
+simulator screenshots of the same pickers.
 
 ## Verification (2026-09-04; 2026-10-04 for the looks)
 
@@ -97,12 +105,18 @@ range calendar and both graphical components): Tier A exact, Tier B 4.0 % and Ti
 exact, Tier B 3.7 % and Tier C 3.7 % (approximate). `DatePickerEditingTests` cover typing,
 the compact popover, the dimmed days, the clock's hands, the wheel and the locales.
 
-## iOS (iPhone SE simulator, `ios/datepicker/compact`, 2026-09-18)
+## iOS compact (iOS 27, `ios/datepicker/compact` regenerated 2026-11-21, new-website#665)
 
-The compact picker is iOS's pills (`datePills`): in a form row that spans its width, the label
-leading and one tinted pill per value at the trailing edge ("Mar 15, 2025", "11:09 AM"), 38.5
-or 40 tall, the row 30 more. Measurements in `Docs/elements/iOS.md`. A tap on a pill does not
-open iOS's calendar popover yet (`sw-ios-presentation-rest`).
+The compact picker is iOS's pills (`datePills`): the label leading and one capsule per value at
+the trailing edge, in a form row or anywhere else, 34.5 tall for a date alone and 36 with a
+time; texts in the locale's way ("Mar 15, 2025" and "11:09\u{202F}AM" in en_US, "13 Oct 2026"
+and "05:30" in en_GB, "13.10.2026" in German). A press on the time pill opens iOS 27's frosted
+panel (230 × 204, 26 pt corners) with the time wheel in it, under a pill in the upper half
+(28 below it) and over one lower down (its bottom 11 below the pill's top), and the pill's
+text turns to the tint while it is open; a press outside closes it. A pill an app lays an
+almost invisible picker over (Paulo's "Started 06:40") opens it the same way: a background's
+or overlay's views now take presses and reach accessibility, as in SwiftUI. The date pill
+still opens the macOS-style calendar in that panel.
 
 ## macOS 27 (regenerated 2026-10-11 under decision 0019)
 
@@ -114,6 +128,7 @@ Docs/elements/DarkMode.md (`dark/chrome`). Tier A exact, Tier C `basic` 2.5 %.
 
 ## Not yet covered
 
-Calendars other than the Gregorian, localised month and weekday names, the compact popover's
-real look, the wheel's inertia and its real perspective, the exact hand widths and the stepper's
-corner radius (approximate), typing on iOS.
+Calendars other than the Gregorian; month names beyond English, German, French and Italian;
+iOS's own graphical calendar (the date pill's panel and `.graphical` on iOS); the panel growing
+out of its pill and back; the wheels' slight sideways perspective; the exact hand widths and the
+stepper's corner radius (approximate); typing on iOS.

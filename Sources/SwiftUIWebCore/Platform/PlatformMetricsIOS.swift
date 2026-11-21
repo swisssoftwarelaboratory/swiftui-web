@@ -196,6 +196,9 @@ extension PlatformMetricsTable {
         t.dialogButtonFillAlpha = 31.0 / 255                            // (223) over 254
         t.tabBarAtBottom = true
         t.datePills = true
+        t.datePillCornerRadius = 100                                     // iOS 27: capsules (new-website#665)
+        t.datePillHeight = 34.5
+        t.dateTimePillHeight = 36
         t.listSelectionInset = 0
         t.listSelectionCornerRadius = 0
         t.listSelectionFill = RGBA(r: 209, g: 209, b: 214)

@@ -128,8 +128,13 @@ extension Runtime {
     /// (`pressActsAsFinger`) also starts tracking a pan of the scroll views under it; `time` is
     /// in seconds (any monotonic clock).
     public func pointerDown(at point: CGPoint, type: PointerType = .mouse, time: Double = 0) {
+        // The drawn iPhone takes presses at its edges and everywhere the app is not in front.
+        if let phone = drawnPhone, !phone.forwarding, phone.pointerDown(at: point, type: type, time: time) { return }
         lastPointerTime = time
         lastPointerType = type
+        // A press on the drawn keyboard is its own (new-website#648).
+        keyboardOwnsPointer = systemKeyboard.pointerDown(at: point)
+        if keyboardOwnsPointer { return }
         if pressActsAsFinger(type) { beginPan(at: point, time: time) }
         // A touch that stopped a decelerating scroll view belongs to it, not to a control.
         if pan?.active == true { return }
@@ -195,8 +200,17 @@ extension Runtime {
 
     /// Pointer moved (pressed or not): drives presses, pans and hovering.
     public func pointerMoved(to point: CGPoint, time: Double = 0) {
+        if let phone = drawnPhone, !phone.forwarding {
+            if phone.pointerMoved(to: point, time: time) { return }
+            // Hovering over the phone's places reaches nothing in the app.
+            if !phone.appTakesInput, pressedNode == nil, pan == nil { return }
+        }
         lastPointerTime = time
         pointerPosition = point
+        if keyboardOwnsPointer {
+            systemKeyboard.pointerMoved(to: point)
+            return
+        }
         continuePan(to: point, time: time)
         if dragSession != nil {
             updateDrag(to: point)
@@ -215,6 +229,7 @@ extension Runtime {
 
     /// The pointer left the window: every hover ends.
     public func pointerLeft() {
+        drawnPhone?.pointerCancelled()
         pointerPosition = CGPoint(x: -1, y: -1)
         updateHover(at: nil)
     }
@@ -227,7 +242,13 @@ extension Runtime {
     /// Pointer released at `point`. Activates the pressed node if the pointer is still over it
     /// and no pan took the touch.
     public func pointerUp(at point: CGPoint, time: Double = 0) {
+        if let phone = drawnPhone, !phone.forwarding, phone.pointerUp(at: point, time: time) { return }
         lastPointerTime = time
+        if keyboardOwnsPointer {
+            keyboardOwnsPointer = false
+            systemKeyboard.pointerUp(at: point)
+            return
+        }
         pendingDrag = nil
         if dragSession != nil {
             endDrag(at: point)

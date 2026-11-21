@@ -215,19 +215,32 @@ package final class DateFieldNode: LeafNode<_DateFieldHost>, _Interactive, _KeyH
     private var pillFont: ResolvedFont { _fontFor(size: PlatformMetrics.dateTextSize) }
     private var pillHeight: CGFloat { view.components.contains(.hourAndMinute) ? PlatformMetrics.dateTimePillHeight : PlatformMetrics.datePillHeight }
 
+    /// The pills' texts in the locale's way, as iOS 27 writes them: en_GB "13 Oct 2026" and
+    /// "05:30", en_US "Oct 13, 2026" and "5:30 AM", German "13.10.2026", French "13 oct. 2026".
     package var pillTexts: [String] {
         let parts = _DateMath.parts(of: view.date, calendar: calendar)
+        let style = WheelDateNode.Style(locale: environment.locale)
+        func two(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
         var result: [String] = []
         if view.components.contains(.date) {
-            // English short months: the environment's calendar carries no locale (en_US is the harness's).
-            let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-            let month = parts.month >= 1 && parts.month <= 12 ? months[parts.month - 1] : "\(parts.month)"
-            result.append("\(month) \(parts.day), \(parts.year)")
+            let month = _DateMath.monthAbbreviations[min(max(parts.month, 1), 12) - 1]
+            switch style.language {
+            case "de", "da", "nb", "fi", "cs", "pl", "ru", "tr": result.append("\(parts.day).\(two(parts.month)).\(parts.year)")
+            case "fr":
+                let months = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+                result.append("\(parts.day) \(months[parts.month - 1]) \(parts.year)")
+            default:
+                result.append(style.monthFirst ? "\(month) \(parts.day), \(parts.year)" : "\(parts.day) \(month) \(parts.year)")
+            }
         }
         if view.components.contains(.hourAndMinute) {
-            let hour12 = parts.hour % 12 == 0 ? 12 : parts.hour % 12
-            let minute = parts.minute < 10 ? "0\(parts.minute)" : "\(parts.minute)"
-            result.append("\(hour12):\(minute) \(parts.hour < 12 ? "AM" : "PM")")
+            if style.twentyFourHour {
+                result.append("\(two(parts.hour)):\(two(parts.minute))")
+            } else {
+                let hour12 = parts.hour % 12 == 0 ? 12 : parts.hour % 12
+                // A narrow no-break space before the period, as iOS writes it.
+                result.append("\(hour12):\(two(parts.minute))\u{202F}\(parts.hour < 12 ? "AM" : "PM")")
+            }
         }
         return result
     }
@@ -299,11 +312,13 @@ package final class DateFieldNode: LeafNode<_DateFieldHost>, _Interactive, _KeyH
             let font = pillFont
             let lineHeight = environment.platformProfile.systemFontMetrics(for: font).lineHeight
             let color = (environment.foregroundColor ?? .primary).resolve(in: environment)
-            for (text, rect) in pillRects {
+            let open = popover.flatMap { popover in runtime.presentations.contains { $0 === popover } ? openPill : nil }
+            for (index, (text, rect)) in pillRects.enumerated() {
                 let pill = context.absoluteRect(rect)
-                if enabled { list.append(.fillRRect(pill, cornerRadius: PlatformMetrics.datePillCornerRadius, black(PlatformMetrics.datePillAlpha))) }
+                // iOS 27: capsules; the pill whose picker is open shows its text in the tint.
+                if enabled { list.append(.fillRRect(pill, cornerRadius: min(PlatformMetrics.datePillCornerRadius, pill.height / 2), black(PlatformMetrics.datePillAlpha))) }
                 let origin = CGPoint(x: pill.minX + PlatformMetrics.datePillPadding, y: pill.minY + (pill.height - lineHeight) / 2)
-                _drawText(text, font: font, lineTop: origin, color: color, into: &list)
+                _drawText(text, font: font, lineTop: origin, color: open == index ? Color.accentColor.resolve(in: environment) : color, into: &list)
             }
             return
         }
@@ -393,6 +408,13 @@ package final class DateFieldNode: LeafNode<_DateFieldHost>, _Interactive, _KeyH
 
     package func pressEnded(inside: Bool, at point: CGPoint) {
         guard inside, environment.isEnabled else { return }
+        // Presses arrive outside layout: read this picker's own platform's metrics.
+        let previous = PlatformMetrics.select(environment.platformProfile)
+        defer { PlatformMetrics.current = previous }
+        if pills {
+            openPicker(at: point)
+            return
+        }
         if let stepper = stepperRect, stepper.contains(point) {
             step(point.y < stepper.midY ? 1 : -1)
             return
@@ -414,6 +436,33 @@ package final class DateFieldNode: LeafNode<_DateFieldHost>, _Interactive, _KeyH
             select(slots.first?.component)
         }
         runtime.focus(semanticsIdentifier: identifier)
+        runtime.setNeedsDisplay()
+    }
+
+    /// The pill whose picker is open (0 the first).
+    private var openPill = 0
+
+    /// iOS: a pressed pill opens its picker over the app in the iPhone's frosted panel: the time
+    /// wheel for a time, the calendar for a date (`PresentationNode.isSystemPicker`).
+    private func openPicker(at point: CGPoint) {
+        if let popover, runtime.presentations.contains(where: { $0 === popover }) { return }
+        let rects = pillRects
+        let index = rects.firstIndex { point.x < $0.rect.maxX + PlatformMetrics.datePillGap / 2 } ?? max(0, rects.count - 1)
+        let isTime = view.components.contains(.hourAndMinute) && (index == rects.count - 1)
+        openPill = index
+        let content: AnyView = isTime
+            ? AnyView(_WheelDateHost(date: view.date, binding: view.binding, components: .hourAndMinute, panelSize: PlatformMetrics.timePopoverSize))
+            : AnyView(_GraphicalDatePicker(date: view.date, binding: view.binding, components: .date).padding(PlatformMetrics.defaultSpacing))
+        var source = rects.indices.contains(index) ? rects[index].rect : CGRect(origin: .zero, size: frame.size)
+        source.origin.y = 0
+        popover = runtime.present(kind: .popover(arrowEdge: .bottom, anchor: .rect(.rect(source))), view: content, environment: environment, anchor: self) { [weak self] in
+            guard let self else { return }
+            popover = nil
+            // Re-read so a binding nobody observes still shows the picked time.
+            view = _DateFieldHost(date: view.binding.get(), binding: view.binding, components: view.components, stepper: view.stepper, opensPopover: view.opensPopover)
+            runtime.setNeedsDisplay()
+        }
+        popover?.isSystemPicker = true
         runtime.setNeedsDisplay()
     }
 
@@ -825,179 +874,5 @@ package final class ClockNode: LeafNode<_ClockHost>, _Interactive {
             list.append(.strokePath(hand, style: StrokeStyle(lineWidth: width, lineCap: .round), primary))
         }
         list.append(.fillPath(circle(PlatformMetrics.clockCapRadius), primary))
-    }
-}
-
-// MARK: - The iOS wheel
-
-/// iOS's wheel picker (ios/datepicker/wheel): three columns on a cylinder, the selected row on a
-/// band across the middle, the rows above and below shrinking and fading (31, 58.5 and 76.5 pt
-/// from the centre). A press on a neighbouring row selects it; a vertical drag turns the column
-/// a row every 31 pt.
-@MainActor
-package final class WheelDateNode: LeafNode<_WheelDateHost>, _Interactive {
-    private let identifier: Int
-    private var calendar: Calendar { environment._gregorian }
-    private var dragColumn: Calendar.Component?
-    private var dragStart: CGPoint = .zero
-    private var dragSteps = 0
-
-    override package init(_ context: _NodeContext<_WheelDateHost>) {
-        nextDateIdentifier += 1
-        identifier = nextDateIdentifier
-        super.init(context)
-    }
-
-    override package func computeSizeThatFits(_ proposal: ProposedViewSize) -> CGSize { PlatformMetrics.wheelSize }
-    override package var layoutSpacing: ViewSpacing { .plainControl }
-    package var dragAxes: Axis.Set { .vertical }
-
-    private var isTime: Bool { !view.components.contains(.date) && view.components.contains(.hourAndMinute) }
-
-    /// The columns: the component, how its texts align, and the x of that edge.
-    package var columns: [(component: Calendar.Component, trailing: Bool, x: CGFloat)] {
-        isTime
-            ? [(.hour, true, PlatformMetrics.wheelHourTrailing), (.minute, false, PlatformMetrics.wheelMinuteLeading), (.era, false, PlatformMetrics.wheelPeriodLeading)]
-            : [(.month, false, PlatformMetrics.wheelMonthLeading), (.day, true, PlatformMetrics.wheelDayTrailing), (.year, false, PlatformMetrics.wheelYearLeading)]
-    }
-
-    /// The text of a column's row `offset` rows from the selection (nil past the column's ends).
-    package func text(for component: Calendar.Component, offset: Int) -> String? {
-        let parts = _DateMath.parts(of: view.date, calendar: calendar)
-        switch component {
-        case .month:
-            let month = parts.month + offset
-            guard month >= 1, month <= 12 else { return nil }
-            return _DateMath.monthNames[month - 1]
-        case .day:
-            let day = parts.day + offset
-            guard day >= 1, day <= _DateMath.daysInMonth(year: parts.year, month: parts.month, calendar: calendar) else { return nil }
-            return "\(day)"
-        case .year:
-            return "\(parts.year + offset)"
-        case .hour:
-            let hour12 = parts.hour % 12 == 0 ? 12 : parts.hour % 12
-            let hour = ((hour12 - 1 + offset) % 12 + 12) % 12 + 1
-            return "\(hour)"
-        case .minute:
-            let minute = ((parts.minute + offset) % 60 + 60) % 60
-            return minute < 10 ? "0\(minute)" : "\(minute)"
-        case .era:
-            let period = (parts.hour < 12 ? 0 : 1) + offset
-            guard period == 0 || period == 1 else { return nil }
-            return period == 0 ? "AM" : "PM"
-        default: return nil
-        }
-    }
-
-    override package func paintSelf(into list: inout DisplayList, context: PaintContext) {
-        let bounds = absoluteBounds(context)
-        list.append(.save)
-        list.append(.clipRect(bounds))
-        let band = CGRect(x: bounds.minX + PlatformMetrics.wheelBandInset, y: bounds.midY - PlatformMetrics.wheelBandHeight / 2,
-                          width: bounds.width - 2 * PlatformMetrics.wheelBandInset, height: PlatformMetrics.wheelBandHeight)
-        list.append(.fillRRect(band, cornerRadius: PlatformMetrics.wheelBandCornerRadius, PlatformMetrics.wheelBandFill))
-        let font = _fontFor(size: PlatformMetrics.wheelFontSize)
-        let line = environment.platformProfile.systemFontMetrics(for: font).lineHeight
-        let primary = Color.primary.resolve(in: environment)
-        let offsets = PlatformMetrics.wheelRowOffsets
-        for column in columns {
-            for offset in -(offsets.count - 1)...(offsets.count - 1) {
-                guard let text = text(for: column.component, offset: offset) else { continue }
-                let distance = abs(offset)
-                let scale = PlatformMetrics.wheelRowScales[distance]
-                let centerY = bounds.midY + (offset < 0 ? -1 : 1) * offsets[distance]
-                let width = _textWidth(text, font: font) * scale
-                let x = column.trailing ? bounds.minX + column.x - width : bounds.minX + column.x
-                let color = distance == 0 ? primary : primary.multiplyingAlpha(by: PlatformMetrics.wheelRowAlphas[distance])
-                if scale == 1 {
-                    _drawText(text, font: font, lineTop: CGPoint(x: x, y: centerY - line / 2), color: color, into: &list)
-                } else {
-                    list.append(.save)
-                    list.append(.concat(CGAffineTransform(translationX: x, y: centerY).scaledBy(x: scale, y: scale)))
-                    _drawText(text, font: font, lineTop: CGPoint(x: 0, y: -line / 2), color: color, into: &list)
-                    list.append(.restore)
-                }
-            }
-        }
-        list.append(.restore)
-    }
-
-    // MARK: Interaction
-
-    private func column(at point: CGPoint) -> Calendar.Component? {
-        let columns = columns
-        // Column bands split midway between the columns' anchor edges.
-        for (index, column) in columns.enumerated() {
-            let next = index + 1 < columns.count ? columns[index + 1].x : frame.width
-            if point.x < (column.x + next) / 2 + (column.trailing ? 0 : 20) { return column.component }
-        }
-        return columns.last?.component
-    }
-
-    package func pressBegan(at point: CGPoint) {
-        guard environment.isEnabled else { return }
-        dragColumn = column(at: point)
-        dragStart = point
-        dragSteps = 0
-    }
-
-    package func pressBegan() {}
-
-    package func pressMoved(to point: CGPoint) {
-        guard let column = dragColumn else { return }
-        // Dragging down brings the rows above into the band: the value decreases.
-        let steps = Int(((dragStart.y - point.y) / PlatformMetrics.wheelRowOffsets[1]).rounded())
-        if steps != dragSteps {
-            turn(column, by: steps - dragSteps)
-            dragSteps = steps
-        }
-    }
-
-    package func pressEnded(inside: Bool) { dragColumn = nil }
-
-    package func pressEnded(inside: Bool, at point: CGPoint) {
-        defer { dragColumn = nil }
-        guard inside, environment.isEnabled, dragSteps == 0, let column = column(at: point) else { return }
-        // A press on a neighbouring row selects it.
-        let offsets = PlatformMetrics.wheelRowOffsets
-        let dy = point.y - frame.height / 2
-        var nearest = 0
-        for distance in 1..<offsets.count where abs(abs(dy) - offsets[distance]) < abs(abs(dy) - offsets[nearest]) { nearest = distance }
-        if nearest > 0 { turn(column, by: dy < 0 ? -nearest : nearest) }
-    }
-
-    /// Moves a column's value by `rows` (the period flips the half day).
-    package func turn(_ component: Calendar.Component, by rows: Int) {
-        guard rows != 0 else { return }
-        var parts = _DateMath.parts(of: view.date, calendar: calendar)
-        switch component {
-        case .month: parts.month = min(max(parts.month + rows, 1), 12)
-        case .day: parts.day = min(max(parts.day + rows, 1), _DateMath.daysInMonth(year: parts.year, month: parts.month, calendar: calendar))
-        case .year: parts.year += rows
-        case .hour:
-            let hour12 = parts.hour % 12 == 0 ? 12 : parts.hour % 12
-            let next = ((hour12 - 1 + rows) % 12 + 12) % 12 + 1
-            parts.hour = (parts.hour >= 12 ? 12 : 0) + next % 12
-        case .minute: parts.minute = ((parts.minute + rows) % 60 + 60) % 60
-        case .era:
-            let pm = parts.hour >= 12
-            if (rows > 0) != pm { parts.hour = pm ? parts.hour - 12 : parts.hour + 12 }
-        default: return
-        }
-        parts.day = min(parts.day, _DateMath.daysInMonth(year: parts.year, month: parts.month, calendar: calendar))
-        view.binding.set(_DateMath.date(from: parts, calendar: calendar))
-        view = _WheelDateHost(date: view.binding.get(), binding: view.binding, components: view.components)
-        runtime.setNeedsDisplay()
-    }
-
-    package var semantics: SemanticsNode {
-        let parts = _DateMath.parts(of: view.date, calendar: calendar)
-        let label = isTime
-            ? "\(parts.hour % 12 == 0 ? 12 : parts.hour % 12):\(parts.minute < 10 ? "0" : "")\(parts.minute) \(parts.hour < 12 ? "AM" : "PM")"
-            : "\(_DateMath.monthNames[parts.month - 1]) \(parts.day), \(parts.year)"
-        var node = SemanticsNode(role: .group, label: label, frame: frameInRoot, identifier: identifier)
-        node.isFocusable = true
-        return node
     }
 }

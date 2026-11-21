@@ -2,22 +2,22 @@
   "fixture" : "ios\/datepicker\/compact",
   "frames" : {
     "date" : {
-      "height" : 38.5,
+      "height" : 34.5,
       "width" : 311,
       "x" : 32,
       "y" : 50
     },
     "dateTime" : {
-      "height" : 40,
+      "height" : 36,
       "width" : 311,
       "x" : 32,
-      "y" : 118.5
+      "y" : 114.5
     },
     "disabled" : {
-      "height" : 38.5,
+      "height" : 34.5,
       "width" : 311,
       "x" : 32,
-      "y" : 258.5
+      "y" : 246.5
     },
     "form" : {
       "height" : 360,
@@ -26,10 +26,10 @@
       "y" : 0
     },
     "time" : {
-      "height" : 40,
+      "height" : 36,
       "width" : 311,
       "x" : 32,
-      "y" : 188.5
+      "y" : 180.5
     }
   },
   "size" : {

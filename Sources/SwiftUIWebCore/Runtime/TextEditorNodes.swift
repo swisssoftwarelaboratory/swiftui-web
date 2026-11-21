@@ -13,7 +13,7 @@ package final class TextEditorNode: LeafNode<_TextEditorHost>, _Interactive, _Te
     /// reports its own scrolling while focused).
     package private(set) var contentOffset = CGPoint.zero
     /// The host's last selection (UTF-16 offsets), so a binding change is pushed only when it differs.
-    private var hostSelection: (start: Int, end: Int)?
+    package private(set) var hostSelection: (start: Int, end: Int)?
 
     override package init(_ context: _NodeContext<_TextEditorHost>) {
         nextEditorIdentifier += 1
