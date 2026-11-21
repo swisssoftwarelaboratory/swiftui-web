@@ -321,6 +321,11 @@ extension PlatformMetrics {
     package static var popoverArrowHeight: CGFloat { current.popoverArrowHeight }
     package static var popoverArrowWidth: CGFloat { current.popoverArrowWidth }
     package static var menuGap: CGFloat { current.menuGap }
+    package static var menusAreGlassPanels: Bool { current.menusAreGlassPanels }
+    package static var menuSectionGap: CGFloat { current.menuSectionGap }
+    package static var menuLabelIconSlot: CGFloat { current.menuLabelIconSlot }
+    package static var menuLabelIconGap: CGFloat { current.menuLabelIconGap }
+    package static var menuLabelSize: CGFloat { current.menuLabelSize }
     package static var menuCornerRadius: CGFloat { current.menuCornerRadius }
     package static var menuRowHeight: CGFloat { current.menuRowHeight }
     package static var menuCheckWidth: CGFloat { current.menuCheckWidth }

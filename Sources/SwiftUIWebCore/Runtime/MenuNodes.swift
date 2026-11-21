@@ -166,11 +166,13 @@ package final class MenuButtonNode: LayoutNode<_MenuHost>, _Interactive {
     package private(set) var isOpen = false
 
     package func presentMenu() {
+        // Open or closed changes how the button paints, never its size: a repaint, not a layout
+        // that re-measures the app (30 to 40 ms in Paulo's release build, new-website#649).
         isOpen = true
-        runtime.setNeedsDisplay()
+        runtime.requestRepaint()
         runtime.present(kind: .menu, view: AnyView(_MenuContent(content: view.content)), environment: environment, anchor: self) { [weak self] in
             self?.isOpen = false
-            self?.runtime.setNeedsDisplay()
+            self?.runtime.requestRepaint()
         }
     }
 

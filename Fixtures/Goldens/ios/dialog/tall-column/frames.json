@@ -1,0 +1,52 @@
+{
+  "fixture" : "ios\/dialog\/tall-column",
+  "frames" : {
+    "button" : {
+      "height" : 52,
+      "width" : 343,
+      "x" : 16,
+      "y" : 599
+    },
+    "column" : {
+      "height" : 764,
+      "width" : 375,
+      "x" : 0,
+      "y" : -97
+    },
+    "scroll" : {
+      "height" : 667,
+      "width" : 375,
+      "x" : 0,
+      "y" : 0
+    }
+  },
+  "size" : {
+    "height" : 667,
+    "width" : 375
+  },
+  "steps" : [
+    {
+      "frames" : {
+        "button" : {
+          "height" : 52,
+          "width" : 343,
+          "x" : 16,
+          "y" : 599
+        },
+        "column" : {
+          "height" : 764,
+          "width" : 375,
+          "x" : 0,
+          "y" : -97
+        },
+        "scroll" : {
+          "height" : 667,
+          "width" : 375,
+          "x" : 0,
+          "y" : 0
+        }
+      },
+      "name" : "present"
+    }
+  ]
+}

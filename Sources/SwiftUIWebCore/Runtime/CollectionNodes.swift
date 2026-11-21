@@ -230,6 +230,9 @@ package final class SectionNode<Parent: View, Content: View, Footer: View>:
     package private(set) var footer: TypedNode<Footer>!
     /// In a menu the header is a small secondary row (`_MenuSectionHeader`) instead.
     private var menuHeader: TypedNode<AnyView>?
+    /// In an iOS menu the gaps before and after the section (`_MenuRowsLayout` shows those that
+    /// fall between rows).
+    private var menuGaps: (before: TypedNode<AnyView>, after: TypedNode<AnyView>)?
 
     init(_ context: _NodeContext<Section<Parent, Content, Footer>>) {
         super.init(view: context.view, parent: context.parent, runtime: context.runtime,
@@ -239,6 +242,10 @@ package final class SectionNode<Parent: View, Content: View, Footer: View>:
         footer = Footer._makeNode(_NodeContext(view: context.view.footer, parent: self, environment: Self.headerEnvironment(context.environment, footer: true)))
         if context.environment._inMenu, !(context.view.header is EmptyView) {
             menuHeader = AnyView._makeNode(_NodeContext(view: AnyView(_MenuSectionHeader(header: AnyView(context.view.header))), parent: self, environment: context.environment))
+        }
+        if context.environment._inMenu, context.environment.platformProfile.metrics.menusAreGlassPanels {
+            menuGaps = (AnyView._makeNode(_NodeContext(view: AnyView(_MenuSectionGap()), parent: self, environment: context.environment)),
+                        AnyView._makeNode(_NodeContext(view: AnyView(_MenuSectionGap()), parent: self, environment: context.environment)))
         }
     }
 
@@ -250,6 +257,8 @@ package final class SectionNode<Parent: View, Content: View, Footer: View>:
         content.update(view: view.content, environment: environment, force: force)
         footer.update(view: view.footer, environment: Self.headerEnvironment(environment, footer: true), force: force)
         menuHeader?.update(view: AnyView(_MenuSectionHeader(header: AnyView(view.header))), environment: environment, force: force)
+        menuGaps?.before.update(view: AnyView(_MenuSectionGap()), environment: environment, force: force)
+        menuGaps?.after.update(view: AnyView(_MenuSectionGap()), environment: environment, force: force)
     }
 
     /// Inside a `List` the header and footer take the container's styling (`_sectionStyling`).
@@ -262,9 +271,14 @@ package final class SectionNode<Parent: View, Content: View, Footer: View>:
         return styled
     }
 
-    override package var structuralChildren: [ViewNode] { [menuHeader ?? header, content, footer] }
+    override package var structuralChildren: [ViewNode] {
+        guard let menuGaps else { return [menuHeader ?? header, content, footer] }
+        return [menuGaps.before, menuHeader ?? header, content, footer, menuGaps.after]
+    }
     override package var layoutChildren: [ViewNode] {
-        (menuHeader ?? header).layoutChildren + content.layoutChildren + footer.layoutChildren
+        let rows = (menuHeader ?? header).layoutChildren + content.layoutChildren + footer.layoutChildren
+        guard let menuGaps else { return rows }
+        return menuGaps.before.layoutChildren + rows + menuGaps.after.layoutChildren
     }
     override package var nodeDescription: String { "Section" }
 }

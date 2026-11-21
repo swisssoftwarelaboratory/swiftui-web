@@ -803,6 +803,68 @@ enum PainterScript {
               }
               break;
             }
+            case 30: {
+              // Backdrop lens (new-website#649): the backdrop blur seen through thick glass, as an
+              // iOS 27 menu grows. What lies beneath is copied with `bend` points around the shape,
+              // blurred, and drawn back in nested rounded rings from the rim in: the outer rings
+              // squeeze in content from up to `bend` outside the shape, the centre is drawn a
+              // touch magnified, so lines bend toward the rim. Everything is drawn from one small
+              // blurred copy (five GPU draws), nothing is read back.
+              for (const segment of running) segment.tileable = false;
+              i = readPath(ctx, buf, i);
+              const x = buf[i++], y = buf[i++], rw = buf[i++], rh = buf[i++];
+              const radius = buf[i++], bend = buf[i++], corner = buf[i++];
+              const target = ctx.canvas;
+              const shape = deviceBounds(ctx, x, y, rw, rh, 0, Infinity, Infinity);
+              const sigma = radius * shape.scale, bd = bend * shape.scale, cr = corner * shape.scale;
+              const b = deviceBounds(ctx, x, y, rw, rh, Math.ceil(bd + sigma * 3), target.width, target.height);
+              if (b.w > 0 && b.h > 0 && shape.w > 0 && shape.h > 0) {
+                const copyBox = { x: 0, y: 0, w: b.w, h: b.h };
+                const copy = takeOffscreen(b.w, b.h);
+                const cctx = copy.getContext('2d');
+                cctx.setTransform(1, 0, 0, 1, 0, 0);
+                cctx.clearRect(0, 0, b.w, b.h);
+                const layers = groups.length ? [groups[0].ctx.canvas].concat(groups.filter(g => !g.maskPending).map(g => g.off)) : [target];
+                for (const layer of layers) cctx.drawImage(layer, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
+                const src = sigma > 0 ? blurred(copy, copyBox, sigma, true) : copy;
+                ctx.save();
+                ctx.clip();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.imageSmoothingEnabled = true;
+                // Draws the device rect `from` of the backdrop into the device rect `to`, the
+                // source kept inside the copy (WebKit draws nothing for a source past its edge).
+                const mapped = (fx, fy, fw, fh, tx, ty, tw, th) => {
+                  let sx = fx - b.x, sy = fy - b.y, sw = fw, sh = fh;
+                  const kx = tw / fw, ky = th / fh;
+                  if (sx < 0) { tx -= sx * kx; tw += sx * kx; sw += sx; sx = 0; }
+                  if (sy < 0) { ty -= sy * ky; th += sy * ky; sh += sy; sy = 0; }
+                  if (sx + sw > b.w) { const cut = sx + sw - b.w; sw -= cut; tw -= cut * kx; }
+                  if (sy + sh > b.h) { const cut = sy + sh - b.h; sh -= cut; th -= cut * ky; }
+                  if (sw > 0 && sh > 0 && tw > 0 && th > 0) ctx.drawImage(src, sx, sy, sw, sh, tx, ty, tw, th);
+                };
+                const rim = Math.min(Math.max(bd * 2, 1), Math.min(shape.w, shape.h) / 2);
+                const rings = 4;
+                for (let k = 0; k <= rings; k++) {
+                  const d = rim * k / rings;
+                  // How far outside this ring its content comes from: most at the rim, a slight
+                  // magnification (negative) at the centre.
+                  const f = 1 - k / rings;
+                  const o = k === rings ? -bd * 0.12 : bd * f * f;
+                  if (k > 0) {
+                    ctx.beginPath();
+                    const rr = Math.max(0, cr - d);
+                    if (ctx.roundRect) ctx.roundRect(shape.x + d, shape.y + d, shape.w - 2 * d, shape.h - 2 * d, rr);
+                    else ctx.rect(shape.x + d, shape.y + d, shape.w - 2 * d, shape.h - 2 * d);
+                    ctx.clip();
+                  }
+                  mapped(shape.x + d - o, shape.y + d - o, shape.w - 2 * (d - o), shape.h - 2 * (d - o),
+                         shape.x + d, shape.y + d, shape.w - 2 * d, shape.h - 2 * d);
+                }
+                if (box) unionDeviceBox(ctx, box, b.x, b.y, b.x + b.w, b.y + b.h, 0);
+                ctx.restore();
+              }
+              break;
+            }
             case 21: {
               const x = buf[i++], y = buf[i++], rw = buf[i++], rh = buf[i++];
               const o = beginOffscreen(ctx, dpr, w, h);

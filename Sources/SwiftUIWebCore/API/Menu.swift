@@ -332,13 +332,101 @@ package struct _MenuContent: View {
     package init(content: AnyView) { self.content = content }
 
     package var body: some View {
-        VStack(alignment: .leading, spacing: 0) { content }
-            .padding(.vertical, PlatformMetrics.menuVerticalPadding)
-            .environment(\._inMenu, true)
-            // A menu's items show their titles and icons wherever the menu sits: a toolbar's
-            // icon-only context stops at the menu's own label (Ember's More menu, decision 0021).
-            .environment(\._automaticLabelContext, nil)
-            ._dismissesOnActivation()
+        if PlatformMetrics.menusAreGlassPanels {
+            // iOS: the rows in the iPhone's column, sections set apart by gaps (`_MenuRowsLayout`),
+            // a label's icon in a column of its own.
+            _MenuRowsLayout { content }
+                .environment(\._inMenu, true)
+                .environment(\._automaticLabelContext, .menu)
+                ._dismissesOnActivation()
+        } else {
+            VStack(alignment: .leading, spacing: 0) { content }
+                .padding(.vertical, PlatformMetrics.menuVerticalPadding)
+                .environment(\._inMenu, true)
+                // A menu's items show their titles and icons wherever the menu sits: a toolbar's
+                // icon-only context stops at the menu's own label (Ember's More menu, decision 0021).
+                .environment(\._automaticLabelContext, nil)
+                ._dismissesOnActivation()
+        }
+    }
+}
+
+/// Marks a section's gap in an iOS menu (`_MenuSectionGap`), which `_MenuRowsLayout` shows only
+/// between two runs of rows.
+package struct _MenuGapKey: LayoutValueKey {
+    package static let defaultValue = false
+}
+
+/// The gap around a section of an iOS menu: a hairline across its middle, inset from both
+/// sides. It takes the size it is offered: nothing where the layout drops it.
+package struct _MenuSectionGap: View {
+    package init() {}
+    package var body: some View {
+        _MenuGapLine()
+            .fill(Color.black.opacity(PlatformMetrics.menuSeparatorAlpha))
+            .layoutValue(key: _MenuGapKey.self, value: true)
+            .accessibilityHidden(true)
+    }
+}
+
+package struct _MenuGapLine: Shape {
+    package func path(in rect: CGRect) -> Path {
+        guard rect.height > 0, rect.width > 2 * PlatformMetrics.menuSeparatorInset else { return Path() }
+        return Path(CGRect(x: rect.minX + PlatformMetrics.menuSeparatorInset, y: rect.midY - 0.25,
+                           width: rect.width - 2 * PlatformMetrics.menuSeparatorInset, height: 0.5))
+    }
+}
+
+/// An iOS menu's column: its rows one under the other at the panel's width, the menu's padding
+/// above and below, and a section's gap only where it falls between rows (none at either end,
+/// one where two meet).
+package struct _MenuRowsLayout: Layout {
+    package init() {}
+
+    private func shownGaps(_ subviews: Subviews) -> [Bool] {
+        var shown = Array(repeating: false, count: subviews.count)
+        var rowBefore = false, pendingGap: Int?
+        for index in subviews.indices {
+            if subviews[index][_MenuGapKey.self] {
+                if rowBefore, pendingGap == nil { pendingGap = index }
+            } else {
+                if let gap = pendingGap { shown[gap] = true; pendingGap = nil }
+                rowBefore = true
+            }
+        }
+        return shown
+    }
+
+    package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let shown = shownGaps(subviews)
+        var width: CGFloat = 0, height = 2 * PlatformMetrics.menuVerticalPadding
+        for (index, subview) in subviews.enumerated() {
+            if subview[_MenuGapKey.self] {
+                if shown[index] { height += PlatformMetrics.menuSectionGap }
+                continue
+            }
+            let size = subview.sizeThatFits(.unspecified)
+            width = max(width, size.width)
+            height += size.height
+        }
+        return CGSize(width: max(width, PlatformMetrics.menuMinimumWidth), height: height)
+    }
+
+    package func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let shown = shownGaps(subviews)
+        var y = bounds.minY + PlatformMetrics.menuVerticalPadding
+        for (index, subview) in subviews.enumerated() {
+            if subview[_MenuGapKey.self] {
+                let height = shown[index] ? PlatformMetrics.menuSectionGap : 0
+                subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                              proposal: ProposedViewSize(width: shown[index] ? bounds.width : 0, height: height))
+                y += height
+                continue
+            }
+            let height = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+            subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: height))
+            y += height
+        }
     }
 }
 
@@ -377,7 +465,7 @@ package struct _MenuRowLabel: View {
                         .padding(.leading, PlatformMetrics.menuCheckInset)
                 }
             }
-            .font(.system(size: PlatformMetrics.buttonLabelSize))
+            .font(.system(size: PlatformMetrics.menuLabelSize > 0 ? PlatformMetrics.menuLabelSize : PlatformMetrics.buttonLabelSize))
     }
 }
 
