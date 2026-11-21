@@ -6,9 +6,9 @@ import Foundation
 
 // What the drawn iPhone paints (new-website#618): the island, the status bar (the viewer's own
 // time, full signal, wifi and battery, all drawn by us), the home indicator, and the places
-// around the app. The home screen and the lock screen are plain grey stand-ins until their own
-// tickets draw them (#638, #643). Never Apple's artwork or fonts: text is the viewer's system
-// font.
+// around the app. The home screen is #626's plain greys (#638); the lock screen is a plain grey
+// stand-in until its own ticket draws it (#643). Never Apple's artwork or fonts: text is the
+// viewer's system font.
 
 extension DrawnPhone {
     static let island = CGSize(width: 126, height: 37)
@@ -18,11 +18,16 @@ extension DrawnPhone {
     /// The screen's corners (the iPhone 16's 55).
     static let screenCorner: CGFloat = 55
 
-    static let homeGround = RGBA(r: 229, g: 229, b: 234)
+    // The home screen's plain greys (#626, frame "Home screen: plain greys"): a light grey
+    // wallpaper, grey made-up apps, a light dock.
+    static let homeGround = RGBA(r: 233, g: 233, b: 233)
     static let lockGround = RGBA(r: 209, g: 209, b: 214)
-    static let iconGrey = RGBA(r: 199, g: 199, b: 204)
+    static let iconGrey = RGBA(r: 210, g: 210, b: 210)
+    /// The app's icon when its build has none.
     static let appIconGrey = RGBA(r: 142, g: 142, b: 147)
     static let dockGrey = RGBA(r: 214, g: 214, b: 219)
+    static let dockGround = RGBA(r: 255, g: 255, b: 255, a: 0.45)
+    static let iconCorner: CGFloat = 0.2237
     static let ink = RGBA(r: 0, g: 0, b: 0)
     static let white = RGBA(r: 255, g: 255, b: 255)
     static let otherNames = ["Tide", "Ledger", "Pebble", "Orbit", "Fern", "Atlas", "Quill", "Harbor", "Marble", "Lantern", "Drift"]
@@ -112,35 +117,64 @@ extension DrawnPhone {
         }
         if content < 1 {
             // The app's picture gives way to its icon as it lands.
-            list.append(.fillRect(rect, Self.appIconGrey.multiplyingAlpha(by: Double(1 - content))))
+            list.append(.beginGroup(opacity: Double(1 - content)))
+            paintAppIcon(rect, into: &list)
+            list.append(.endGroup)
         }
         list.append(.restore)
     }
 
-    // MARK: Home screen (stand-in, #638 draws it)
+    // MARK: Home screen (#626)
 
+    /// The home screen: the app top left with its own icon and name, the made-up apps around it
+    /// (they don't open), three rows of four and four in the dock, one page.
     private func paintHome(into list: inout DisplayList, hidingIcon: Bool) {
         let w = CGFloat(width), h = CGFloat(height)
         list.append(.fillRect(CGRect(x: 0, y: 0, width: w, height: h), Self.homeGround))
         let size = CGFloat(Self.iconSize)
         let label = font(size: 12, weight: .regular)
         for index in 0..<12 {
-            let x = CGFloat(Self.iconColumns[index % 4]) * w / 393
-            let y = CGFloat(Self.iconTop) + CGFloat(index / 4) * CGFloat(Self.iconRowStep)
-            let rect = CGRect(x: x, y: y, width: size, height: size)
+            let rect = iconRect(at: index)
             let isApp = index == 0
-            if !(isApp && hidingIcon) {
-                list.append(.fillRRect(rect, cornerRadius: size * 0.2237, isApp ? Self.appIconGrey : Self.iconGrey))
+            if isApp {
+                if !hidingIcon { paintAppIcon(rect, into: &list) }
+            } else {
+                list.append(.fillRRect(rect, cornerRadius: size * Self.iconCorner, Self.iconGrey))
             }
-            let name = isApp ? (appName.isEmpty ? "App" : appName) : Self.otherNames[index - 1]
+            let name = isApp ? homeName : Self.otherNames[index - 1]
             drawCentered(name, font: label, centerX: rect.midX, baseline: rect.maxY + 17, maxWidth: size + 20, color: Self.ink, into: &list)
         }
-        let dock = CGRect(x: 12, y: h - 12 - 92, width: w - 24, height: 92)
-        list.append(.fillRRect(dock, cornerRadius: 34, Self.dockGrey))
+        let dock = dockRect
+        list.append(.fillRRect(dock, cornerRadius: 38, Self.dockGround))
         for index in 0..<4 {
             let x = CGFloat(Self.iconColumns[index]) * w / 393
-            list.append(.fillRRect(CGRect(x: x, y: dock.minY + 16, width: size, height: size), cornerRadius: size * 0.2237, Self.iconGrey))
+            list.append(.fillRRect(CGRect(x: x, y: dock.midY - size / 2, width: size, height: size), cornerRadius: size * Self.iconCorner, Self.iconGrey))
         }
+    }
+
+    /// The dock: light, rounded, low on the screen above the home indicator (#626).
+    var dockRect: CGRect {
+        let w = CGFloat(width), h = CGFloat(height)
+        return CGRect(x: 12, y: h - 19 - 94, width: w - 24, height: 94)
+    }
+
+    /// The app's own icon (its `AppIcon` set, as its Info names it), rounded like iOS's; a grey
+    /// square when the build has none.
+    func paintAppIcon(_ rect: CGRect, into list: inout DisplayList) {
+        let corner = rect.width * Self.iconCorner
+        guard let icon = appIcon(scale: 3) else {
+            list.append(.fillRRect(rect, cornerRadius: corner, Self.appIconGrey))
+            return
+        }
+        list.append(.save)
+        list.append(.clipRRect(rect, cornerRadius: corner))
+        list.append(.drawImage(ImageDraw(file: icon.file, scale: icon.scale, pixelSize: CGSize(width: icon.pixelWidth, height: icon.pixelHeight), rect: rect)))
+        list.append(.restore)
+    }
+
+    private func appIcon(scale: CGFloat) -> ImageVariant? {
+        let catalog = runtime.assetCatalog
+        return catalog.image(named: appIconName)?.variant(scale: scale, scheme: .light, idiom: "iphone")
     }
 
     // MARK: Lock screen and pull-down (stand-in, #643 draws them)

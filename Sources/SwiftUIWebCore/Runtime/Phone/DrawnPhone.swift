@@ -97,7 +97,25 @@ package final class DrawnPhone {
     /// The clock and date the host reads from the viewer's own clock.
     package var clock: (@MainActor @Sendable () -> (time: String, date: String))?
     package private(set) var clockText = (time: "", date: "")
+    /// The name the host gives the app (its page's `data-app` or title), when its build has none.
     package var appName = ""
+
+    /// The app's name under its icon, as iOS takes it from the app's build: its display name,
+    /// else its bundle name, else the host's (#626).
+    var homeName: String {
+        let info = Bundle.main.infoDictionary
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            if let name = info?[key] as? String, !name.isEmpty { return name }
+        }
+        return appName.isEmpty ? "App" : appName
+    }
+
+    /// The app icon's set in the app's catalog, as its Info names it (Xcode's default AppIcon).
+    var appIconName: String {
+        let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        return primary?["CFBundleIconName"] as? String ?? "AppIcon"
+    }
 
     package init(runtime: Runtime) {
         self.runtime = runtime
@@ -143,8 +161,12 @@ package final class DrawnPhone {
     static let iconColumns: [Double] = [27, 120, 213, 306]
     static let iconTop: Double = 72
     static let iconRowStep: Double = 98
-    var iconRect: CGRect {
-        CGRect(x: Self.iconColumns[0] * width / 393, y: Self.iconTop, width: Self.iconSize, height: Self.iconSize)
+    var iconRect: CGRect { iconRect(at: 0) }
+
+    /// The home screen's icon at `index`, left to right and top to bottom (the app's is first).
+    func iconRect(at index: Int) -> CGRect {
+        CGRect(x: Self.iconColumns[index % 4] * width / 393, y: Self.iconTop + Double(index / 4) * Self.iconRowStep,
+               width: Self.iconSize, height: Self.iconSize)
     }
 
     // MARK: State
