@@ -548,19 +548,20 @@ package final class PlatformMetricsTable: @unchecked Sendable {
     package var wheelBandInset: CGFloat = 9
     package var wheelBandCornerRadius: CGFloat = 12
     package var wheelBandFill = RGBA(r: 115, g: 115, b: 128, a: 0.08)
-    // The compact time picker's panel (iOS 27, iPhone 16, new-website#665): the wheel in a
-    // 230 × 204 frosted card with 26 pt corners, its band 16 in from the card's sides. Under a
-    // pill in the upper half of the window it opens 28 below the pill, its centre 84 left of the
-    // pill's; lower down it opens over the pill, its bottom 11 below the pill's top and its
-    // centre 122 left of the pill's; it keeps 16 from the window's sides.
-    package var timePopoverSize = CGSize(width: 230, height: 204)
+    // The compact pickers' panels (iOS 27, iPhone 16, new-website#665, placement re-measured
+    // for pills at ten heights in #674): the time wheel in a 232 × 204 frosted card with 26 pt
+    // corners, its band 16 in from the card's sides; the calendar in a 320 × 332 one. A pill
+    // whose centre is in the window's upper half gets its panel below, the panel's top 6 below
+    // the pill's centre (over the pill's lower part); lower down above it, the panel's bottom
+    // 6 above the pill's centre. The panel's trailing edge sits 41 left of the pill's, and the
+    // panel keeps 16 from the window's sides. The card is (253, 253, 254), (32, 32, 32) dark.
+    package var timePopoverSize = CGSize(width: 232, height: 204)
     package var timePopoverBandInset: CGFloat = 16
     package var systemPickerCornerRadius: CGFloat = 26
     package var systemPickerFill = RGBA(r: 253, g: 253, b: 254)
-    package var timePopoverBelowGap: CGFloat = 28
-    package var timePopoverBelowShift: CGFloat = -84
-    package var timePopoverAboveOverlap: CGFloat = 11
-    package var timePopoverAboveShift: CGFloat = -122
+    package var systemPickerFillDark = RGBA(r: 32, g: 32, b: 32)
+    package var systemPickerEdgeFromPillCenter: CGFloat = 6
+    package var systemPickerTrailingInset: CGFloat = 41
     package var calendarHighlightAlpha = 35.0 / 255                  // 220
     package var calendarHighlightInset: CGFloat = 1
     package var calendarHighlightCornerRadius: CGFloat = 3           // approximate

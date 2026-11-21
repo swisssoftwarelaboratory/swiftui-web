@@ -321,11 +321,6 @@ extension PlatformMetrics {
     package static var popoverArrowHeight: CGFloat { current.popoverArrowHeight }
     package static var popoverArrowWidth: CGFloat { current.popoverArrowWidth }
     package static var menuGap: CGFloat { current.menuGap }
-    package static var menusAreGlassPanels: Bool { current.menusAreGlassPanels }
-    package static var menuSectionGap: CGFloat { current.menuSectionGap }
-    package static var menuLabelIconSlot: CGFloat { current.menuLabelIconSlot }
-    package static var menuLabelIconGap: CGFloat { current.menuLabelIconGap }
-    package static var menuLabelSize: CGFloat { current.menuLabelSize }
     package static var menuCornerRadius: CGFloat { current.menuCornerRadius }
     package static var menuRowHeight: CGFloat { current.menuRowHeight }
     package static var menuCheckWidth: CGFloat { current.menuCheckWidth }
@@ -464,10 +459,9 @@ extension PlatformMetrics {
     package static var timePopoverBandInset: CGFloat { current.timePopoverBandInset }
     package static var systemPickerCornerRadius: CGFloat { current.systemPickerCornerRadius }
     package static var systemPickerFill: RGBA { current.systemPickerFill }
-    package static var timePopoverBelowGap: CGFloat { current.timePopoverBelowGap }
-    package static var timePopoverBelowShift: CGFloat { current.timePopoverBelowShift }
-    package static var timePopoverAboveOverlap: CGFloat { current.timePopoverAboveOverlap }
-    package static var timePopoverAboveShift: CGFloat { current.timePopoverAboveShift }
+    package static var systemPickerFillDark: RGBA { current.systemPickerFillDark }
+    package static var systemPickerEdgeFromPillCenter: CGFloat { current.systemPickerEdgeFromPillCenter }
+    package static var systemPickerTrailingInset: CGFloat { current.systemPickerTrailingInset }
     package static var calendarHighlightAlpha: Double { current.calendarHighlightAlpha }
     package static var calendarHighlightInset: CGFloat { current.calendarHighlightInset }
     package static var calendarHighlightCornerRadius: CGFloat { current.calendarHighlightCornerRadius }
@@ -663,6 +657,15 @@ extension PlatformMetrics {
     package static var listGroupedFirstHeaderTop: CGFloat { current.listGroupedFirstHeaderTop }
     package static var listGroupedFooterTop: CGFloat { current.listGroupedFooterTop }
     package static var listGroupedFooterToHeader: CGFloat { current.listGroupedFooterToHeader }
+    package static var menusAreGlassPanels: Bool { current.menusAreGlassPanels }
+    package static var menuSectionGap: CGFloat { current.menuSectionGap }
+    package static var menuLabelIconSlot: CGFloat { current.menuLabelIconSlot }
+    package static var menuLabelIconGap: CGFloat { current.menuLabelIconGap }
+    package static var menuLabelSize: CGFloat { current.menuLabelSize }
+    package static var menuGlassFill: RGBA { current.menuGlassFill }
+    package static var menuGlassSigma: CGFloat { current.menuGlassSigma }
+    package static var menuEdgeAlpha: Double { current.menuEdgeAlpha }
+    package static var menuWindowMargin: CGFloat { current.menuWindowMargin }
     package static var menuIsPlainLabel: Bool { current.menuIsPlainLabel }
     package static var menuDisabledLabelAlpha: Double { current.menuDisabledLabelAlpha }
     package static var listGroupedFooterBottom: CGFloat { current.listGroupedFooterBottom }

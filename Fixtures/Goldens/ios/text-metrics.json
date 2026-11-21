@@ -21252,6 +21252,18 @@
       "lastBaseline" : 53.5,
       "width" : 0
     },
+    "system:17:400:default||05:30" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 45.5
+    },
+    "system:17:400:default||13 Nov 2026" : {
+      "firstBaseline" : 16,
+      "height" : 20.5,
+      "lastBaseline" : 16,
+      "width" : 97
+    },
     "system:17:400:default||11:09 AM" : {
       "firstBaseline" : 16,
       "height" : 20.5,
@@ -25564,7 +25576,7 @@
     }
   },
   "host" : "iPhoneSimulator 26.0 SwiftUIWeb SE",
-  "hostAdditions" : "iPhoneSimulator 27.0 SwiftUIWeb SE iOS-27-0: the ios\/sheet\/nav entries (2026-10-12), the ios\/dialog\/wide-button, trailing-button and tall-column entries (2026-11-20); the rest from the iOS 26.0 run",
+  "hostAdditions" : "iPhoneSimulator 27.0 SwiftUIWeb SE iOS-27-0: the ios\/sheet\/nav entries (2026-10-12), the ios\/dialog\/wide-button, trailing-button and tall-column entries (2026-11-20), the ios/datepicker/panels pills 05:30 and 13 Nov 2026 (2026-11-21); the rest from the iOS 26.0 run",
   "macOS" : "26.0.0",
   "platformProfile" : "iOS"
 }

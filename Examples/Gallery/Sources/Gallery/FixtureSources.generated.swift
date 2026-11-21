@@ -1894,7 +1894,7 @@ public static let tiling = Fixture("image/tiling", size: CGSize(width: 300, heig
     .probe("stack")
 }
 """#),
-        FixtureSource(name: "ios/alert/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 148, lastLine: 165, declaration: #"""
+        FixtureSource(name: "ios/alert/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 157, lastLine: 174, declaration: #"""
 /// The alert: title, message, a destructive and a cancel button.
 public static let alert = Fixture(
     "ios/alert/basic", size: phone,
@@ -1914,7 +1914,7 @@ public static let alert = Fixture(
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/alert/stacked", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 167, lastLine: 186, declaration: #"""
+        FixtureSource(name: "ios/alert/stacked", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 176, lastLine: 195, declaration: #"""
 /// An alert with three buttons and a long title (sw-ios-presentation-rest): iOS stacks the
 /// buttons one per row and wraps the title.
 public static let alertStacked = Fixture(
@@ -2126,7 +2126,7 @@ public static let darkText = Fixture("ios/dark/text", size: CGSize(width: 320, h
     .probe("stack")
 }.platform(.iOS).colorScheme(.dark)
 """#),
-        FixtureSource(name: "ios/datepicker/compact", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 288, lastLine: 298, declaration: #"""
+        FixtureSource(name: "ios/datepicker/compact", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 297, lastLine: 307, declaration: #"""
 /// The compact date picker in a form: date, date and time, time; the tinted pills.
 public static let datePicker = Fixture("ios/datepicker/compact", size: CGSize(width: 375, height: 360)) {
     Form {
@@ -2139,7 +2139,38 @@ public static let datePicker = Fixture("ios/datepicker/compact", size: CGSize(wi
     .probe("form")
 }.platform(.iOS)
 """#),
-        FixtureSource(name: "ios/datepicker/wheel", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 300, lastLine: 309, declaration: #"""
+        FixtureSource(name: "ios/datepicker/graphical", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 309, lastLine: 319, declaration: ##"""
+/// iOS 27's own calendar (`.graphical`, new-website#674): the month's weeks from the
+/// locale's first day, the selected day on a filled circle; March 2025 holds no today.
+public static let dateGraphical = Fixture("ios/datepicker/graphical", size: CGSize(width: 375, height: 380)) {
+    VStack {
+        DatePicker("Date", selection: .constant(fixed), displayedComponents: .date).datePickerStyle(.graphical).labelsHidden().probe("calendar")
+        Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 16)
+    .environment(\.timeZone, utc)
+    .probe("stack")
+}.platform(.iOS)
+"""##),
+        FixtureSource(name: "ios/datepicker/panels", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 321, lastLine: 336, declaration: #"""
+/// The compact pills on an iPhone 16 window, as the picker probe app shows them
+/// (swipe-harness/picker-probe-674): pressing the date pill opens iOS 27's calendar panel.
+/// No golden: the panel opens on a press, compared with the simulator's screenshots.
+public static let datePanels = Fixture("ios/datepicker/panels", size: CGSize(width: 393, height: 852), model: { IOSDatePanelModel() }, steps: []) { model in
+    VStack(alignment: .leading, spacing: 24) {
+        DatePicker("Time", selection: Binding(get: { model.a }, set: { model.a = $0 }), displayedComponents: .hourAndMinute).probe("time")
+        DatePicker("Date", selection: Binding(get: { model.b }, set: { model.b = $0 }), displayedComponents: .date).probe("date")
+        DatePicker("Both", selection: Binding(get: { model.c }, set: { model.c = $0 })).probe("both")
+        Spacer()
+    }
+    .padding(.horizontal, 20)
+    .padding(.top, 59)
+    .environment(\.locale, Locale(identifier: "en_GB"))
+    .environment(\.timeZone, utc)
+    .probe("stack")
+}.platform(.iOS)
+"""#),
+        FixtureSource(name: "ios/datepicker/wheel", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 338, lastLine: 347, declaration: #"""
 /// A list with a selection binding: the selected row's look after a step selects it.
 /// The wheel style (iOS only): the date's three columns and the time's, captured as the window.
 public static let dateWheel = Fixture("ios/datepicker/wheel", size: CGSize(width: 375, height: 520)) {
@@ -2151,7 +2182,7 @@ public static let dateWheel = Fixture("ios/datepicker/wheel", size: CGSize(width
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/dialog/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 222, lastLine: 241, declaration: #"""
+        FixtureSource(name: "ios/dialog/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 231, lastLine: 250, declaration: #"""
 /// The confirmation dialog: a titled action sheet with three actions and a cancel button.
 public static let dialog = Fixture(
     "ios/dialog/basic", size: phone,
@@ -2170,6 +2201,92 @@ public static let dialog = Fixture(
     } message: {
         Text("Choose what to do with the item.")
     }
+    .probe("stack")
+}.platform(.iOS).capturesWindow()
+"""#),
+        FixtureSource(name: "ios/dialog/tall-column", file: "Fixtures/Sources/iOS/IOSOverlayFixtures.swift", firstLine: 66, lastLine: 96, declaration: #"""
+/// The modifier on a column taller than the window, scrolled to its end, the button at the
+/// column's foot (Paulo's settings column).
+public static let dialogTallColumn = Fixture(
+    "ios/dialog/tall-column", size: phone,
+    model: { IOSPresentationModel() },
+    steps: [FixtureStep("present") { $0.dialog = true }]
+) { model in
+    ScrollView {
+        VStack(spacing: 16) {
+            ForEach(0..<10, id: \.self) { index in
+                Text("Row \(index)").frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 26))
+            }
+            Button("Sign out") { model.dialog = true }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 26))
+                .probe("button")
+        }
+        .padding(16)
+        .confirmationDialog("Sign out?", isPresented: dialogBinding(model), titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) {}
+        } message: {
+            Text("Your plan and history stay saved. Sign in again any time.")
+        }
+        .probe("column")
+    }
+    .defaultScrollAnchor(.bottom)
+    .background(Color(white: 0.95).ignoresSafeArea())
+    .probe("scroll")
+}.platform(.iOS).capturesWindow()
+"""#),
+        FixtureSource(name: "ios/dialog/trailing-button", file: "Fixtures/Sources/iOS/IOSOverlayFixtures.swift", firstLine: 39, lastLine: 64, declaration: #"""
+/// The modifier on a small button on the trailing side, in the lower half.
+public static let dialogTrailingButton = Fixture(
+    "ios/dialog/trailing-button", size: phone,
+    model: { IOSPresentationModel() },
+    steps: [FixtureStep("present") { $0.dialog = true }]
+) { model in
+    VStack {
+        Spacer()
+        HStack {
+            Spacer()
+            Button("Delete") { model.dialog = true }
+                .confirmationDialog("Delete it?", isPresented: dialogBinding(model), titleVisibility: .visible) {
+                    Button("Delete", role: .destructive) {}
+                } message: {
+                    Text("This can't be undone.")
+                }
+                // Not probed: iOS gives this borderless button 20.5 pt of height where the
+                // runtime gives 24.5 (a button gap, not the dialog's); the golden's picture
+                // shows where the dialog opens.
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 200)
+    }
+    .background(Color.white.ignoresSafeArea())
+    .probe("stack")
+}.platform(.iOS).capturesWindow()
+"""#),
+        FixtureSource(name: "ios/dialog/wide-button", file: "Fixtures/Sources/iOS/IOSOverlayFixtures.swift", firstLine: 15, lastLine: 37, declaration: #"""
+/// The modifier on a full-width button near the bottom of the window.
+public static let dialogWideButton = Fixture(
+    "ios/dialog/wide-button", size: phone,
+    model: { IOSPresentationModel() },
+    steps: [FixtureStep("present") { $0.dialog = true }]
+) { model in
+    VStack(spacing: 0) {
+        Spacer()
+        Button("Sign out") { model.dialog = true }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 26))
+            .confirmationDialog("Sign out?", isPresented: dialogBinding(model), titleVisibility: .visible) {
+                Button("Sign out", role: .destructive) {}
+            } message: {
+                Text("Your plan and history stay saved. Sign in again any time.")
+            }
+            .probe("button")
+        Color.clear.frame(height: 150)
+    }
+    .padding(.horizontal, 16)
+    .background(Color(white: 0.95).ignoresSafeArea())
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
@@ -2347,7 +2464,7 @@ public static let listFooterHeader = Fixture("ios/list/footer-header", size: CGS
     .probe("list")
 }.platform(.iOS)
 """#),
-        FixtureSource(name: "ios/list/multiselect", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 207, lastLine: 220, declaration: #"""
+        FixtureSource(name: "ios/list/multiselect", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 216, lastLine: 229, declaration: #"""
 /// Multiple selection in edit mode: the selection circles, two rows checked by a step.
 public static let multipleSelection = Fixture(
     "ios/list/multiselect", size: CGSize(width: 375, height: 360),
@@ -2392,7 +2509,7 @@ public static let customSections = Fixture("ios/list/sectionspacing", size: CGSi
     .probe("list")
 }.platform(.iOS)
 """#),
-        FixtureSource(name: "ios/list/selection", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 311, lastLine: 322, declaration: #"""
+        FixtureSource(name: "ios/list/selection", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 349, lastLine: 360, declaration: #"""
 public static let listSelection = Fixture(
     "ios/list/selection", size: CGSize(width: 375, height: 360),
     model: { IOSPresentationModel() },
@@ -3114,7 +3231,7 @@ public static let scrollContent = Fixture("ios/representable/scroll", size: CGSi
     .probe("scroll")
 }.platform(.iOS)
 """#),
-        FixtureSource(name: "ios/representable/sheet", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 125, lastLine: 145, declaration: #"""
+        FixtureSource(name: "ios/representable/sheet", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 134, lastLine: 154, declaration: #"""
 /// A representable inside a sheet (ix-containers left it here): the UIKit label sits in
 /// the sheet's content like any leaf.
 public static let sheetRepresentable = Fixture(
@@ -3298,7 +3415,7 @@ public static let tokens = Fixture("ios/search/tokens", size: phone) {
     .probe("nav")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/sheet/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 42, lastLine: 54, declaration: #"""
+        FixtureSource(name: "ios/sheet/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 51, lastLine: 63, declaration: #"""
 /// The default sheet (large detent): the dimmed window, the card's top corners and inset.
 public static let sheet = Fixture(
     "ios/sheet/basic", size: phone,
@@ -3313,7 +3430,7 @@ public static let sheet = Fixture(
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/sheet/fullscreen", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 188, lastLine: 205, declaration: #"""
+        FixtureSource(name: "ios/sheet/fullscreen", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 197, lastLine: 214, declaration: #"""
 /// `fullScreenCover`: the cover fills the window, no card inset or dimming.
 public static let fullScreenCover = Fixture(
     "ios/sheet/fullscreen", size: phone,
@@ -3333,7 +3450,7 @@ public static let fullScreenCover = Fixture(
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/sheet/medium", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 108, lastLine: 122, declaration: #"""
+        FixtureSource(name: "ios/sheet/medium", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 117, lastLine: 131, declaration: #"""
 /// A medium detent and a hidden drag indicator's opposite: the visible grabber.
 public static let sheetMedium = Fixture(
     "ios/sheet/medium", size: phone,
@@ -3350,7 +3467,7 @@ public static let sheetMedium = Fixture(
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/sheet/nav", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 56, lastLine: 81, declaration: #"""
+        FixtureSource(name: "ios/sheet/nav", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 65, lastLine: 90, declaration: #"""
 /// A `NavigationStack` inside a sheet, presented from one (sw-ios-sheet-nav, Scrumdinger's
 /// add screen): the sheet has a bar of its own, inline and untitled (`navigationTitle("")`),
 /// carrying its cancellation and confirmation items; the presenting stack's large title
@@ -3378,7 +3495,7 @@ public static let sheetNav = Fixture(
     .probe("stack")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/sheet/nav-titled", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 83, lastLine: 106, declaration: #"""
+        FixtureSource(name: "ios/sheet/nav-titled", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 92, lastLine: 115, declaration: #"""
 /// The same sheet with a title: the sheet's inline bar shows it, the presenting bar's own
 /// title does not change.
 public static let sheetNavTitled = Fixture(
@@ -3462,7 +3579,7 @@ public static let symbols = Fixture("ios/symbol/basic", size: CGSize(width: 320,
     .probe("stack")
 }.platform(.iOS)
 """#),
-        FixtureSource(name: "ios/tabs/badges", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 264, lastLine: 275, declaration: #"""
+        FixtureSource(name: "ios/tabs/badges", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 273, lastLine: 284, declaration: #"""
 /// Five tabs with badges: a count on the second, a text on the fourth (the bar's slots
 /// narrow; badges sit on the symbols).
 public static let tabsBadges = Fixture("ios/tabs/badges", size: phone) {
@@ -3476,7 +3593,7 @@ public static let tabsBadges = Fixture("ios/tabs/badges", size: phone) {
     .probe("tabs")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/tabs/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 243, lastLine: 253, declaration: #"""
+        FixtureSource(name: "ios/tabs/basic", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 252, lastLine: 262, declaration: #"""
 /// The tab bar: three tabs with symbols, the first selected. No step selects another: a
 /// programmatic selection change leaves iOS 26's pill raised as glass for seconds, so
 /// `ios/tabs/second` starts on the second tab instead.
@@ -3489,7 +3606,7 @@ public static let tabs = Fixture("ios/tabs/basic", size: phone) {
     .probe("tabs")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/tabs/page", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 277, lastLine: 286, declaration: #"""
+        FixtureSource(name: "ios/tabs/page", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 286, lastLine: 295, declaration: #"""
 /// The page style on iPhone: three pages, the page indicator at the bottom.
 public static let tabsPage = Fixture("ios/tabs/page", size: phone) {
     TabView(selection: .constant(1)) {
@@ -3501,7 +3618,7 @@ public static let tabsPage = Fixture("ios/tabs/page", size: phone) {
     .probe("tabs")
 }.platform(.iOS).capturesWindow()
 """#),
-        FixtureSource(name: "ios/tabs/second", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 255, lastLine: 262, declaration: #"""
+        FixtureSource(name: "ios/tabs/second", file: "Fixtures/Sources/iOS/IOSPresentationFixtures.swift", firstLine: 264, lastLine: 271, declaration: #"""
 public static let tabsSecond = Fixture("ios/tabs/second", size: phone) {
     TabView(selection: .constant(1)) {
         Text("Home content").tabItem { Label("Home", systemImage: "house") }.tag(0)
@@ -20233,6 +20350,107 @@ public enum IOSListEditingFixtures {
     public static let all: [Fixture] = [editing]
 }
 """#,
+        "Fixtures/Sources/iOS/IOSOverlayFixtures.swift": ##"""
+// Where an iOS confirmation dialog opens for sources of different shapes and places
+// (`ios/dialog/…`, new-website#649): a full-width button low in the window, a small button on
+// the trailing side, and a tall column scrolled to its end (Paulo's settings column, whose
+// Sign out button sets the dialog's flag). Each is presented by a step, as a button's action would.
+import SwiftUI
+import FixtureKit
+
+public enum IOSOverlayFixtures {
+    static let phone = CGSize(width: 375, height: 667)
+
+    private static func dialogBinding(_ model: IOSPresentationModel) -> Binding<Bool> {
+        Binding(get: { model.dialog }, set: { model.dialog = $0 })
+    }
+
+    /// The modifier on a full-width button near the bottom of the window.
+    public static let dialogWideButton = Fixture(
+        "ios/dialog/wide-button", size: phone,
+        model: { IOSPresentationModel() },
+        steps: [FixtureStep("present") { $0.dialog = true }]
+    ) { model in
+        VStack(spacing: 0) {
+            Spacer()
+            Button("Sign out") { model.dialog = true }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 26))
+                .confirmationDialog("Sign out?", isPresented: dialogBinding(model), titleVisibility: .visible) {
+                    Button("Sign out", role: .destructive) {}
+                } message: {
+                    Text("Your plan and history stay saved. Sign in again any time.")
+                }
+                .probe("button")
+            Color.clear.frame(height: 150)
+        }
+        .padding(.horizontal, 16)
+        .background(Color(white: 0.95).ignoresSafeArea())
+        .probe("stack")
+    }.platform(.iOS).capturesWindow()
+
+    /// The modifier on a small button on the trailing side, in the lower half.
+    public static let dialogTrailingButton = Fixture(
+        "ios/dialog/trailing-button", size: phone,
+        model: { IOSPresentationModel() },
+        steps: [FixtureStep("present") { $0.dialog = true }]
+    ) { model in
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button("Delete") { model.dialog = true }
+                    .confirmationDialog("Delete it?", isPresented: dialogBinding(model), titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) {}
+                    } message: {
+                        Text("This can't be undone.")
+                    }
+                    // Not probed: iOS gives this borderless button 20.5 pt of height where the
+                    // runtime gives 24.5 (a button gap, not the dialog's); the golden's picture
+                    // shows where the dialog opens.
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 200)
+        }
+        .background(Color.white.ignoresSafeArea())
+        .probe("stack")
+    }.platform(.iOS).capturesWindow()
+
+    /// The modifier on a column taller than the window, scrolled to its end, the button at the
+    /// column's foot (Paulo's settings column).
+    public static let dialogTallColumn = Fixture(
+        "ios/dialog/tall-column", size: phone,
+        model: { IOSPresentationModel() },
+        steps: [FixtureStep("present") { $0.dialog = true }]
+    ) { model in
+        ScrollView {
+            VStack(spacing: 16) {
+                ForEach(0..<10, id: \.self) { index in
+                    Text("Row \(index)").frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 26))
+                }
+                Button("Sign out") { model.dialog = true }
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 26))
+                    .probe("button")
+            }
+            .padding(16)
+            .confirmationDialog("Sign out?", isPresented: dialogBinding(model), titleVisibility: .visible) {
+                Button("Sign out", role: .destructive) {}
+            } message: {
+                Text("Your plan and history stay saved. Sign in again any time.")
+            }
+            .probe("column")
+        }
+        .defaultScrollAnchor(.bottom)
+        .background(Color(white: 0.95).ignoresSafeArea())
+        .probe("scroll")
+    }.platform(.iOS).capturesWindow()
+
+    public static let all: [Fixture] = [dialogWideButton, dialogTrailingButton, dialogTallColumn]
+}
+"""##,
         "Fixtures/Sources/iOS/IOSPickersFixtures.swift": #"""
 // The iOS looks of the menu button and a footer followed by a header. (The compact date picker is
 // not measurable on Catalyst, which draws the Mac field: Docs/elements/iOS.md.)
@@ -20284,6 +20502,15 @@ public enum IOSPickersFixtures {
 // the goldens must show them over an app's white, not the harness window's clear.
 import SwiftUI
 import FixtureKit
+
+@Observable
+public final class IOSDatePanelModel {
+    // 13 Nov 2026, 06:30 UTC.
+    public var a = Date(timeIntervalSince1970: 1_794_547_800)
+    public var b = Date(timeIntervalSince1970: 1_794_547_800)
+    public var c = Date(timeIntervalSince1970: 1_794_547_800)
+    public init() {}
+}
 
 @Observable
 public final class IOSPresentationModel {
@@ -20574,6 +20801,35 @@ public enum IOSPresentationFixtures {
         .probe("form")
     }.platform(.iOS)
 
+    /// iOS 27's own calendar (`.graphical`, new-website#674): the month's weeks from the
+    /// locale's first day, the selected day on a filled circle; March 2025 holds no today.
+    public static let dateGraphical = Fixture("ios/datepicker/graphical", size: CGSize(width: 375, height: 380)) {
+        VStack {
+            DatePicker("Date", selection: .constant(fixed), displayedComponents: .date).datePickerStyle(.graphical).labelsHidden().probe("calendar")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .environment(\.timeZone, utc)
+        .probe("stack")
+    }.platform(.iOS)
+
+    /// The compact pills on an iPhone 16 window, as the picker probe app shows them
+    /// (swipe-harness/picker-probe-674): pressing the date pill opens iOS 27's calendar panel.
+    /// No golden: the panel opens on a press, compared with the simulator's screenshots.
+    public static let datePanels = Fixture("ios/datepicker/panels", size: CGSize(width: 393, height: 852), model: { IOSDatePanelModel() }, steps: []) { model in
+        VStack(alignment: .leading, spacing: 24) {
+            DatePicker("Time", selection: Binding(get: { model.a }, set: { model.a = $0 }), displayedComponents: .hourAndMinute).probe("time")
+            DatePicker("Date", selection: Binding(get: { model.b }, set: { model.b = $0 }), displayedComponents: .date).probe("date")
+            DatePicker("Both", selection: Binding(get: { model.c }, set: { model.c = $0 })).probe("both")
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 59)
+        .environment(\.locale, Locale(identifier: "en_GB"))
+        .environment(\.timeZone, utc)
+        .probe("stack")
+    }.platform(.iOS)
+
     /// A list with a selection binding: the selected row's look after a step selects it.
     /// The wheel style (iOS only): the date's three columns and the time's, captured as the window.
     public static let dateWheel = Fixture("ios/datepicker/wheel", size: CGSize(width: 375, height: 520)) {
@@ -20599,7 +20855,7 @@ public enum IOSPresentationFixtures {
     }.platform(.iOS)
 
     public static var all: [Fixture] {
-        var fixtures = [sheet, sheetNav, sheetNavTitled, sheetMedium, alert, alertStacked, fullScreenCover, dialog, tabs, tabsSecond, tabsBadges, tabsPage, datePicker, listSelection, multipleSelection]
+        var fixtures = [sheet, sheetNav, sheetNavTitled, sheetMedium, alert, alertStacked, fullScreenCover, dialog, tabs, tabsSecond, tabsBadges, tabsPage, datePicker, dateGraphical, datePanels, listSelection, multipleSelection]
         #if canImport(UIKit)
         fixtures.append(sheetRepresentable)
         #endif
