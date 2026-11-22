@@ -39,6 +39,31 @@ public struct _ShareItem: Equatable, Sendable {
     }
 }
 
+/// An item whose bytes come from an `async` exporter (an app that renders its image when shared,
+/// `DataRepresentation(exportedContentType:)` with an async closure): the drawn share sheet waits
+/// for them when it opens, as iOS's does.
+public struct _PendingShareItem: @unchecked Sendable {
+    public let contentType: UTType
+    package let load: @MainActor () async -> Data?
+
+    /// The value's first async data export, when it has no export to give at once.
+    @MainActor package init?<T: Transferable>(_ value: T) {
+        for exporter in _TransferItem(value).exporters {
+            guard exporter.exportedType == Data.self, let work = exporter.exportAsync else { continue }
+            contentType = exporter.contentType ?? .data
+            load = { await work(value) as? Data }
+            return
+        }
+        return nil
+    }
+
+    /// The item with its bytes, nil when the export gave none.
+    @MainActor package func resolve() async -> _ShareItem? {
+        guard let data = await load(), !data.isEmpty else { return nil }
+        return _ShareItem(.data(data, type: contentType))
+    }
+}
+
 /// What a share link asks the host to share: the items, the subject and message, and the
 /// preview's title (the browser's Web Share takes a title, a text, a URL and files; the native
 /// host hands the items to the sharing service picker).
@@ -47,12 +72,21 @@ public struct _ShareRequest: Equatable, Sendable {
     public var subject: String?
     public var message: String?
     public var previewTitle: String?
+    /// Items still to be exported (awaited by the drawn share sheet; hosts get only `items`).
+    public var pending: [_PendingShareItem] = []
+    /// `SharePreview`'s image, shown in the drawn share sheet's header.
+    package var previewImage: Image?
 
     public init(items: [_ShareItem], subject: String? = nil, message: String? = nil, previewTitle: String? = nil) {
         self.items = items
         self.subject = subject
         self.message = message
         self.previewTitle = previewTitle
+    }
+
+    public static func == (lhs: _ShareRequest, rhs: _ShareRequest) -> Bool {
+        lhs.items == rhs.items && lhs.subject == rhs.subject && lhs.message == rhs.message && lhs.previewTitle == rhs.previewTitle
+            && lhs.pending.map(\.contentType) == rhs.pending.map(\.contentType)
     }
 
     /// The data items as files for a host: the bytes, a name from the preview title or the
@@ -96,6 +130,10 @@ public struct _ShareRequest: Equatable, Sendable {
 public struct ShareAction: Sendable {
     /// The host's sharer: nil until a host installs one.
     @MainActor public static var systemHandler: (@MainActor (_ShareRequest) -> Void)?
+    /// The host's clipboard, for the drawn share sheet's Copy: text, and image bytes with their
+    /// MIME type (a browser takes PNG; the host converts).
+    @MainActor public static var _copyText: (@MainActor (String) -> Void)?
+    @MainActor public static var _copyImage: (@MainActor ([UInt8], String) -> Void)?
 
     @MainActor package static func share(_ request: _ShareRequest) {
         systemHandler?(request)
@@ -143,19 +181,26 @@ extension SharePreview where Image == Never, Icon == Never {
 /// A share link's subject, message and preview title, in one box: three `Text?` fields held
 /// inline made `ShareLink`'s copy and assign witnesses about 60 KB of every bundle. Equatable,
 /// so a re-render compares the texts and not the box.
-private final class _ShareTexts: Equatable, Sendable {
+/// The box also holds what only the drawn share sheet reads: the items an async exporter gives
+/// and the preview's image.
+private final class _ShareTexts: Equatable, @unchecked Sendable {
     let subject: Text?
     let message: Text?
     let previewTitle: Text?
+    let pending: [_PendingShareItem]
+    let previewImage: Image?
 
-    init(subject: Text?, message: Text?, previewTitle: Text?) {
+    init(subject: Text?, message: Text?, previewTitle: Text?, pending: [_PendingShareItem] = [], previewImage: Image? = nil) {
         self.subject = subject
         self.message = message
         self.previewTitle = previewTitle
+        self.pending = pending
+        self.previewImage = previewImage
     }
 
     static func == (lhs: _ShareTexts, rhs: _ShareTexts) -> Bool {
         lhs.subject == rhs.subject && lhs.message == rhs.message && lhs.previewTitle == rhs.previewTitle
+            && lhs.pending.map(\.contentType) == rhs.pending.map(\.contentType)
     }
 }
 
@@ -168,9 +213,10 @@ public struct ShareLink<Label: View>: View {
     package var message: Text? { texts.message }
     package var previewTitle: Text? { texts.previewTitle }
 
-    package init(shareItems: [_ShareItem], subject: Text?, message: Text?, previewTitle: Text?, label: Label) {
+    package init(shareItems: [_ShareItem], subject: Text?, message: Text?, previewTitle: Text?, label: Label,
+                 pending: [_PendingShareItem] = [], previewImage: Image? = nil) {
         items = shareItems
-        texts = _ShareTexts(subject: subject, message: message, previewTitle: previewTitle)
+        texts = _ShareTexts(subject: subject, message: message, previewTitle: previewTitle, pending: pending, previewImage: previewImage)
         self.label = label
     }
 
@@ -188,13 +234,17 @@ public struct ShareLink<Label: View>: View {
     @MainActor public init<I: Transferable, PreviewImage, PreviewIcon>(items: [I], subject: Text? = nil, message: Text? = nil,
                                                                        preview: (I) -> SharePreview<PreviewImage, PreviewIcon>, @ViewBuilder label: () -> Label) {
         self.init(shareItems: items.compactMap { _ShareItem($0) }, subject: subject, message: message,
-                  previewTitle: items.first.map { preview($0).title }, label: label())
+                  previewTitle: items.first.map { preview($0).title }, label: label(),
+                  pending: items.filter { _ShareItem($0) == nil }.compactMap { _PendingShareItem($0) },
+                  previewImage: items.first.flatMap { preview($0).image as? Image })
     }
 
     /// Creates an instance that shares a `Transferable` item with a preview.
     @MainActor public init<I: Transferable, PreviewImage, PreviewIcon>(item: I, subject: Text? = nil, message: Text? = nil,
                                                                        preview: SharePreview<PreviewImage, PreviewIcon>, @ViewBuilder label: () -> Label) {
-        self.init(shareItems: [_ShareItem(item)].compactMap { $0 }, subject: subject, message: message, previewTitle: preview.title, label: label())
+        let ready = _ShareItem(item)
+        self.init(shareItems: [ready].compactMap { $0 }, subject: subject, message: message, previewTitle: preview.title, label: label(),
+                  pending: ready == nil ? [_PendingShareItem(item)].compactMap { $0 } : [], previewImage: preview.image as? Image)
     }
 
     public init(item: URL, subject: Text? = nil, message: Text? = nil, @ViewBuilder label: () -> Label) {
@@ -207,8 +257,31 @@ public struct ShareLink<Label: View>: View {
     }
 
     public var body: some View {
-        let request = _ShareRequest(items: items, subject: subject?.resolvedString, message: message?.resolvedString, previewTitle: previewTitle?.resolvedString)
-        return Button(action: { ShareAction.share(request) }) { label }
+        var request = _ShareRequest(items: items, subject: subject?.resolvedString, message: message?.resolvedString, previewTitle: previewTitle?.resolvedString)
+        request.pending = texts.pending
+        request.previewImage = texts.previewImage
+        return _ShareLinkButton(request: request, label: label)
+    }
+}
+
+/// A share link's button: on iOS it opens the drawn iPhone's share sheet (`_ShareSheet`), growing
+/// out of the button as iOS 27's does; elsewhere it hands the items to the host (Web Share).
+struct _ShareLinkButton<Label: View>: View {
+    let request: _ShareRequest
+    let label: Label
+    @State private var presented = false
+    @Environment(\.platformProfile) private var platformProfile
+
+    var body: some View {
+        if platformProfile.isIOS {
+            Button(action: { presented = true }) { label }
+                .sheet(isPresented: $presented) {
+                    _ShareSheet(request: request, close: { presented = false })
+                }
+        } else {
+            let request = request
+            Button(action: { ShareAction.share(request) }) { label }
+        }
     }
 }
 

@@ -49,7 +49,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if preferredColorScheme != nil { applyPreferredColorScheme() }
         // A sheet presented once its presenter is on screen slides up; one there from the first
         // frame (a scene restored, a fixture) is simply there.
-        slidesIn = kind == .sheet && environment.platformProfile.isIOS && anchor?.hasBeenPlaced == true
+        slidesIn = slides && anchor?.hasBeenPlaced == true
         // An iOS alert, confirmation dialog or menu presented once the app is on screen comes
         // in with the iPhone's motion; one there from the first frame is simply there.
         popsIn = pops && anchor?.hasBeenPlaced == true
@@ -62,7 +62,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     /// arrow's tip) or menu (glass growing out of and back into its button).
     package var pops: Bool {
         guard environment.platformProfile.isIOS else { return false }
-        if isSystemPicker { return true }
+        if isSystemPicker || options.share != nil { return true }
         switch kind {
         case .alert: return true
         case .dialog: return metrics.dialogsArePopovers
@@ -114,7 +114,8 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         // A picker's panel is a UIKit popover: the confirmation dialog's springs (fitted to the
         // date panel's frames in the simulator, new-website#674: omega 18.8, zeta 0.80 in;
         // 17.9, 0.85 out).
-        let springs = Self.popSprings(kind: isSystemPicker ? .dialog : kind, entering: entering)
+        let springs = options.share != nil ? Self.shareSprings(entering: entering)
+            : Self.popSprings(kind: isSystemPicker ? .dialog : kind, entering: entering)
         if pop.count != springs.count {
             pop = springs.map { _ in Motion(position: entering ? 0 : 1, restDistance: 0.0005, restSpeed: 0.01) }
         }
@@ -136,13 +137,77 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         guard popRunning else { return }
         popRunning = false
         runtime.paintAnimations -= 1
-        if !slideRunning { runtime.unsubscribeFrames(self) }
+        if !slideRunning && !expandRunning { runtime.unsubscribeFrames(self) }
     }
 
     private func popFinished() {
         stopPopFrames()
         if isLeaving { runtime.finishLeaving(self) }
         runtime.requestRepaint()
+    }
+
+    // MARK: The share sheet (new-website#668)
+
+    /// iOS 27's share sheet is a glass popover: it scales up from a hundredth of its size about
+    /// its own centre while it fades in, and back, on the popover's springs (read from Core
+    /// Animation in the simulator).
+    package static func shareSprings(entering: Bool) -> [(SpringModel, Double)] {
+        [(entering ? ShareSheetMetrics.open : ShareSheetMetrics.close, 0)]
+    }
+
+    /// View More: the compact card growing to the full sheet (0 at the compact card, 1 at the
+    /// full one), and the card it grows from.
+    private var expand = Motion(position: 1, restDistance: 0.0005, restSpeed: 0.01)
+    private var expandFrom: CGRect?
+    private var expandRunning = false
+    private var expandClock: Double?
+
+    /// The share sheet's stage changed: the card grows from where it is to its new place.
+    private func shareStageChanged() {
+        guard hasLaidOut, !isLeaving else { return }
+        expandFrom = shownSharePanel
+        expand.hold(at: 0)
+        expand.animate(to: 1, spring: ShareSheetMetrics.expand, velocity: 0)
+        if !expandRunning {
+            expandRunning = true
+            expandClock = nil
+            runtime.paintAnimations += 1
+            runtime.subscribeFrames(self)
+        }
+        runtime.requestRepaint()
+    }
+
+    private func stopExpandFrames() {
+        guard expandRunning else { return }
+        expandRunning = false
+        runtime.paintAnimations -= 1
+        if !popRunning && !slideRunning { runtime.unsubscribeFrames(self) }
+    }
+
+    /// Where the share sheet's card is drawn now (before the scale it comes and goes with):
+    /// between its last card and its place while View More or View Less moves it.
+    package var shownSharePanel: CGRect {
+        guard let from = expandFrom, abs(expand.position - 1) > 0.0005 else { return panel }
+        let t = CGFloat(expand.position)
+        return CGRect(x: from.minX + (panel.minX - from.minX) * t, y: from.minY + (panel.minY - from.minY) * t,
+                      width: from.width + (panel.width - from.width) * t, height: from.height + (panel.height - from.height) * t)
+    }
+
+    /// Its bottom corners: the compact panel's 46 follow the screen's corner 9 pt in, the full
+    /// sheet's 55 are the screen's; between them while it moves, back to the top's 38 as it leaves.
+    private var shareBottomRadius: CGFloat {
+        let compact = ShareSheetMetrics.bottomCornerRadius, full = ShareSheetMetrics.expandedBottomCornerRadius
+        let target = options.share == .expanded ? full : compact
+        var radius = target
+        if expandFrom != nil, abs(expand.position - 1) > 0.0005 {
+            let start = options.share == .expanded ? compact : full
+            radius = start + (target - start) * CGFloat(expand.position)
+        }
+        if isLeaving {
+            let top = ShareSheetMetrics.cornerRadius
+            radius = top + (radius - top) * CGFloat(min(1, max(0, popProgress)))
+        }
+        return radius
     }
 
     /// The main channel's progress (1 when nothing animates).
@@ -175,7 +240,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
 
     /// Whether this presentation slides (iOS sheets and covers) and follows a dragging finger
     /// (sheets only: a cover is not dragged away, nor a sheet with `interactiveDismissDisabled`).
-    package var slides: Bool { kind == .sheet && environment.platformProfile.isIOS }
+    package var slides: Bool { kind == .sheet && environment.platformProfile.isIOS && options.share == nil }
     package var dragsToDismiss: Bool { slides && !options.fullScreen && !options.interactiveDismissDisabled && !isLeaving }
 
     /// The distance from the panel's place to just below the window.
@@ -201,7 +266,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         guard slideRunning else { return }
         slideRunning = false
         runtime.paintAnimations -= 1
-        if !popRunning { runtime.unsubscribeFrames(self) }
+        if !popRunning && !expandRunning { runtime.unsubscribeFrames(self) }
     }
 
     private func slideFinished() {
@@ -221,11 +286,20 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             if !slide.step(now - last) { slideFinished() } else { runtime.requestRepaint() }
         }
         if popRunning {
-            let last = popClock ?? popBegan
+            // The share sheet's spring starts on the frame after the one that first painted it
+            // (that frame and the next show it at its start, as iOS's first frames do): the app's
+            // work around a press (presenting, laying out the panel) never eats its opening.
+            let last = popClock ?? (options.share != nil ? now : popBegan)
             popClock = now
             var moving = false
             for index in pop.indices where pop[index].step(now - last) { moving = true }
             if !moving { popFinished() } else { runtime.requestRepaint() }
+        }
+        if expandRunning {
+            let last = expandClock ?? now
+            expandClock = now
+            if !expand.step(now - last) { expandFrom = nil; stopExpandFrames() }
+            runtime.requestRepaint()
         }
     }
 
@@ -281,8 +355,14 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         /// iOS: a system sheet (Sign in with Apple's, new-website#707) floating in from the
         /// sides and the bottom like the medium detent's card, as tall as its content.
         package var fitsContent = false
+        /// iOS: the drawn share sheet (new-website#668), compact or grown by View More.
+        package var share: ShareSheetStage?
     }
-    package var options = Options()
+    package var options = Options() {
+        didSet {
+            if oldValue.share != nil, options.share != nil, oldValue.share != options.share { shareStageChanged() }
+        }
+    }
 
     /// The platform's metrics, read explicitly: presentations lay out and paint outside a node's
     /// own profile selection.
@@ -296,7 +376,10 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     }
 
     /// iOS: the medium detent when it is the only one offered (`sheetsFillWindow`).
-    private var mediumDetent: Bool { options.fitsContent || (options.detents.contains(.medium) && !options.detents.contains(.large)) }
+    private var mediumDetent: Bool {
+        if let share = options.share { return share == .compact }
+        return options.fitsContent || (options.detents.contains(.medium) && !options.detents.contains(.large))
+    }
 
     /// Secondary windows: the title bar above the content and the close button in it.
     package static let windowTitleBarHeight: CGFloat = 28
@@ -456,6 +539,21 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             // and the bottom. The card has no unsafe region above it; at the bottom the content
             // keeps clear of the home indicator unless it extends into it, as in the window.
             let safe = runtime.safeAreaInsets
+            popSource = anchor?.frameInRoot ?? CGRect(x: window.width / 2, y: window.height, width: 0, height: 0)
+            if let share = options.share {
+                if share == .compact {
+                    let width = window.width - 2 * ShareSheetMetrics.sideInset
+                    let height = target.sizeThatFits(ProposedViewSize(width: width, height: nil)).height.rounded(.up)
+                    panel = CGRect(x: ShareSheetMetrics.sideInset, y: window.height - ShareSheetMetrics.bottomInset - height, width: width, height: height)
+                } else {
+                    let top = max(m.sheetTopInset, safe.top)
+                    panel = CGRect(x: 0, y: top, width: window.width, height: window.height - top)
+                }
+                arrow = nil
+                runtime.root.place(target, in: panel, insets: EdgeInsets(top: 0, leading: 0, bottom: share == .compact ? 0 : safe.bottom, trailing: 0))
+                contentFrame = target.frame
+                return
+            }
             if options.fitsContent {
                 let width = window.width - 2 * m.sheetMediumSideInset
                 // The content keeps clear of the home indicator below it (as placed below).
@@ -798,7 +896,8 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         let m = metrics
         let iOS = environment.platformProfile.isIOS
         if isModal && !(kind == .dialog && m.dialogsArePopovers) && !options.fullScreen {
-            let alpha = m.presentationDimAlpha * (slides ? slideProgress : 1) * (pops ? min(1, max(0, popProgress)) : 1)
+            let dim = options.share == nil ? m.presentationDimAlpha : ShareSheetMetrics.dimAlpha
+            let alpha = dim * (slides ? slideProgress : 1) * (pops ? min(1, max(0, popProgress)) : 1)
             list.append(.fillRect(context.absoluteRect(CGRect(origin: .zero, size: runtime.layoutSize)), RGBA(red: 0, green: 0, blue: 0, alpha: alpha)))
         }
         // A sliding sheet is drawn lower by its slide, at whole device pixels.
@@ -816,6 +915,9 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             // No card: a cover is not a floating panel (no shadow ring, rounded fill or border,
             // which hid a clear background).
             if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+            return
+        } else if kind == .sheet && options.share != nil {
+            paintShareSheet(into: &list, context: context)
             return
         } else if kind == .sheet && m.sheetsFillWindow {
             // iOS: the large card's top corners only (it runs off the window), the medium card
@@ -989,6 +1091,61 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         }
         if let toolbarBar { toolbarBar.paint(into: &list, context: context.child(at: toolbarBar.frame)) }
         if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
+    }
+
+    /// The share sheet: the glass panel with a soft, wide shadow and a hairline rim (the full
+    /// sheet nearly opaque white), its content clipped to it; it scales about its centre and
+    /// fades while it comes and goes, and its content rides with its top while View More moves it.
+    private func paintShareSheet(into list: inout DisplayList, context: PaintContext) {
+        let place = context.absoluteRect(panel)
+        let rect = context.absoluteRect(shownSharePanel)
+        let progress = popProgress
+        let popping = abs(progress - 1) > 0.0005
+        if popping {
+            let scale = 0.01 + 0.99 * progress
+            let centre = CGPoint(x: rect.midX, y: rect.midY)
+            list.append(.beginGroup(opacity: min(1, max(0, progress))))
+            list.append(.save)
+            list.append(.concat(CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: centre.x * (1 - scale), ty: centre.y * (1 - scale))))
+        }
+        defer {
+            if popping {
+                list.append(.restore)
+                list.append(.endGroup)
+            }
+        }
+        let dark = environment.colorScheme == .dark
+        let top = ShareSheetMetrics.cornerRadius, bottom = shareBottomRadius
+        let radii = RectangleCornerRadii(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top)
+        let shape = UnevenRoundedRectangle(cornerRadii: radii, style: .continuous).path(in: rect)
+        for (spread, alpha) in [(2.0, 0.018), (6.0, 0.014), (12.0, 0.01), (20.0, 0.006)] {
+            let ring = rect.insetBy(dx: -spread, dy: -spread)
+            list.append(.fillPath(UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: top + spread, bottomLeading: bottom + spread,
+                                                                                            bottomTrailing: bottom + spread, topTrailing: top + spread),
+                                                         style: .continuous).path(in: ring), environment._ink(alpha)))
+        }
+        // The full sheet is nearly opaque; the compact panel is glass over the page.
+        let moved = expandFrom == nil ? 1 : CGFloat(expand.position)
+        let full = options.share == .expanded ? moved : 1 - moved
+        list.append(.backdropBlur(shape, bounds: rect, radius: ShareSheetMetrics.glassSigma))
+        var fill = dark ? ShareSheetMetrics.fillDark : ShareSheetMetrics.fill
+        if !dark {
+            let solid = ShareSheetMetrics.expandedFill
+            let t = Double(min(1, max(0, full)))
+            fill = RGBA(red: fill.red + (solid.red - fill.red) * t, green: fill.green + (solid.green - fill.green) * t,
+                        blue: fill.blue + (solid.blue - fill.blue) * t, alpha: fill.alpha + (solid.alpha - fill.alpha) * t)
+        }
+        list.append(.fillPath(shape, fill))
+        list.append(.strokePath(UnevenRoundedRectangle(cornerRadii: radii, style: .continuous).path(in: rect.insetBy(dx: 0.33, dy: 0.33)),
+                                style: StrokeStyle(lineWidth: 0.67), environment._ink(dark ? 0.2 : 0.08)))
+        guard let target else { return }
+        list.append(.save)
+        list.append(.clipPath(shape))
+        if rect.minY != place.minY || rect.minX != place.minX {
+            list.append(.concat(CGAffineTransform(translationX: rect.minX - place.minX, y: rect.minY - place.minY)))
+        }
+        target.paint(into: &list, context: context.child(at: target.presentedFrame))
+        list.append(.restore)
     }
 
     /// Where a menu's glass is while it grows out of its button or shrinks back into it: each
@@ -1251,6 +1408,11 @@ extension Runtime {
                 presentation.dismiss()
                 return (nil, true)
             }
+            // iOS 27: a press beside the share sheet closes it.
+            if presentation.options.share != nil {
+                presentation.dismiss()
+                return (nil, true)
+            }
             if presentation.isModal { return (nil, true) }
             // A press beside a window leaves it open and goes on to what is under it.
             if presentation.kind.isWindow { continue }
@@ -1342,6 +1504,7 @@ package final class PresentationOptionsNode<Content: View>: UnaryLayoutModifierN
                 if let indicator = modifier.dragIndicator { presentation.options.dragIndicator = indicator }
                 if let disabled = modifier.interactiveDismissDisabled { presentation.options.interactiveDismissDisabled = disabled }
                 if let background = modifier.background { presentation.options.background = background }
+                if let share = modifier.share, presentation.options.share != share { presentation.options.share = share }
                 return
             }
             current = node.parent
