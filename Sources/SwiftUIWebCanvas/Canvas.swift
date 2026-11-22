@@ -128,7 +128,31 @@ public final class CanvasHost {
         // `UIApplication.shared.open` from a SwiftUI app reaches the same tab (decision 0021).
         UIKitScene.shared.openURL = { url in host.openURL(url) }
         ShareAction.systemHandler = { request in host.share(items: request.strings, subject: request.subject, message: request.message, files: request.files) }
+        // The drawn share sheet's Copy (new-website#668): text, and images as PNG (what browsers
+        // put on the clipboard; a JPEG is redrawn into one), handed over as a promise so Safari
+        // takes it inside the press.
+        if let navigator = JSObject.global.navigator.object, let clipboard = navigator.clipboard.object {
+            if clipboard.writeText.function != nil {
+                ShareAction._copyText = { text in _ = clipboard.writeText!(text) }
+            }
+            if clipboard.write.function != nil, JSObject.global.ClipboardItem.function != nil,
+               let copyImage = JSObject.global.Function.function?.new("bytes", "type", Self.copyImageScript).jsValue.function {
+                ShareAction._copyImage = { bytes, type in _ = copyImage(JSTypedArray<UInt8>(bytes).jsValue, type) }
+            }
+        }
     }
+
+    /// Puts image bytes on the clipboard as PNG.
+    private static let copyImageScript = """
+        const blob = new Blob([bytes], { type });
+        const png = type === 'image/png' ? Promise.resolve(blob) : createImageBitmap(blob).then((bitmap) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = bitmap.width; canvas.height = bitmap.height;
+          canvas.getContext('2d').drawImage(bitmap, 0, 0);
+          return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        });
+        return navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).catch((error) => console.warn('copy image', error));
+        """
 
     /// Mounts (or replaces) the root view and schedules a frame.
     public func mount(_ view: AnyView) {

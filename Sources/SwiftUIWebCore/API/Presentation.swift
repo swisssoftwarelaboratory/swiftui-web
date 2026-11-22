@@ -656,9 +656,12 @@ public struct _PresentationOptionsModifier {
     package let dragIndicator: Visibility?
     package let interactiveDismissDisabled: Bool?
     package let background: AnyShapeStyle?
+    /// The drawn share sheet's stage (new-website#668).
+    package var share: ShareSheetStage? = nil
 
     package init(detents: Set<PresentationDetent>? = nil, dragIndicator: Visibility? = nil, interactiveDismissDisabled: Bool? = nil,
-                 background: AnyShapeStyle? = nil) {
+                 background: AnyShapeStyle? = nil, share: ShareSheetStage? = nil) {
+        self.share = share
         self.detents = detents
         self.dragIndicator = dragIndicator
         self.interactiveDismissDisabled = interactiveDismissDisabled

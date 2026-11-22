@@ -40,6 +40,9 @@ public struct _TransferExporter<Item> {
     package let exportedType: Any.Type
     package let export: (Item) -> Any?
     package let importer: ((Any) -> Item?)?
+    /// An `async` exporter's work (`DataRepresentation(exportedContentType:exporting:)` with an
+    /// async closure): `export` has nothing to give at once, a share sheet awaits this instead.
+    package var exportAsync: (@MainActor (Item) async -> Any?)? = nil
 }
 
 /// Exports the item as another transferable value (and imports it back).
@@ -101,13 +104,22 @@ public struct DataRepresentation<Item>: TransferRepresentation {
         self.contentType = exportedContentType
         self.exporting = { _ in throw _AsyncTransferExport() }
         self.importing = nil
+        exportingAsync = exporting
     }
 
+    /// The async exporter, kept for the share sheet, which can wait for it.
+    package var exportingAsync: (@Sendable (Item) async throws -> Data)? = nil
+
     public var _exporters: [_TransferExporter<Item>] {
-        let exporting = exporting, importing = importing
+        let exporting = exporting, importing = importing, exportingAsync = exportingAsync
         return [_TransferExporter(contentType: contentType, exportedType: Data.self,
                                   export: { try? exporting($0) },
-                                  importer: importing.map { imp in { ($0 as? Data).flatMap { try? imp($0) } } })]
+                                  importer: importing.map { imp in { ($0 as? Data).flatMap { try? imp($0) } } },
+                                  exportAsync: exportingAsync.map { work in { @MainActor (item: Item) async -> Any? in
+                                      // The app's own value, handed to its own exporter, as SwiftUI does.
+                                      nonisolated(unsafe) let item = item
+                                      return try? await work(item)
+                                  } })]
     }
 }
 
@@ -235,7 +247,14 @@ public struct _TransferItem {
         external = []
         exporters = T._representationExporters.map { exporter in
             _TransferExporter<Any>(contentType: exporter.contentType, exportedType: exporter.exportedType,
-                                   export: { ($0 as? T).flatMap(exporter.export) }, importer: nil)
+                                   export: { ($0 as? T).flatMap(exporter.export) }, importer: nil,
+                                   exportAsync: exporter.exportAsync.map { work in
+                                       nonisolated(unsafe) let work = work
+                                       return { @MainActor (value: Any) async -> Any? in
+                                           guard let value = value as? T else { return nil }
+                                           return await work(value)
+                                       }
+                                   })
         }
     }
 
