@@ -251,8 +251,15 @@ public final class AVAudioSession {
     public func setPreferredSampleRate(_ sampleRate: Double) throws {}
     public func setPreferredIOBufferDuration(_ duration: TimeInterval) throws {}
 
-    /// The microphone permission as the browser last answered it.
-    public var recordPermission: RecordPermission { _AVAudioHost.recordPermission }
+    /// The microphone permission as the browser last answered it (the drawn iPhone's answer
+    /// inside it).
+    public var recordPermission: RecordPermission {
+        switch AVAudioApplication.shared.recordPermission {
+        case .undetermined: .undetermined
+        case .denied: .denied
+        case .granted: .granted
+        }
+    }
 
     /// Asks the browser for the microphone (a prompt the first time); the answer on the main actor.
     public func requestRecordPermission(_ response: @escaping (Bool) -> Void) {
@@ -272,15 +279,27 @@ public final class AVAudioApplication {
     }
 
     public var recordPermission: recordPermission {
+        if _PhoneMicrophone.inPhone {
+            switch _PhonePrompts.allowed(_PhoneMicrophone.name) {
+            case true?: return .granted
+            case false?: return .denied
+            case nil: return .undetermined
+            }
+        }
         switch _AVAudioHost.recordPermission {
-        case .undetermined: .undetermined
-        case .denied: .denied
-        case .granted: .granted
+        case .undetermined: return .undetermined
+        case .denied: return .denied
+        case .granted: return .granted
         }
     }
 
     /// Asks for the microphone; the host remembers the grant.
     public static func requestRecordPermission(completionHandler: @escaping (Bool) -> Void) {
+        if _PhoneMicrophone.inPhone {
+            nonisolated(unsafe) let completionHandler = completionHandler
+            _PhoneMicrophone.ask { completionHandler($0) }
+            return
+        }
         if _AVAudioHost.recordPermission == .granted { completionHandler(true); return }
         guard let request = _AVAudioHost.requestRecordPermission else {
             _AVAudioHost.recordPermission = .denied
@@ -491,7 +510,15 @@ public final class AVAudioEngine {
     /// Starts the engine: opens the microphone when a tap wants it (the host asks the browser for it).
     public func start() throws {
         guard !isRunning else { return }
-        guard let open = _AVAudioHost.openMicrophone else { throw StartError(description: "AVAudioEngine: no audio host") }
+        var open = _AVAudioHost.openMicrophone
+        if _PhoneMicrophone.inPhone {
+            // The drawn iPhone's microphone hears nothing (the demo account's sound is still
+            // undecided, new-website#710), and never the viewer's: silence at the phone's rate.
+            // Using it unasked brings up iOS's question, as on an iPhone.
+            if _PhonePrompts.allowed(_PhoneMicrophone.name) == nil { _PhoneMicrophone.ask { _ in } }
+            open = { bufferSize, deliver, _ in _PhoneSilence(bufferSize: bufferSize, deliver: deliver) }
+        }
+        guard let open else { throw StartError(description: "AVAudioEngine: no audio host") }
         let bufferSize = Int(inputNode.taps.values.map(\.bufferSize).max() ?? 1024)
         nonisolated(unsafe) let node = inputNode
         nonisolated(unsafe) let engine = self
@@ -520,6 +547,50 @@ public final class AVAudioEngine {
     }
 
     public func reset() { stop() }
+}
+
+// MARK: - The drawn iPhone's microphone
+
+/// The microphone inside the drawn iPhone (new-website#710): iOS's own question, asked once
+/// and kept, never the viewer's browser, and a microphone that hears silence.
+enum _PhoneMicrophone {
+    static let name = "microphone"
+
+    static var inPhone: Bool {
+        #if os(WASI)
+        return _PhonePrompts.isPresent
+        #else
+        return false
+        #endif
+    }
+
+    static func ask(_ answered: @escaping @MainActor @Sendable (Bool) -> Void) {
+        let title = _PhonePrompts.german ? "Darf \(_PhonePrompts.quotedName) auf dein Mikrofon zugreifen?"
+            : "Allow \(_PhonePrompts.quotedName) to access your microphone?"
+        _PhonePrompts.askAllow(name, title: title, usageKey: "NSMicrophoneUsageDescription", answered: answered)
+    }
+}
+
+/// A microphone in a quiet room: a buffer of zeros every buffer's length of time, at 48 kHz.
+final class _PhoneSilence: _AVAudioCapture, @unchecked Sendable {
+    let sampleRate: Double = 48_000
+    private var stopped = false
+
+    init(bufferSize: Int, deliver: @escaping @MainActor @Sendable ([Float], Double) -> Void) {
+        let frames = max(256, bufferSize)
+        let rate = sampleRate
+        let period = UInt64(Double(frames) / rate * 1_000_000_000)
+        Task { @MainActor [weak self] in
+            let zeros = [Float](repeating: 0, count: frames)
+            while let self, !self.stopped {
+                try? await Task.sleep(nanoseconds: period)
+                guard !self.stopped else { return }
+                deliver(zeros, rate)
+            }
+        }
+    }
+
+    func stop() { stopped = true }
 }
 
 final class _Box<Value>: @unchecked Sendable {

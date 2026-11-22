@@ -9,7 +9,12 @@
 // for authorization answers denied and an update fails with `CLError.denied`. The hook itself
 // is in CoreLocationHost, a module of its own, so the canvas can install it without linking
 // this module into every app (decision 0006: a module's class metadata keeps all of it).
+//
+// Inside the drawn iPhone (new-website#710) the browser is never asked: iOS's own location
+// alert asks once and its answer is kept (Allow Once only for this visit), and no position
+// comes yet (the demo account's place is undecided), as an iPhone that has no fix.
 @_exported import CoreLocationHost
+import WebFoundation
 
 extension _CoreLocationHost.Position {
     var location: CLLocation {
@@ -115,7 +120,7 @@ open class CLLocationManager: NSObject {
 
     // MARK: Availability
 
-    open class func locationServicesEnabled() -> Bool { _CoreLocationHost.locate != nil }
+    open class func locationServicesEnabled() -> Bool { inPhone || _CoreLocationHost.locate != nil }
     open class func authorizationStatus() -> CLAuthorizationStatus { status }
     open class func headingAvailable() -> Bool { false }
     open class func significantLocationChangeMonitoringAvailable() -> Bool { _CoreLocationHost.watch != nil }
@@ -129,15 +134,16 @@ open class CLLocationManager: NSObject {
 
     open func requestWhenInUseAuthorization() { requestAuthorization() }
     /// A page has no "always": the browser's one permission answers both requests.
-    open func requestAlwaysAuthorization() { requestAuthorization() }
+    open func requestAlwaysAuthorization() { requestAuthorization(always: true) }
 
     open func requestTemporaryFullAccuracyAuthorization(withPurposeKey purposeKey: String, completion: (((any Error)?) -> Void)? = nil) {
         completion?(nil)
     }
     open func requestTemporaryFullAccuracyAuthorization(withPurposeKey purposeKey: String) async throws {}
 
-    private func requestAuthorization() {
+    private func requestAuthorization(always: Bool = false) {
         guard Self.status == .notDetermined else { return }
+        if Self.inPhone { Self.askInPhone(always: always); return }
         guard let locate = _CoreLocationHost.locate else {
             Self.answer = .denied
             Task { @MainActor in CLLocationManager.authorizationMayHaveChanged() }
@@ -152,6 +158,16 @@ open class CLLocationManager: NSObject {
     // MARK: Locations
 
     open func requestLocation() {
+        if Self.inPhone {
+            // No fix comes: iOS gives up on a one-time request after about ten seconds.
+            if Self.status == .denied { later { $0.fail(.denied) }; return }
+            let box = self.box
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                box.value?.fail(.unavailable)
+            }
+            return
+        }
         guard let locate = _CoreLocationHost.locate else { later { $0.fail(.denied) }; return }
         let box = self.box
         locate(highAccuracy) { result in
@@ -250,12 +266,22 @@ open class CLLocationManager: NSObject {
     nonisolated(unsafe) static var lastLocation: CLLocation?
     nonisolated(unsafe) static var managers: [_WeakManager] = []
 
-    /// The browser's permission when it has decided, otherwise the last request's answer.
+    /// The browser's permission when it has decided, otherwise the last request's answer; the
+    /// drawn iPhone's kept answer inside it.
     static var status: CLAuthorizationStatus {
+        if inPhone {
+            if allowedOnce { return .authorizedWhenInUse }
+            switch _PhonePrompts.answer(phoneName) {
+            case "always": return .authorizedAlways
+            case "whenInUse": return .authorizedWhenInUse
+            case "deny": return .denied
+            default: return .notDetermined
+            }
+        }
         switch _CoreLocationHost.permission?() {
-        case "granted": .authorizedWhenInUse
-        case "denied": .denied
-        default: answer
+        case "granted": return .authorizedWhenInUse
+        case "denied": return .denied
+        default: return answer
         }
     }
 
@@ -274,6 +300,43 @@ open class CLLocationManager: NSObject {
             // Not a refusal: the prompt, if any, was answered yes.
             if answer == .notDetermined { answer = .authorizedWhenInUse }
             return nil
+        }
+    }
+
+    // MARK: Inside the drawn iPhone
+
+    static let phoneName = "location"
+    /// Allow Once: authorized until the page is left, never kept.
+    nonisolated(unsafe) static var allowedOnce = false
+
+    static var inPhone: Bool {
+        #if os(WASI)
+        return _PhonePrompts.isPresent
+        #else
+        return false
+        #endif
+    }
+
+    /// iOS's location alert: Allow Once, Allow While Using App, Don't Allow, top to bottom.
+    /// An app asking for Always first gets the same alert, its While Using a provisional Always.
+    static func askInPhone(always: Bool) {
+        let german = _PhonePrompts.german
+        let title = german ? "Darf \(_PhonePrompts.quotedName) deinen Standort verwenden?"
+            : "Allow \(_PhonePrompts.quotedName) to use your location?"
+        let key = always ? "NSLocationAlwaysAndWhenInUseUsageDescription" : "NSLocationWhenInUseUsageDescription"
+        var message = _PhonePrompts.usage(key)
+        if message.isEmpty { message = _PhonePrompts.usage("NSLocationWhenInUseUsageDescription") }
+        let buttons = german ? ["Einmal erlauben", "Beim Verwenden der App erlauben", "Nicht erlauben"]
+            : ["Allow Once", "Allow While Using App", "Don\u{2019}t Allow"]
+        _PhonePrompts.askAlert(phoneName, title: title, message: message, buttons: buttons, fallback: 2) { index in
+            if status == .notDetermined {
+                switch index {
+                case 0: allowedOnce = true
+                case 1: _PhonePrompts.setAnswer(phoneName, always ? "always" : "whenInUse")
+                default: _PhonePrompts.setAnswer(phoneName, "deny")
+                }
+            }
+            authorizationMayHaveChanged()
         }
     }
 
@@ -339,6 +402,10 @@ open class CLLocationManager: NSObject {
 
     private func startWatching() {
         guard watchID == nil, needsWatch else { return }
+        if Self.inPhone {
+            if Self.status == .denied, updating || significant { later { $0.fail(.denied) } }
+            return
+        }
         guard let watch = _CoreLocationHost.watch else {
             if updating || significant { later { $0.fail(.denied) } }
             return
@@ -452,6 +519,11 @@ public struct CLLocationUpdate: Sendable {
         public func makeAsyncIterator() -> Iterator {
             let highAccuracy = configuration.highAccuracy
             let stream = AsyncStream<CLLocationUpdate> { continuation in
+                if CLLocationManager.inPhone {
+                    // No fix yet; a refusal says so at once.
+                    if CLLocationManager.status == .denied { continuation.yield(CLLocationUpdate(denied: true)) }
+                    return
+                }
                 guard let watch = _CoreLocationHost.watch else {
                     continuation.yield(CLLocationUpdate(denied: true, deniedGlobally: true))
                     return

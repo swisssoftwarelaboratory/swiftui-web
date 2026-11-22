@@ -1,6 +1,7 @@
 // The drawn iPhone's permission prompts as the app's frameworks reach them (new-website#666).
-// UserNotifications, AVFoundation, Photos, LocalAuthentication, HealthKit and AlarmKit ask
-// here, as on iOS the system asks for them: the host that draws an iPhone shows iOS's own
+// UserNotifications, AVFoundation (camera and microphone), Photos, LocalAuthentication,
+// HealthKit, CoreLocation, Speech, AlarmKit, EventKit and StoreKit's Apple Music ask here
+// (new-website#710), as on iOS the system asks for them: the host that draws an iPhone shows iOS's own
 // alert (or Health's access sheet, or the Face ID badge) over the app, and keeps each answer
 // for the app between visits, as the viewer's own iPhone would. Without a drawn iPhone
 // (`isPresent` false) the frameworks keep their browser behaviour.
@@ -147,6 +148,48 @@ public enum _PhonePrompts {
             ask(prompt) { answered($0) }
         }
         Task { @MainActor in run() }
+    }
+
+    /// The presses still waiting on an alert asked under a name: a second ask for the same
+    /// thing while its alert shows waits for that alert, as iOS shows one per ask.
+    nonisolated(unsafe) private static var waitingOn: [String: [@MainActor @Sendable (Int) -> Void]] = [:]
+
+    /// Shows iOS's alert for `name` once at a time: every caller asking for `name` while it
+    /// shows hears the same pressed button's index. Without a drawn iPhone, `fallback`.
+    public static func askAlert(_ name: String, title: String, message: String, buttons: [String], fallback: Int = 0,
+                                answered: @escaping @MainActor @Sendable (Int) -> Void) {
+        Task { @MainActor in
+            if waitingOn[name] != nil { waitingOn[name]?.append(answered); return }
+            waitingOn[name] = [answered]
+            show(.alert(title: title, message: message, buttons: buttons), fallback: .button(fallback)) { answer in
+                var index = fallback
+                if case let .button(pressed) = answer { index = pressed }
+                let waiting = waitingOn.removeValue(forKey: name) ?? []
+                for done in waiting { done(index) }
+            }
+        }
+    }
+
+    /// The answer kept under `name` as iOS's three states: nil never asked, else allowed or not.
+    public static func allowed(_ name: String) -> Bool? {
+        switch answer(name) {
+        case "allow": true
+        case "deny": false
+        default: nil
+        }
+    }
+
+    /// Asks iOS's Don't Allow / Allow alert for `name` unless it was answered, keeps the
+    /// answer, and hands it on (true for Allow). `before` is iOS's own paragraph ahead of the
+    /// app's usage text, where it has one.
+    public static func askAllow(_ name: String, title: String, usageKey: String, before: String = "",
+                                answered: @escaping @MainActor @Sendable (Bool) -> Void) {
+        if let known = allowed(name) { Task { @MainActor in answered(known) }; return }
+        let message = [before, usage(usageKey)].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        askAlert(name, title: title, message: message, buttons: [dontAllow, allow]) { index in
+            if allowed(name) == nil { setAnswer(name, index == 1 ? "allow" : "deny") }
+            answered(allowed(name) ?? false)
+        }
     }
 
     // MARK: The words iOS uses

@@ -374,9 +374,32 @@ public enum SKCloudServiceAuthorizationStatus: Int, Sendable {
 open class SKCloudServiceController: NSObject {
     public override init() { super.init() }
 
-    open class func authorizationStatus() -> SKCloudServiceAuthorizationStatus { .restricted }
+    /// Inside the drawn iPhone (new-website#710) the app asks as iOS does, once; Allow gives an
+    /// account with no subscription and nothing in its library.
+    open class func authorizationStatus() -> SKCloudServiceAuthorizationStatus {
+        #if os(WASI)
+        if _PhonePrompts.isPresent {
+            switch _PhonePrompts.allowed("appleMusic") {
+            case true?: return .authorized
+            case false?: return .denied
+            case nil: return .notDetermined
+            }
+        }
+        #endif
+        return .restricted
+    }
 
     open class func requestAuthorization(_ handler: @escaping (SKCloudServiceAuthorizationStatus) -> Void) {
+        #if os(WASI)
+        if _PhonePrompts.isPresent {
+            nonisolated(unsafe) let handler = handler
+            let title = _PhonePrompts.german
+                ? "Darf \(_PhonePrompts.quotedName) auf deine Musik, deine Videoaktivit\u{00E4}ten und auf deine Mediathek in Apple Music zugreifen?"
+                : "Allow \(_PhonePrompts.quotedName) to access your music, video activity, and media library in Apple Music?"
+            _PhonePrompts.askAllow("appleMusic", title: title, usageKey: "NSAppleMusicUsageDescription") { handler($0 ? .authorized : .denied) }
+            return
+        }
+        #endif
         handler(.restricted)
     }
 

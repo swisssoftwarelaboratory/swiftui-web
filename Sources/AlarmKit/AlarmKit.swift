@@ -2,7 +2,13 @@
 // when it is closed, so alarms are never authorized: `authorizationState` is `.denied`,
 // `requestAuthorization()` answers `.denied` and scheduling throws. An app's fallback (a
 // notification, say) is the path that runs. Accepted for source compatibility.
+//
+// Inside the drawn iPhone (new-website#710) alarms ask as iOS does: `requestAuthorization()`
+// (or the first `schedule`) shows iOS's alert once and keeps the answer, and an allowed alarm
+// is scheduled and listed, counting down or paused as asked, but it waits: nothing rings on
+// the drawn lock screen until what an alarm does there is decided.
 @_exported import ActivityKit
+import WebFoundation
 import AppIntents
 import SwiftUI
 
@@ -177,21 +183,101 @@ public final class AlarmManager: @unchecked Sendable {
     public static let shared = AlarmManager()
     init() {}
 
-    public var authorizationState: AuthorizationState { .denied }
-    public func requestAuthorization() async throws -> AuthorizationState { .denied }
-    public var alarms: [Alarm] { get throws { [] } }
-    public var alarmUpdates: AsyncStream<[Alarm]> { AsyncStream { $0.finish() } }
-    public var authorizationUpdates: AsyncStream<AuthorizationState> { AsyncStream { $0.finish() } }
-
-    /// Schedules an alarm: refused on the web.
-    public func schedule<Metadata: AlarmMetadata>(id: Alarm.ID, configuration: AlarmConfiguration<Metadata>) async throws -> Alarm {
-        throw AlarmError.unauthorized
+    public var authorizationState: AuthorizationState {
+        guard Self.inPhone else { return .denied }
+        switch _PhonePrompts.allowed(Self.name) {
+        case true?: return .authorized
+        case false?: return .denied
+        case nil: return .notDetermined
+        }
     }
-    public func countdown(id: Alarm.ID) throws {}
-    public func cancel(id: Alarm.ID) throws {}
-    public func stop(id: Alarm.ID) throws {}
-    public func pause(id: Alarm.ID) throws {}
-    public func resume(id: Alarm.ID) throws {}
+
+    public func requestAuthorization() async throws -> AuthorizationState {
+        guard Self.inPhone else { return .denied }
+        if authorizationState != .notDetermined { return authorizationState }
+        // The simulator refuses AlarmKit without an alert: the English is from published
+        // screenshots, the German follows iOS's "Darf ..." alerts (new-website#710).
+        let title = _PhonePrompts.german ? "Darf \(_PhonePrompts.quotedName) Wecker und Timer planen?"
+            : "Allow \(_PhonePrompts.quotedName) to schedule alarms and timers?"
+        let allowed: Bool = await withCheckedContinuation { done in
+            _PhonePrompts.askAllow(Self.name, title: title, usageKey: "NSAlarmKitUsageDescription") { done.resume(returning: $0) }
+        }
+        let state: AuthorizationState = allowed ? .authorized : .denied
+        for continuation in authorizationWatchers.values { continuation.yield(state) }
+        return state
+    }
+
+    public var alarms: [Alarm] { get throws { scheduled } }
+
+    public var alarmUpdates: AsyncStream<[Alarm]> {
+        AsyncStream { continuation in
+            let id = UUID()
+            alarmWatchers[id] = continuation
+            continuation.yield(scheduled)
+            continuation.onTermination = { [weak self] _ in Task { @MainActor in self?.alarmWatchers[id] = nil } }
+            if !Self.inPhone { continuation.finish() }
+        }
+    }
+
+    public var authorizationUpdates: AsyncStream<AuthorizationState> {
+        AsyncStream { continuation in
+            let id = UUID()
+            authorizationWatchers[id] = continuation
+            continuation.yield(authorizationState)
+            continuation.onTermination = { [weak self] _ in Task { @MainActor in self?.authorizationWatchers[id] = nil } }
+            if !Self.inPhone { continuation.finish() }
+        }
+    }
+
+    /// Schedules an alarm: refused on the web; inside the drawn iPhone it asks first when it
+    /// was never asked, as iOS does, and an allowed alarm waits in the list.
+    public func schedule<Metadata: AlarmMetadata>(id: Alarm.ID, configuration: AlarmConfiguration<Metadata>) async throws -> Alarm {
+        guard Self.inPhone else { throw AlarmError.unauthorized }
+        let state = authorizationState == .notDetermined ? try await requestAuthorization() : authorizationState
+        guard state == .authorized else { throw AlarmError.unauthorized }
+        let alarm = Alarm(id: id, schedule: configuration.schedule, countdownDuration: configuration.countdownDuration,
+                          state: configuration.schedule == nil && configuration.countdownDuration != nil ? .countdown : .scheduled)
+        scheduled.removeAll { $0.id == id }
+        scheduled.append(alarm)
+        changed()
+        return alarm
+    }
+    public func countdown(id: Alarm.ID) throws { try set(id, .countdown) }
+    public func cancel(id: Alarm.ID) throws { remove(id) }
+    public func stop(id: Alarm.ID) throws { remove(id) }
+    public func pause(id: Alarm.ID) throws { try set(id, .paused) }
+    public func resume(id: Alarm.ID) throws { try set(id, .countdown) }
+
+    // MARK: Inside the drawn iPhone
+
+    static let name = "alarms"
+    static var inPhone: Bool {
+        #if os(WASI)
+        return _PhonePrompts.isPresent
+        #else
+        return false
+        #endif
+    }
+
+    private var scheduled: [Alarm] = []
+    private var alarmWatchers: [UUID: AsyncStream<[Alarm]>.Continuation] = [:]
+    private var authorizationWatchers: [UUID: AsyncStream<AuthorizationState>.Continuation] = [:]
+
+    private func set(_ id: Alarm.ID, _ state: Alarm.State) throws {
+        guard let index = scheduled.firstIndex(where: { $0.id == id }) else { return }
+        scheduled[index].state = state
+        changed()
+    }
+
+    private func remove(_ id: Alarm.ID) {
+        guard scheduled.contains(where: { $0.id == id }) else { return }
+        scheduled.removeAll { $0.id == id }
+        changed()
+    }
+
+    private func changed() {
+        for continuation in alarmWatchers.values { continuation.yield(scheduled) }
+    }
 }
 
 // Apple's `LocalizedStringResource` is Equatable but not Hashable on macOS, where the fork's

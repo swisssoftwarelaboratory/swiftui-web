@@ -160,7 +160,7 @@ let package = Package(
         // are values, so an app's code for them compiles and its "off" path runs. iOS-only
         // frameworks, so these root modules shadow nothing in a macOS build.
         .target(name: "ActivityKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
-        .target(name: "AlarmKit", dependencies: ["ActivityKit", "AppIntents", "SwiftUI"], swiftSettings: framework),
+        .target(name: "AlarmKit", dependencies: ["ActivityKit", "AppIntents", "SwiftUI", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(name: "EventKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(name: "AudioToolbox", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(name: "Speech", dependencies: ["AVFoundation", .product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
