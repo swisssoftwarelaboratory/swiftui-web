@@ -1166,6 +1166,10 @@ extension Runtime {
                                     onDismissRequested: onDismissRequested)
         node.focusToRestore = focusedIdentifier.map { ($0, focusVisible) }
         presentations.append(node)
+        // iOS: a sheet coming up over a text field takes the field's focus, so the keyboard goes
+        // down; closing it gives the focus back below, the keyboard with it (the iOS 27
+        // simulator, a focused field and then `.photosPicker`, new-website#667).
+        if node.slides, focusedTextFieldIdentifier != nil { focusTextField(nil) }
         // A presentation lays out over the window after the main tree and never changes its
         // sizes: the tree keeps them (presenting re-measured all of Paulo's app, 170 to 300 ms
         // a menu opening or closing in a debug build, new-website#649).
