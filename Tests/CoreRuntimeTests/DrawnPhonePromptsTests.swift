@@ -189,6 +189,120 @@ extension NotificationCentreSuites {
         #expect(r.hasPresentations && heard.value == nil)
     }
 
+    // MARK: The photo library (new-website#708)
+
+    private func status<T: Sendable>(_ ask: (@escaping @MainActor @Sendable (T) -> Void) -> Void) -> Heard<T> {
+        let heard = Heard<T>()
+        ask { heard.hear($0) }
+        return heard
+    }
+
+    @Test mutating func photoLibrarysAskShowsTheStripsWordsAndKeepsFullAccess() async {
+        let r = phone()
+        _PhonePrompts.forgetAnswers()
+        #expect(_PhotoAccess.readWrite == .notDetermined && _PhotoAccess.addOnly == .notDetermined)
+        let heard = status(_PhotoAccess.requestReadWrite)
+        await turns(r)
+        settle(r, seconds: 0.5)
+        let names = textNodes(r).map(\.0)
+        #expect(names.first == "Allow \u{201C}App\u{201D} to access your photo library?")
+        #expect(names.contains("0 Photos") && names.contains(_PhotoAccess.metadataLine))
+        #expect(Array(names.suffix(3)) == ["Select Photos", "Allow Full Access", "Don\u{2019}t Allow"])
+        // Three buttons stack, top to bottom in iOS's order.
+        let frames = textNodes(r).suffix(3).map(\.1.midY)
+        #expect(frames == frames.sorted() && Set(frames).count == 3)
+        // Only a button answers it.
+        #expect(r.dismissTopmostPresentation())
+        #expect(r.hasPresentations && heard.value == nil)
+        tap(r, text: "Allow Full Access")
+        settle(r, seconds: 0.5)
+        await turns(r)
+        #expect(heard.value == .authorized && !r.hasPresentations)
+        // Full access allows adding too, and nothing asks again.
+        #expect(_PhotoAccess.readWrite == .authorized && _PhotoAccess.addOnly == .authorized)
+        let again = status(_PhotoAccess.requestAddOnly)
+        await turns(r)
+        #expect(again.value == .authorized && !r.hasPresentations)
+        _PhonePrompts.forgetAnswers()
+    }
+
+    @Test mutating func addingIsAskedOnItsOwnAndChangesTheFullAsk() async {
+        let r = phone()
+        _PhonePrompts.forgetAnswers()
+        let add = status(_PhotoAccess.requestAddOnly)
+        await turns(r)
+        settle(r, seconds: 0.5)
+        #expect(textNodes(r).map(\.0) == ["Allow \u{201C}App\u{201D} to add photos and videos to your photo library?", "Don\u{2019}t Allow", "Allow"])
+        tap(r, text: "Allow")
+        settle(r, seconds: 0.5)
+        await turns(r)
+        #expect(add.value == .authorized && _PhotoAccess.readWrite == .notDetermined)
+        // Once adding is allowed, the full ask says "full access" and its last button keeps adding only.
+        let full = status(_PhotoAccess.requestReadWrite)
+        await turns(r)
+        settle(r, seconds: 0.5)
+        let names = textNodes(r).map(\.0)
+        #expect(names.first == "Allow \u{201C}App\u{201D} full access to your photo library?")
+        #expect(names.last == "Keep Add Only")
+        tap(r, text: "Keep Add Only")
+        settle(r, seconds: 0.5)
+        await turns(r)
+        #expect(full.value == .denied && _PhotoAccess.addOnly == .authorized)
+        _PhonePrompts.forgetAnswers()
+    }
+
+    @Test mutating func addingIsStillAskedAfterFullAccessWasRefused() async {
+        let r = phone()
+        _PhonePrompts.forgetAnswers()
+        let full = status(_PhotoAccess.requestReadWrite)
+        await turns(r)
+        settle(r, seconds: 0.5)
+        tap(r, text: "Don\u{2019}t Allow")
+        settle(r, seconds: 0.5)
+        await turns(r)
+        #expect(full.value == .denied && _PhotoAccess.addOnly == .notDetermined)
+        _ = status(_PhotoAccess.requestAddOnly)
+        await turns(r)
+        settle(r, seconds: 0.5)
+        #expect(textNodes(r).first?.0 == "Allow \u{201C}App\u{201D} to add photos and videos to your photo library?")
+        _PhonePrompts.forgetAnswers()
+    }
+
+    @Test mutating func selectPhotosOpensThePhotoSheetAndLimits() async {
+        let r = phone()
+        _PhonePrompts.forgetAnswers()
+        let full = status(_PhotoAccess.requestReadWrite)
+        await turns(r)
+        settle(r, seconds: 0.5)
+        tap(r, text: "Select Photos")
+        settle(r, seconds: 0.5)
+        await turns(r)
+        settle(r)
+        // The photo sheet is up; the app hears nothing until it closes.
+        #expect(r.hasPresentations && full.value == nil)
+        #expect(r.presentations.last?.kind == .sheet)
+        #expect(r.dismissTopmostPresentation())
+        settle(r)
+        await turns(r)
+        #expect(full.value == .limited && _PhotoAccess.selected.isEmpty && !r.hasPresentations)
+        // The app can open it again while limited; a full library never shows it.
+        let more = status(_PhotoAccess.choosePhotos)
+        await turns(r)
+        settle(r)
+        #expect(r.hasPresentations && more.value == nil)
+        #expect(r.dismissTopmostPresentation())
+        settle(r)
+        await turns(r)
+        #expect(more.value == [] && !r.hasPresentations)
+        _PhonePrompts.forgetAnswers()
+        _PhonePrompts.setAnswer("photos", "full")
+        let none = status(_PhotoAccess.choosePhotos)
+        await turns(r)
+        settle(r)
+        #expect(none.value == [] && !r.hasPresentations)
+        _PhonePrompts.forgetAnswers()
+    }
+
     @Test func appleAccountIdsAreStable() {
         let user = _PhonePrompts.AppleAccount.userID
         #expect(user == _PhonePrompts.AppleAccount.userID)
