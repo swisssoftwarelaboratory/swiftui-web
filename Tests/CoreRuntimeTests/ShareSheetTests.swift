@@ -84,8 +84,9 @@ import SwiftUIWebHeadless
         defer { ShareAction._copyImage = nil }
         let runtime = app(ShareLink(item: Rendered(), preview: SharePreview("10 workouts")) { Text("Share").frame(width: 60, height: 44) })
         tap(runtime, label: "Share")
-        await settle(runtime)
         tap(runtime, label: "Copy")
+        #expect(runtime.presentations.isEmpty)
+        await settle(runtime)
         #expect(copied.count == 1 && copied.first?.0 == Self.png.count && copied.first?.1 == "image/png")
         #expect(runtime.presentations.isEmpty)
     }
@@ -105,8 +106,8 @@ import SwiftUIWebHeadless
         let before = _PhotoLibrary.shared.photos.count
         let runtime = app(ShareLink(item: Rendered(), preview: SharePreview("10 workouts")) { Text("Share").frame(width: 60, height: 44) })
         tap(runtime, label: "Share")
-        await settle(runtime)
         tap(runtime, label: "Save Image")
+        await settle(runtime)
         #expect(_PhotoLibrary.shared.photos.count == before + 1)
         #expect(_PhotoLibrary.shared.photos.first?.pixelWidth == 2)
         #expect(runtime.presentations.isEmpty)

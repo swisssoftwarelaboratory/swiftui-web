@@ -49,7 +49,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if preferredColorScheme != nil { applyPreferredColorScheme() }
         // A sheet presented once its presenter is on screen slides up; one there from the first
         // frame (a scene restored, a fixture) is simply there.
-        slidesIn = kind == .sheet && environment.platformProfile.isIOS && anchor?.hasBeenPlaced == true
+        slidesIn = slides && anchor?.hasBeenPlaced == true
         // An iOS alert, confirmation dialog or menu presented once the app is on screen comes
         // in with the iPhone's motion; one there from the first frame is simply there.
         popsIn = pops && anchor?.hasBeenPlaced == true
@@ -148,14 +148,11 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
 
     // MARK: The share sheet (new-website#668)
 
-    /// iOS 27's share sheet grows out of the pressed button as the menu's glass does, one channel
-    /// for its width and horizontal centre, one for its height, one for its vertical centre.
+    /// iOS 27's share sheet is a glass popover: it scales up from a hundredth of its size about
+    /// its own centre while it fades in, and back, on the popover's springs (read from Core
+    /// Animation in the simulator).
     package static func shareSprings(entering: Bool) -> [(SpringModel, Double)] {
-        if entering {
-            return [(ShareSheetMetrics.openAcross, 0), (ShareSheetMetrics.openHeight, 0), (ShareSheetMetrics.openDown, 0)]
-        }
-        let close = ShareSheetMetrics.close
-        return [(close, 0), (close, 0), (close, 0)]
+        [(entering ? ShareSheetMetrics.open : ShareSheetMetrics.close, 0)]
     }
 
     /// View More: the compact card growing to the full sheet (0 at the compact card, 1 at the
@@ -187,17 +184,30 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if !popRunning && !slideRunning { runtime.unsubscribeFrames(self) }
     }
 
-    /// Where the share sheet's card is drawn now: between its last card and its place while View
-    /// More grows it, between the button and its place while it comes and goes.
+    /// Where the share sheet's card is drawn now (before the scale it comes and goes with):
+    /// between its last card and its place while View More or View Less moves it.
     package var shownSharePanel: CGRect {
-        var rect = panel
-        if let from = expandFrom, abs(expand.position - 1) > 0.0005 {
-            let t = CGFloat(expand.position)
-            rect = CGRect(x: from.minX + (panel.minX - from.minX) * t, y: from.minY + (panel.minY - from.minY) * t,
-                          width: from.width + (panel.width - from.width) * t, height: from.height + (panel.height - from.height) * t)
+        guard let from = expandFrom, abs(expand.position - 1) > 0.0005 else { return panel }
+        let t = CGFloat(expand.position)
+        return CGRect(x: from.minX + (panel.minX - from.minX) * t, y: from.minY + (panel.minY - from.minY) * t,
+                      width: from.width + (panel.width - from.width) * t, height: from.height + (panel.height - from.height) * t)
+    }
+
+    /// Its bottom corners: the compact panel's 46 follow the screen's corner 9 pt in, the full
+    /// sheet's 55 are the screen's; between them while it moves, back to the top's 38 as it leaves.
+    private var shareBottomRadius: CGFloat {
+        let compact = ShareSheetMetrics.bottomCornerRadius, full = ShareSheetMetrics.expandedBottomCornerRadius
+        let target = options.share == .expanded ? full : compact
+        var radius = target
+        if expandFrom != nil, abs(expand.position - 1) > 0.0005 {
+            let start = options.share == .expanded ? compact : full
+            radius = start + (target - start) * CGFloat(expand.position)
         }
-        if pop.count == 3, pop.contains(where: { abs($0.position - 1) > 0.0005 }) { rect = menuMorphRect(panel: rect, source: popSource) }
-        return rect
+        if isLeaving {
+            let top = ShareSheetMetrics.cornerRadius
+            radius = top + (radius - top) * CGFloat(min(1, max(0, popProgress)))
+        }
+        return radius
     }
 
     /// The main channel's progress (1 when nothing animates).
@@ -276,7 +286,10 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             if !slide.step(now - last) { slideFinished() } else { runtime.requestRepaint() }
         }
         if popRunning {
-            let last = popClock ?? popBegan
+            // The share sheet's spring starts on the frame after the one that first painted it
+            // (that frame and the next show it at its start, as iOS's first frames do): the app's
+            // work around a press (presenting, laying out the panel) never eats its opening.
+            let last = popClock ?? (options.share != nil ? now : popBegan)
             popClock = now
             var moving = false
             for index in pop.indices where pop[index].step(now - last) { moving = true }
@@ -1080,61 +1093,58 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
         if let target { target.paint(into: &list, context: context.child(at: target.presentedFrame)) }
     }
 
-    /// The share sheet: a frosted card with a soft shadow (the full sheet a white card running
-    /// off the bottom), grown out of its button like the menu's glass, its content moving with
-    /// the card's top and squeezed into it while it comes and goes.
+    /// The share sheet: the glass panel with a soft, wide shadow and a hairline rim (the full
+    /// sheet nearly opaque white), its content clipped to it; it scales about its centre and
+    /// fades while it comes and goes, and its content rides with its top while View More moves it.
     private func paintShareSheet(into list: inout DisplayList, context: PaintContext) {
         let place = context.absoluteRect(panel)
-        let shown = shownSharePanel
-        let rect = context.absoluteRect(shown)
-        let expanded = options.share == .expanded
-        let moving = pop.count == 3 && pop.contains { abs($0.position - 1) > 0.0005 }
-        let grown = pop.count == 3 ? min(pop[0].position, pop[1].position) : 1
-        func smooth(_ a: Double, _ b: Double, _ x: Double) -> Double {
-            let t = min(1, max(0, (x - a) / (b - a)))
-            return t * t * (3 - 2 * t)
+        let rect = context.absoluteRect(shownSharePanel)
+        let progress = popProgress
+        let popping = abs(progress - 1) > 0.0005
+        if popping {
+            let scale = 0.01 + 0.99 * progress
+            let centre = CGPoint(x: rect.midX, y: rect.midY)
+            list.append(.beginGroup(opacity: min(1, max(0, progress))))
+            list.append(.save)
+            list.append(.concat(CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: centre.x * (1 - scale), ty: centre.y * (1 - scale))))
         }
-        let settle = moving ? smooth(0.6, 1.0, grown) : 1
-        let radius: CGFloat = {
-            let card = expanded ? ShareSheetMetrics.expandedCornerRadius : ShareSheetMetrics.cornerRadius
-            guard moving else { return card }
-            let round = min(rect.width, rect.height) / 2
-            return round + (min(card, round) - round) * settle
-        }()
-        let fade = moving ? smooth(0.0, 0.25, grown) : 1
-        if fade < 0.999 { list.append(.beginGroup(opacity: fade)) }
-        defer { if fade < 0.999 { list.append(.endGroup) } }
+        defer {
+            if popping {
+                list.append(.restore)
+                list.append(.endGroup)
+            }
+        }
         let dark = environment.colorScheme == .dark
-        // The full sheet's card runs off the bottom: its lower corners are below the window.
-        let card = expanded && !moving ? CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height + radius) : rect
-        let shape = Path(roundedRect: card, cornerRadius: radius)
-        for (spread, alpha) in [(2.0, 0.02), (10.0, 0.018), (24.0, 0.012), (44.0, 0.008)] {
-            list.append(.fillRRect(card.insetBy(dx: -spread, dy: -spread).offsetBy(dx: 0, dy: spread / 3), cornerRadius: radius + spread, environment._ink(alpha)))
+        let top = ShareSheetMetrics.cornerRadius, bottom = shareBottomRadius
+        let radii = RectangleCornerRadii(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top)
+        let shape = UnevenRoundedRectangle(cornerRadii: radii, style: .continuous).path(in: rect)
+        for (spread, alpha) in [(2.0, 0.018), (6.0, 0.014), (12.0, 0.01), (20.0, 0.006)] {
+            let ring = rect.insetBy(dx: -spread, dy: -spread)
+            list.append(.fillPath(UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: top + spread, bottomLeading: bottom + spread,
+                                                                                            bottomTrailing: bottom + spread, topTrailing: top + spread),
+                                                         style: .continuous).path(in: ring), environment._ink(alpha)))
         }
-        list.append(.backdropBlur(shape, bounds: card, radius: ShareSheetMetrics.glassSigma))
+        // The full sheet is nearly opaque; the compact panel is glass over the page.
+        let moved = expandFrom == nil ? 1 : CGFloat(expand.position)
+        let full = options.share == .expanded ? moved : 1 - moved
+        list.append(.backdropBlur(shape, bounds: rect, radius: ShareSheetMetrics.glassSigma))
         var fill = dark ? ShareSheetMetrics.fillDark : ShareSheetMetrics.fill
-        if expanded { fill.alpha = 1 } else if moving { fill.alpha *= 0.4 + 0.6 * settle }
+        if !dark {
+            let solid = ShareSheetMetrics.expandedFill
+            let t = Double(min(1, max(0, full)))
+            fill = RGBA(red: fill.red + (solid.red - fill.red) * t, green: fill.green + (solid.green - fill.green) * t,
+                        blue: fill.blue + (solid.blue - fill.blue) * t, alpha: fill.alpha + (solid.alpha - fill.alpha) * t)
+        }
         list.append(.fillPath(shape, fill))
-        list.append(.strokePath(Path(roundedRect: card.insetBy(dx: 0.25, dy: 0.25), cornerRadius: radius - 0.25),
-                                style: StrokeStyle(lineWidth: 0.5), environment._ink(dark ? 0.2 : 0.06)))
+        list.append(.strokePath(UnevenRoundedRectangle(cornerRadii: radii, style: .continuous).path(in: rect.insetBy(dx: 0.33, dy: 0.33)),
+                                style: StrokeStyle(lineWidth: 0.67), environment._ink(dark ? 0.2 : 0.08)))
         guard let target else { return }
         list.append(.save)
-        list.append(.clipRRect(card, cornerRadius: radius))
-        let rows = moving ? smooth(0.3, 0.9, grown) : 1
-        if rows > 0.001 {
-            if rows < 0.999 { list.append(.beginGroup(opacity: rows)) }
-            list.append(.save)
-            if moving {
-                let sx = rect.width / max(1, place.width), sy = rect.height / max(1, place.height)
-                list.append(.concat(CGAffineTransform(a: sx, b: 0, c: 0, d: sy, tx: rect.minX - place.minX * sx, ty: rect.minY - place.minY * sy)))
-            } else if rect.minY != place.minY || rect.minX != place.minX {
-                // View More: the content rides with the card's top.
-                list.append(.concat(CGAffineTransform(translationX: rect.minX - place.minX, y: rect.minY - place.minY)))
-            }
-            target.paint(into: &list, context: context.child(at: target.presentedFrame))
-            list.append(.restore)
-            if rows < 0.999 { list.append(.endGroup) }
+        list.append(.clipPath(shape))
+        if rect.minY != place.minY || rect.minX != place.minX {
+            list.append(.concat(CGAffineTransform(translationX: rect.minX - place.minX, y: rect.minY - place.minY)))
         }
+        target.paint(into: &list, context: context.child(at: target.presentedFrame))
         list.append(.restore)
     }
 

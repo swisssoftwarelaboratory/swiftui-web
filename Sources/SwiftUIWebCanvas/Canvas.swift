@@ -127,6 +127,10 @@ public final class CanvasHost {
         OpenURLAction.systemHandler = { url in host.openURL(url.absoluteString) }
         // `UIApplication.shared.open` from a SwiftUI app reaches the same tab (decision 0021).
         UIKitScene.shared.openURL = { url in host.openURL(url) }
+        // `ImageRenderer.uiImage` (and so `pngData`, `jpegData`) rasterizes through UIKit's
+        // scene, which got the page's rasterizer only once a UIKit view was mounted: an app that
+        // renders a share picture on a screen without one got no image (new-website#668).
+        if UIKitScene.shared.imageRasterizer == nil { UIKitScene.shared.imageRasterizer = runtime.imageRasterizer }
         ShareAction.systemHandler = { request in host.share(items: request.strings, subject: request.subject, message: request.message, files: request.files) }
         // The drawn share sheet's Copy (new-website#668): text, and images as PNG (what browsers
         // put on the clipboard; a JPEG is redrawn into one), handed over as a promise so Safari

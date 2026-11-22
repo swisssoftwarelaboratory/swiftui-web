@@ -1,52 +1,71 @@
-// The drawn iPhone's share sheet (Docs/elements/ShareLink.md, new-website#668): iOS 27's
-// frosted card growing out of the pressed share button, with the item's preview and title, four
-// made-up people, two made-up apps from the drawn home screen and More, and the round actions;
-// View More grows it into the full sheet with the grouped list and Edit Actions. A person or an
-// app closes it as if sent, Copy puts the item on the viewer's real clipboard, Save Image puts it
-// in the drawn phone's photos (`_PhotoLibrary`), the rest close it.
+// The drawn iPhone's share sheet (Docs/elements/ShareLink.md, new-website#668): iOS 27's glass
+// panel floating 9 pt above the bottom, as the simulator shows a ShareLink (a glass popover, not
+// a sheet: it scales up from its own centre and fades in, nothing dimmed behind it), with the
+// item's preview and title, four made-up people, two made-up apps from the drawn home screen and
+// More, and the round actions; View More grows it into the full sheet with the grouped list and
+// Edit Actions. A person or an app closes it as if sent, Copy puts the item on the viewer's real
+// clipboard, Save Image puts it in the drawn phone's photos (`_PhotoLibrary`), the rest close it.
 import WebFoundation
 
 /// The share sheet's two stages: the compact card, and the full sheet View More grows it into.
 package enum ShareSheetStage: Sendable, Equatable { case compact, expanded }
 
-/// The share sheet's measures, in points, from the iOS 27 simulator (iPhone 16, 393 pt).
+/// The share sheet's measures, in points, read in the iOS 27 simulator (iPhone 16, 393 x 852):
+/// the panel's frame, corners and springs from its layers, the rows by pixel from 3x screenshots
+/// (swipe-harness/share-probe-668/FINDINGS.md).
 package enum ShareSheetMetrics {
-    // The card.
+    // The panel: 9 from the window's sides and bottom; its bottom corners follow the screen's.
     package static let sideInset: CGFloat = 9
     package static let bottomInset: CGFloat = 9
     package static let cornerRadius: CGFloat = 38
-    package static let expandedCornerRadius: CGFloat = 38
+    package static let bottomCornerRadius: CGFloat = 46
+    package static let expandedBottomCornerRadius: CGFloat = 55
     package static let glassSigma: CGFloat = 20
-    package static let fill = RGBA(red: 0.975, green: 0.975, blue: 0.98, alpha: 0.86)
-    package static let fillDark = RGBA(red: 0.14, green: 0.14, blue: 0.15, alpha: 0.86)
+    package static let fill = RGBA(red: 0.98, green: 0.98, blue: 0.98, alpha: 0.9)
+    package static let fillDark = RGBA(red: 0.14, green: 0.14, blue: 0.15, alpha: 0.9)
+    package static let expandedFill = RGBA(red: 0.996, green: 0.996, blue: 0.996, alpha: 1)
     package static let dimAlpha: Double = 0
-    // Inside it.
-    package static let inset: CGFloat = 26
-    package static let top: CGFloat = 26
-    package static let thumbnail: CGFloat = 62
-    package static let thumbnailCorner: CGFloat = 14
-    package static let titleGap: CGFloat = 17
-    package static let titleSize: CGFloat = 17
-    package static let separatorGap: CGFloat = 17
-    package static let icon: CGFloat = 64
-    package static let iconCorner: CGFloat = 0.225
-    package static let column: CGFloat = 85
-    package static let labelSize: CGFloat = 13
-    package static let labelGap: CGFloat = 8
-    package static let round: CGFloat = 64
-    package static let symbolSize: CGFloat = 25
-    package static let bottom: CGFloat = 22
+    // Inside it: 25.67 in from the compact panel's sides and top, 29.33 in the full sheet's.
+    package static let inset: CGFloat = 25.67
+    package static let expandedInset: CGFloat = 29.33
+    package static let thumbnail: CGFloat = 64
+    package static let thumbnailCorner: CGFloat = 16
+    package static let titleGap: CGFloat = 15.67
+    package static let titleSize: CGFloat = 15
+    package static let separatorAbove: CGFloat = 16
+    package static let tileBelowSeparator: CGFloat = 15
+    package static let tileLabelGap: CGFloat = 7.33
+    package static let separatorBelowRow: CGFloat = 17.33
+    package static let circleBelowSeparator: CGFloat = 16
+    package static let circleLabelGap: CGFloat = 5.67
+    package static let tile: CGFloat = 66
+    package static let tileCorner: CGFloat = 15
+    package static let labelSize: CGFloat = 12
+    package static let labelLinePitch: CGFloat = 16
+    package static let symbolSize: CGFloat = 27
+    package static let bottom: CGFloat = 15.67
+    package static let separator = Color(red: 226.0 / 255, green: 226.0 / 255, blue: 227.0 / 255)
+    package static let circleFill = Color(white: 230.0 / 255)
+    // The full sheet.
     package static let closeButton: CGFloat = 44
-    package static let listRow: CGFloat = 50
-    package static let listCorner: CGFloat = 26
+    package static let closeTop: CGFloat = 10
+    package static let closeTrailing: CGFloat = 16
+    package static let listTop: CGFloat = 26.33
+    package static let listSide: CGFloat = 16
+    package static let listRow: CGFloat = 49.33
+    package static let listCorner: CGFloat = 24
+    package static let listTextLeading: CGFloat = 56.67
     package static let listTextSize: CGFloat = 17
-    package static let editActionsHeight: CGFloat = 36
-    // The motion: growing out of the button and back, and View More.
-    package static let openAcross = SpringModel(omega: 18, zeta: 0.80)
-    package static let openHeight = SpringModel(omega: 17, zeta: 0.82)
-    package static let openDown = SpringModel(omega: 18, zeta: 0.72)
-    package static let close = SpringModel(duration: 0.4, bounce: 0)
-    package static let expand = SpringModel(duration: 0.5, bounce: 0)
+    package static let listFill = Color(white: 236.0 / 255)
+    package static let listSeparator = Color(red: 215.0 / 255, green: 215.0 / 255, blue: 216.0 / 255)
+    package static let editActionsTop: CGFloat = 19.33
+    package static let editActionsSize = CGSize(width: 116, height: 35.67)
+    // The motion, read from Core Animation: in, scale 0.01 to 1 about the panel's centre and the
+    // fade on one spring (stiffness 331.90, damping 29.149, the popover's); out on 283.97, 28.648;
+    // View More and View Less move the frame and corners on 322.27, 35.90 (critically damped).
+    package static let open = SpringModel(mass: 1, stiffness: 331.9007, damping: 29.149)
+    package static let close = SpringModel(mass: 1, stiffness: 283.9735, damping: 28.6476)
+    package static let expand = SpringModel(mass: 1, stiffness: 322.27, damping: 35.90)
 }
 
 /// The made-up people and apps the sheet offers (the apps are the drawn home screen's first two).
@@ -62,7 +81,7 @@ public struct _ShareSheet: View {
 
     @State private var expanded = false
     /// The items an async exporter gave, once it has.
-    @State private var loaded: [_ShareItem] = []
+    @State private var held = _ShareItemHolder()
     @Environment(\.colorScheme) private var colorScheme
 
     public init(request: _ShareRequest, close: @escaping @MainActor () -> Void) {
@@ -72,7 +91,7 @@ public struct _ShareSheet: View {
 
     private typealias M = ShareSheetMetrics
 
-    private var items: [_ShareItem] { request.items + loaded }
+    private var items: [_ShareItem] { request.items + (held.given ?? []) }
 
     /// Whether the item is an image (Save Image and Assign to Contact are offered for one).
     private var isImage: Bool {
@@ -94,43 +113,42 @@ public struct _ShareSheet: View {
     }
 
     private var ink: Color { colorScheme == .dark ? .white : .black }
-    private var soft: Color { Color(white: colorScheme == .dark ? 1 : 0, opacity: colorScheme == .dark ? 0.12 : 0.06) }
     private var hairline: Color { Color(white: colorScheme == .dark ? 1 : 0, opacity: 0.1) }
+
+    private var inset: CGFloat { expanded ? M.expandedInset : M.inset }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            separator
-            row(ShareSheetContent.people.map { name in AnyView(person(name)) }, labels: ShareSheetContent.people, actions: ShareSheetContent.people.map { _ in sent })
-            separator
-            row(ShareSheetContent.apps.map { _ in AnyView(appIcon) } + [AnyView(moreIcon)],
-                labels: ShareSheetContent.apps + ["More"], actions: [sent, sent, sent])
-            separator
+            separator(above: M.separatorAbove, below: M.tileBelowSeparator)
+            grid(ShareSheetContent.people.map { name in AnyView(person(name)) }, labels: ShareSheetContent.people,
+                 actions: ShareSheetContent.people.map { _ in sent }, gap: M.tileLabelGap)
+            separator(above: M.separatorBelowRow, below: M.tileBelowSeparator)
+            grid(ShareSheetContent.apps.map { _ in AnyView(appTile) } + [AnyView(moreTile)],
+                 labels: ShareSheetContent.apps + ["More"], actions: [sent, sent, sent], gap: M.tileLabelGap)
+            separator(above: M.separatorBelowRow, below: M.circleBelowSeparator)
             actionsRow
             if expanded {
-                list.padding(.top, M.separatorGap + 8)
-                editActions.frame(maxWidth: .infinity).padding(.top, M.separatorGap + 6)
+                list.padding(.top, M.listTop).padding(.horizontal, M.listSide - inset)
+                editActions.frame(maxWidth: .infinity).padding(.top, M.editActionsTop)
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, M.inset)
-        .padding(.top, M.top)
-        .padding(.bottom, M.bottom)
+        .padding(.horizontal, inset)
+        .padding(.top, inset)
+        .padding(.bottom, expanded ? 0 : M.bottom)
         .frame(maxWidth: .infinity, maxHeight: expanded ? .infinity : nil, alignment: .topLeading)
         .overlay(alignment: .topTrailing) {
-            if expanded { closeButton.padding(.top, 12).padding(.trailing, 12) }
+            if expanded { closeButton.padding(.top, M.closeTop).padding(.trailing, M.closeTrailing) }
         }
         .modifier(_PresentationOptionsModifier(share: expanded ? .expanded : .compact))
-        .task { await load() }
-    }
-
-    /// Asks the app for the bytes it renders when shared, as iOS does when the sheet opens.
-    private func load() async {
-        var given: [_ShareItem] = []
-        for item in request.pending {
-            if let ready = await item.resolve() { given.append(ready) }
+        .task {
+            // The app renders what it shares on our main thread (iOS does it in the share
+            // service's process): asked once the panel has settled, its work never costs the
+            // opening frames (a 3x image took a ~100 ms frame, which ate the opening's start).
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            _ = await held.resolve(request)
         }
-        loaded = given
     }
 
     // MARK: Header
@@ -146,53 +164,59 @@ public struct _ShareSheet: View {
         }
     }
 
-    /// The preview's image, else a plain card (iOS draws its own placeholder, which we never copy).
+    /// The preview's image, else a plain white tile with a grey rim (iOS draws a placeholder of its
+    /// own there, which we never copy).
     @ViewBuilder private var thumbnail: some View {
         let shape = RoundedRectangle(cornerRadius: M.thumbnailCorner, style: .continuous)
         if let image = request.previewImage {
             image.resizable().scaledToFill().frame(width: M.thumbnail, height: M.thumbnail).clipShape(shape)
         } else {
             shape.fill(Color.white)
-                .overlay { shape.strokeBorder(Color(white: 0.85), lineWidth: 1) }
+                .overlay { shape.strokeBorder(M.separator, lineWidth: 1) }
                 .frame(width: M.thumbnail, height: M.thumbnail)
         }
     }
 
-    private var separator: some View {
-        Rectangle().fill(hairline).frame(height: 1).padding(.vertical, M.separatorGap)
+    private func separator(above: CGFloat, below: CGFloat) -> some View {
+        Rectangle().fill(colorScheme == .dark ? Color(white: 1, opacity: 0.12) : M.separator)
+            .frame(height: 1).padding(.top, above).padding(.bottom, below)
     }
 
     // MARK: Rows
 
-    /// A row of round or square targets, each with its label under it, on the sheet's columns.
-    private func row(_ icons: [AnyView], labels: [String], actions: [@MainActor () -> Void]) -> some View {
+    /// Four columns spread across the content, first at its leading edge and last at its trailing
+    /// one (85.67 apart in the compact panel), each a 66 pt tile or circle with its label centred
+    /// under it; a shorter row leaves the last columns empty.
+    private func grid(_ icons: [AnyView], labels: [String], actions: [@MainActor () -> Void], gap: CGFloat) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            ForEach(0..<icons.count, id: \.self) { index in
-                Button(action: actions[index]) {
-                    VStack(spacing: M.labelGap) {
-                        icons[index]
-                        Text(labels[index])
-                            .font(.system(size: M.labelSize))
-                            .foregroundStyle(ink)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+            ForEach(0..<4, id: \.self) { index in
+                if index > 0 { Spacer(minLength: 0) }
+                if index < icons.count {
+                    Button(action: actions[index]) {
+                        VStack(spacing: gap) {
+                            icons[index]
+                            Text(labels[index])
+                                .font(.system(size: M.labelSize))
+                                .foregroundStyle(ink)
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(M.labelLinePitch - 14.32)
+                                .fixedSize()
+                                .frame(width: M.tile)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .frame(width: M.column - 4)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(labels[index].replacingOccurrences(of: "\n", with: " "))
+                } else {
+                    Color.clear.frame(width: M.tile, height: M.tile)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(labels[index].replacingOccurrences(of: "\n", with: " "))
-                .frame(width: M.column, alignment: .leading)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.leading, -(M.column - M.icon) / 2 + 2)
     }
 
     private func person(_ name: String) -> some View {
         Circle().fill(Color(white: 0.72))
-            .frame(width: M.icon, height: M.icon)
+            .frame(width: M.tile, height: M.tile)
             .overlay {
                 Text(String(name.prefix(1)))
                     .font(.system(size: 28, weight: .semibold))
@@ -200,18 +224,23 @@ public struct _ShareSheet: View {
             }
     }
 
-    private var appIcon: some View {
-        RoundedRectangle(cornerRadius: M.icon * M.iconCorner, style: .continuous)
+    /// A made-up app: the drawn home screen's plain grey tile.
+    private var appTile: some View {
+        RoundedRectangle(cornerRadius: M.tileCorner, style: .continuous)
             .fill(Color(white: 210.0 / 255))
-            .frame(width: M.icon, height: M.icon)
+            .frame(width: M.tile, height: M.tile)
     }
 
-    private var moreIcon: some View {
-        RoundedRectangle(cornerRadius: M.icon * M.iconCorner, style: .continuous)
+    /// More: a white tile with a soft shadow and three grey dots.
+    private var moreTile: some View {
+        RoundedRectangle(cornerRadius: M.tileCorner, style: .continuous)
             .fill(Color(white: colorScheme == .dark ? 0.25 : 1))
-            .frame(width: M.icon, height: M.icon)
+            .shadow(color: Color(white: 0, opacity: 0.06), radius: 6, x: 0, y: 1)
+            .frame(width: M.tile, height: M.tile)
             .overlay {
-                Image(systemName: "ellipsis").font(.system(size: 24, weight: .semibold)).foregroundStyle(Color(white: 0.4))
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { _ in Circle().fill(Color(white: 0.4)).frame(width: 8, height: 8) }
+                }
             }
     }
 
@@ -228,10 +257,10 @@ public struct _ShareSheet: View {
         symbols.append(expanded ? "chevron.up" : "chevron.down")
         actions.append(toggleMore)
         let icons = symbols.map { symbol in
-            AnyView(Circle().fill(soft).frame(width: M.round, height: M.round)
+            AnyView(Circle().fill(colorScheme == .dark ? Color(white: 1, opacity: 0.14) : M.circleFill).frame(width: M.tile, height: M.tile)
                 .overlay { Image(systemName: symbol).font(.system(size: M.symbolSize, weight: .regular)).foregroundStyle(ink) })
         }
-        return row(icons, labels: labels, actions: actions)
+        return grid(icons, labels: labels, actions: actions, gap: M.circleLabelGap)
     }
 
     // MARK: The full sheet
@@ -243,24 +272,23 @@ public struct _ShareSheet: View {
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(0..<rows.count, id: \.self) { index in
                 Button(action: plainClose) {
-                    HStack(spacing: 18) {
-                        Image(systemName: rows[index].0).font(.system(size: 22)).foregroundStyle(ink).frame(width: 30)
+                    ZStack(alignment: .leading) {
+                        Image(systemName: rows[index].0).font(.system(size: 22)).foregroundStyle(ink)
+                            .frame(width: 32).padding(.leading, 16)
                         Text(rows[index].1).font(.system(size: M.listTextSize)).foregroundStyle(ink)
-                        Spacer(minLength: 0)
+                            .padding(.leading, M.listTextLeading)
                     }
-                    .frame(height: M.listRow)
-                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity, minHeight: M.listRow, maxHeight: M.listRow, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(rows[index].1)
                 if index < rows.count - 1 {
-                    Rectangle().fill(hairline).frame(height: 1).padding(.leading, 66).padding(.trailing, 16)
+                    Rectangle().fill(M.listSeparator).frame(height: 1).padding(.leading, M.listTextLeading - 0.67).padding(.trailing, 16)
                 }
             }
         }
-        .background(soft, in: RoundedRectangle(cornerRadius: M.listCorner, style: .continuous))
-        .padding(.horizontal, -10)
+        .background(colorScheme == .dark ? Color(white: 1, opacity: 0.1) : M.listFill, in: RoundedRectangle(cornerRadius: M.listCorner, style: .continuous))
     }
 
     private var editActions: some View {
@@ -268,9 +296,9 @@ public struct _ShareSheet: View {
             Text("Edit Actions")
                 .font(.system(size: M.listTextSize))
                 .foregroundStyle(ink)
-                .padding(.horizontal, 18)
-                .frame(height: M.editActionsHeight)
-                .overlay { Capsule().strokeBorder(hairline, lineWidth: 1) }
+                .frame(width: M.editActionsSize.width, height: M.editActionsSize.height)
+                .background { Capsule().fill(Color(white: colorScheme == .dark ? 0.2 : 1)).shadow(color: Color(white: 0, opacity: 0.06), radius: 6, x: 0, y: 1) }
+                .overlay { Capsule().strokeBorder(hairline, lineWidth: 0.67) }
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -279,11 +307,11 @@ public struct _ShareSheet: View {
     private var closeButton: some View {
         Button(action: plainClose) {
             Image(systemName: "xmark")
-                .font(.system(size: 19, weight: .medium))
+                .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(ink)
                 .frame(width: M.closeButton, height: M.closeButton)
                 .background(Circle().fill(Color(white: colorScheme == .dark ? 0.2 : 1)))
-                .overlay { Circle().strokeBorder(hairline, lineWidth: 1) }
+                .overlay { Circle().strokeBorder(hairline, lineWidth: 0.67) }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -297,11 +325,11 @@ public struct _ShareSheet: View {
     private var plainClose: @MainActor () -> Void { close }
 
     private var toggleMore: @MainActor () -> Void {
-        { withAnimation(.smooth(duration: 0.5)) { expanded.toggle() } }
+        { expanded.toggle() }
     }
 
     /// The image's bytes and MIME type, when the item is an image.
-    private var imageData: (Data, String)? {
+    private static func imageData(_ items: [_ShareItem]) -> (Data, String)? {
         for item in items {
             guard case .data(let data, let type) = item.kind, !data.isEmpty else { continue }
             if type == .png { return (data, "image/png") }
@@ -311,9 +339,26 @@ public struct _ShareSheet: View {
     }
 
     /// Copy: the image, else the text and links, on the viewer's real clipboard.
+    /// The sheet closes at once, as on iOS; an item the app has not rendered yet is copied or
+    /// saved once it has.
+    private func withItems(_ act: @escaping @MainActor ([_ShareItem]) -> Void) {
+        let request = request, holder = held
+        if request.pending.isEmpty {
+            act(request.items)
+        } else if let given = holder.given {
+            act(request.items + given)
+        } else {
+            Task { @MainActor in act(request.items + (await holder.resolve(request))) }
+        }
+        close()
+    }
+
     private var copy: @MainActor () -> Void {
-        {
-            if let (data, mime) = imageData {
+        { withItems(Self.copy) }
+    }
+
+    private static func copy(_ items: [_ShareItem]) {
+            if let (data, mime) = imageData(items) {
                 ShareAction._copyImage?(Array(data), mime)
             } else {
                 let text = items.compactMap { item -> String? in
@@ -325,15 +370,33 @@ public struct _ShareSheet: View {
                 }.joined(separator: "\n")
                 if !text.isEmpty { ShareAction._copyText?(text) }
             }
-            close()
-        }
     }
 
     /// Save Image: the image goes in front of the drawn phone's photos.
     private var saveImage: @MainActor () -> Void {
-        {
-            if let (data, _) = imageData { _PhotoLibrary.shared.save(data) }
-            close()
+        { withItems { items in if let (data, _) = Self.imageData(items) { _PhotoLibrary.shared.save(data) } } }
+    }
+}
+
+/// The items an app's async exporter gave the share sheet, asked for once.
+@MainActor
+final class _ShareItemHolder {
+    private(set) var given: [_ShareItem]?
+    private var running: Task<[_ShareItem], Never>?
+
+    func resolve(_ request: _ShareRequest) async -> [_ShareItem] {
+        if let given { return given }
+        if request.pending.isEmpty { given = []; return [] }
+        let work = running ?? Task { @MainActor in
+            var items: [_ShareItem] = []
+            for item in request.pending {
+                if let ready = await item.resolve() { items.append(ready) }
+            }
+            return items
         }
+        running = work
+        let items = await work.value
+        given = items
+        return items
     }
 }
