@@ -75,6 +75,7 @@ let package = Package(
         .library(name: "CoreAudio", targets: ["CoreAudio"]),
         .library(name: "HealthKit", targets: ["HealthKit"]),
         .library(name: "PhotosUI", targets: ["PhotosUI"]),
+        .library(name: "Photos", targets: ["Photos"]),
         .library(name: "AuthenticationServices", targets: ["AuthenticationServices"]),
     ],
     // `CoreData` (decision 0024): `import Foundation` re-exports WebCoreData too, as Apple's
@@ -219,6 +220,13 @@ let package = Package(
         .target(name: "CoreAudio", dependencies: [.product(name: "AudioToolbox", package: "SwiftUIWeb")], swiftSettings: framework),
         .target(name: "HealthKit", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
         .target(name: "PhotosUI", dependencies: [.product(name: "SwiftUI", package: "SwiftUIWeb")], swiftSettings: framework),
+        // The photo library's own ask (new-website#708): iOS 27's alert on the drawn iPhone,
+        // answered once and kept, and Select Photos' sheet for a limited library.
+        .target(
+            name: "Photos",
+            dependencies: [.product(name: "UIKit", package: "UIKitWeb"), .product(name: "WebFoundation", package: "WebGraphics")],
+            swiftSettings: framework
+        ),
         // Sign in with Apple (new-website#707): the drawn iPhone's sheet, then Face ID, and a
         // credential from the phone's Apple Account; no account in a plain page.
         .target(

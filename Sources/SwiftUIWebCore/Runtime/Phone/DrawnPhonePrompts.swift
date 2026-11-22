@@ -53,6 +53,40 @@ extension DrawnPhone {
             showFaceID { finish(.done) }
         case let .appleID(ask):
             presentAppleIDSheet(ask, answered: finish)
+        case let .photoLibrary(title, message, buttons):
+            presentPhotoLibraryAlert(title: title, message: message, buttons: buttons, answered: finish)
+        case let .selectPhotos(selected):
+            presentSelectPhotos(selected: selected, answered: finish)
+        }
+    }
+
+    // MARK: The photo library's ask (new-website#708)
+
+    /// iOS 27's full-access alert: the app's text, then a strip of the phone's newest photos,
+    /// their count and Apple's line on what photos carry, then the three buttons stacked.
+    private func presentPhotoLibraryAlert(title: String, message: String, buttons: [String],
+                                          answered: @escaping @MainActor (_PhonePrompts.Answer) -> Void) {
+        let actions = _PromptButtons(titles: buttons) { index in answered(.button(index)) }
+        let body = AnyView(_PhotoAccessPreview(message: message))
+        let view = AnyView(_AlertContent(title: Text(verbatim: title), message: body, actions: AnyView(actions)))
+        let node = runtime.present(kind: .alert, view: view, environment: runtime.rootEnvironment, anchor: runtime.root) {}
+        node.options.interactiveDismissDisabled = true
+    }
+
+    /// Select Photos' sheet: the photos picker's sheet with any number marked; its check button
+    /// or X (or a pull down) closes it, and what is marked then is the answer.
+    private func presentSelectPhotos(selected: [String], answered: @escaping @MainActor (_PhonePrompts.Answer) -> Void) {
+        var node: PresentationNode?
+        var done = false
+        let finish: @MainActor ([String]) -> Void = { ids in
+            guard !done else { return }
+            done = true
+            if let node, node.isMounted { node.dismiss() }
+            answered(.photos(ids))
+        }
+        let sheet = _PhotosPickerSheet(limit: nil, preselected: selected, pick: { finish($0) }, cancel: { finish(selected) })
+        node = runtime.present(kind: .sheet, view: AnyView(sheet), environment: runtime.rootEnvironment, anchor: runtime.root) {
+            finish(selected)
         }
     }
 
@@ -187,6 +221,52 @@ extension DrawnPhone {
         path.move(to: p(32, 23)); path.addLine(to: p(32, 36)); path.addLine(to: p(29, 36))
         path.move(to: p(23, 43)); path.addQuadCurve(to: p(41, 43), control: p(32, 50))
         return path
+    }
+}
+
+/// What the photo library's alert shows under its title: the app's text in the alert's grey,
+/// then, measured from iOS 27 (320 pt alert): 16 below, the four newest photos edge to edge
+/// across the buttons' width, 66 pt tall with rounded ends; the count in bold and Apple's line,
+/// in the primary colour, 8 further out than the text.
+private struct _PhotoAccessPreview: View {
+    let message: String
+    @ObservedObject private var library = _PhotoLibrary.shared
+
+    init(message: String) { self.message = message }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !message.isEmpty { Text(verbatim: message).fixedSize(horizontal: false, vertical: true) }
+            if !library.photos.isEmpty {
+                HStack(spacing: 1) {
+                    ForEach(Array(library.photos.prefix(4))) { photo in
+                        Color(white: 0.85)
+                            .overlay {
+                                Image(source: .url(photo.url, pixelSize: CGSize(width: photo.pixelWidth, height: photo.pixelHeight), scale: 1), label: nil)
+                                    .resizable().scaledToFill()
+                            }
+                            .clipped()
+                    }
+                }
+                .frame(height: 66)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, -15.5)
+                .padding(.top, 16)
+                .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(verbatim: _PhotoAccess.countLine(library.photos.count))
+                    .font(.system(size: 14, weight: .semibold))
+                Text(verbatim: _PhotoAccess.metadataLine)
+                    .font(.system(size: 13))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, -7.5)
+            .padding(.top, 13)
+            .padding(.bottom, 28)
+        }
+        .task { await library.load() }
     }
 }
 

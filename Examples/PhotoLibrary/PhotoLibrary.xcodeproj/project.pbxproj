@@ -1,0 +1,20 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 77;
+	objects = {
+		A1 /* Project */ = { isa = PBXProject; buildConfigurationList = A2; targets = ( A3 ); };
+		A2 = { isa = XCConfigurationList; buildConfigurations = ( A4 ); defaultConfigurationName = Release; };
+		A3 /* PhotoLibrary */ = { isa = PBXNativeTarget; name = PhotoLibrary; productType = "com.apple.product-type.application"; buildConfigurationList = A5; };
+		A4 = { isa = XCBuildConfiguration; name = Release; buildSettings = { }; };
+		A5 = { isa = XCConfigurationList; buildConfigurations = ( A6 ); defaultConfigurationName = Release; };
+		A6 = { isa = XCBuildConfiguration; name = Release; buildSettings = {
+			PRODUCT_BUNDLE_IDENTIFIER = ch.swiftuiweb.photolibrary;
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			INFOPLIST_KEY_CFBundleDisplayName = Probe;
+			INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Pick your progress photos to keep them with your plan.";
+			INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your progress photos to your library.";
+		}; };
+	};
+	rootObject = A1;
+}

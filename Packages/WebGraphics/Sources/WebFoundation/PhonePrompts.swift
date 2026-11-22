@@ -1,6 +1,6 @@
 // The drawn iPhone's permission prompts as the app's frameworks reach them (new-website#666).
-// UserNotifications, AVFoundation (camera and microphone), Photos, LocalAuthentication,
-// HealthKit, CoreLocation, Speech, AlarmKit, EventKit and StoreKit's Apple Music ask here
+// UserNotifications, AVFoundation (camera and microphone), Photos (new-website#708), LocalAuthentication,
+// HealthKit, CoreLocation, Speech, AlarmKit, EventKit, StoreKit's Apple Music ask here
 // (new-website#710), as on iOS the system asks for them: the host that draws an iPhone shows iOS's own
 // alert (or Health's access sheet, or the Face ID badge) over the app, and keeps each answer
 // for the app between visits, as the viewer's own iPhone would. Without a drawn iPhone
@@ -26,6 +26,13 @@ public enum _PhonePrompts {
         /// answer is `.appleID` with the name and email choice, or `.cancelled` for its close
         /// button.
         case appleID(AppleIDAsk)
+        /// The photo library's full-access alert (new-website#708): iOS's alert with a strip of
+        /// the phone's newest photos, their count and Apple's line on what photos carry under the
+        /// app's text, and its three stacked buttons. The answer is the pressed button's index.
+        case photoLibrary(title: String, message: String, buttons: [String])
+        /// The sheet Select Photos opens: the phone's photos with `selected` marked. The answer
+        /// is `.photos` with the ids marked when it closes.
+        case selectPhotos(selected: [String])
     }
 
     /// What Sign in with Apple's sheet asks: a first sign-in asks to share the name and email
@@ -51,6 +58,8 @@ public enum _PhonePrompts {
         case appleID(name: String, hideEmail: Bool)
         /// A sheet's close button.
         case cancelled
+        /// The photos marked in Select Photos' sheet (ids in the drawn phone's library).
+        case photos([String])
     }
 
     /// The drawn iPhone's Apple Account: a made-up person until the demo account is decided
@@ -158,10 +167,17 @@ public enum _PhonePrompts {
     /// shows hears the same pressed button's index. Without a drawn iPhone, `fallback`.
     public static func askAlert(_ name: String, title: String, message: String, buttons: [String], fallback: Int = 0,
                                 answered: @escaping @MainActor @Sendable (Int) -> Void) {
+        askOnce(name, .alert(title: title, message: message, buttons: buttons), fallback: fallback, answered: answered)
+    }
+
+    /// Shows `prompt` (an alert-like ask answered by a button) for `name` once at a time, as
+    /// `askAlert` does.
+    public static func askOnce(_ name: String, _ prompt: Ask, fallback: Int = 0,
+                               answered: @escaping @MainActor @Sendable (Int) -> Void) {
         Task { @MainActor in
             if waitingOn[name] != nil { waitingOn[name]?.append(answered); return }
             waitingOn[name] = [answered]
-            show(.alert(title: title, message: message, buttons: buttons), fallback: .button(fallback)) { answer in
+            show(prompt, fallback: .button(fallback)) { answer in
                 var index = fallback
                 if case let .button(pressed) = answer { index = pressed }
                 let waiting = waitingOn.removeValue(forKey: name) ?? []

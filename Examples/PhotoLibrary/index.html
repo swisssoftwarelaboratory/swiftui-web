@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Photo library</title>
+<style>html,body{margin:0;height:100%;background:#fff;overflow:hidden;overscroll-behavior:none}#app{position:relative;width:100%;height:100%}</style></head>
+<body><div id="app"></div>
+<!-- The bundle's asset manifest: the app's Info texts and where the host finds the phone's photos. -->
+<script src="./.build/wasm/plugins/PackageToJS/outputs/Package/assets/manifest.js"></script>
+<script type="module">
+  import { init } from "./.build/wasm/plugins/PackageToJS/outputs/Package/index.js";
+  await init();
+</script>
+</body>
+</html>
