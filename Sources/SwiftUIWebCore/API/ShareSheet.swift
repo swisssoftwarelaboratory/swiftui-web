@@ -75,7 +75,7 @@ package enum ShareSheetContent {
 }
 
 /// The share sheet's content, presented as a sheet by `ShareLink` on iOS.
-public struct _ShareSheet: View {
+public struct _ShareSheet: View, Equatable {
     package let request: _ShareRequest
     package let close: @MainActor () -> Void
 
@@ -83,6 +83,9 @@ public struct _ShareSheet: View {
     /// The items an async exporter gave, once it has.
     @State private var held = _ShareItemHolder()
     @Environment(\.colorScheme) private var colorScheme
+
+    /// The same items and texts: `close` only ever resets the presenting flag.
+    nonisolated public static func == (lhs: _ShareSheet, rhs: _ShareSheet) -> Bool { lhs.request == rhs.request }
 
     public init(request: _ShareRequest, close: @escaping @MainActor () -> Void) {
         self.request = request

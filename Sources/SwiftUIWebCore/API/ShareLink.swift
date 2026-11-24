@@ -276,7 +276,10 @@ struct _ShareLinkButton<Label: View>: View {
         if platformProfile.isIOS {
             Button(action: { presented = true }) { label }
                 .sheet(isPresented: $presented) {
-                    _ShareSheet(request: request, close: { presented = false })
+                    // Compared by what it shares: an app behind it that redraws every frame (a
+                    // celebration) would otherwise rebuild and measure every row of the panel
+                    // each frame (new-website#668, 3 ms a frame).
+                    _ShareSheet(request: request, close: { presented = false }).equatable()
                 }
         } else {
             let request = request
