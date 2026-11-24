@@ -87,8 +87,16 @@ public struct _ShareSheet: View, Equatable {
     /// The same items and texts: `close` only ever resets the presenting flag.
     nonisolated public static func == (lhs: _ShareSheet, rhs: _ShareSheet) -> Bool { lhs.request == rhs.request }
 
+    /// Where Save Image puts the image: the page's one library (a test passes its own).
+    package let library: _PhotoLibrary?
+
     public init(request: _ShareRequest, close: @escaping @MainActor () -> Void) {
+        self.init(request: request, library: nil, close: close)
+    }
+
+    package init(request: _ShareRequest, library: _PhotoLibrary?, close: @escaping @MainActor () -> Void) {
         self.request = request
+        self.library = library
         self.close = close
     }
 
@@ -377,7 +385,7 @@ public struct _ShareSheet: View, Equatable {
 
     /// Save Image: the image goes in front of the drawn phone's photos.
     private var saveImage: @MainActor () -> Void {
-        { withItems { items in if let (data, _) = Self.imageData(items) { _PhotoLibrary.shared.save(data) } } }
+        { [library] in withItems { items in if let (data, _) = Self.imageData(items) { (library ?? _PhotoLibrary.shared).save(data) } } }
     }
 }
 
