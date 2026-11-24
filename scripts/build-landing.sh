@@ -29,8 +29,10 @@ GBYTES=$(stat -f%z "$GWASM" 2>/dev/null || stat -c%s "$GWASM")
 sed -e "s|./.build/wasm/plugins/PackageToJS/outputs/Package/|./$GBUNDLE/|g" -e "s|data-wasm-bytes=\"\"|data-wasm-bytes=\"$GBYTES\"|" \
   "$ROOT/Examples/Gallery/index.html" > "$GALLERY/index.html"
 if [[ -z "${1:-}" ]]; then
-  # The size line (raw and brotli) and the gate: 4 MB brotli (3.53 MB at the first release build, 2026-09-18).
-  "$ROOT/scripts/size-gate.sh" Examples/Gallery 4194304
+  # The size line (raw and brotli) and the gate: 4 MB brotli (3.53 MB at the first release build, 2026-09-18),
+  # 4 MB + 32 KB since the drawn iPhone's share sheet (new-website#668, 2026-11-25): it adds about 23 KB
+  # brotli to every app that shares, and the gallery was within 6 KB of 4 MB before it.
+  "$ROOT/scripts/size-gate.sh" Examples/Gallery 4227072
 fi
 # The progress page (decision 0016): counts, the full matrix, the todo list, at /progress/.
 "$ROOT/scripts/build-wasm.sh" Examples/Progress ${1:+"$1"}
