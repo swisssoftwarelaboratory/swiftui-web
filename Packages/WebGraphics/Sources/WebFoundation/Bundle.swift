@@ -68,12 +68,58 @@ open class Bundle: @unchecked Sendable {
         if let subdirectory, !subdirectory.isEmpty { path += subdirectory + "/" }
         path += name
         if let ext, !ext.isEmpty { path += "." + ext }
+        let resource = String(path.dropFirst(Bundle._resourceBase.count))
+        if Bundle._hostFiles != nil {
+            // A file or folder the bundle doesn't have is nil, as on iOS.
+            guard Bundle._isListedFile(resource) || Bundle._isListedFolder(resource) else { return nil }
+            _MemoryFiles._warm(resource)
+        }
         return URL(string: path)
     }
     public func path(forResource name: String?, ofType ext: String?) -> String? {
         url(forResource: name, withExtension: ext)?.relativeString
     }
-    public func urls(forResourcesWithExtension ext: String?, subdirectory: String?) -> [URL]? { [] }
+    public func urls(forResourcesWithExtension ext: String?, subdirectory: String?) -> [URL]? {
+        guard Bundle._hostFiles != nil else { return [] }
+        let folder = subdirectory.flatMap { $0.isEmpty ? nil : $0 } ?? ""
+        let names = Bundle._listedChildren(folder).filter { name in
+            guard let ext, !ext.isEmpty else { return true }
+            return name.hasSuffix("." + ext)
+        }
+        return names.compactMap { URL(string: Bundle._resourceBase + (folder.isEmpty ? "" : folder + "/") + $0) }
+    }
+
+    /// The bundle's files as its build listed them (`scripts/web-media.py`): each path under the
+    /// resources as the app names it (`Celebrations/a000.heic`), with the path it is stored under
+    /// (itself, or `Celebrations/a000.webp` when the build converted it). Nil when the build
+    /// listed none: then every name is taken to exist, and a missing one fails when it is read.
+    nonisolated(unsafe) public static var _hostFiles: [String: String]? {
+        didSet { listedFolders = nil }
+    }
+    /// The folders of the listed files, each with the names directly inside it ("" the top).
+    nonisolated(unsafe) private static var listedFolders: [String: [String]]?
+
+    static func _isListedFile(_ resource: String) -> Bool { _hostFiles?[resource] != nil }
+    static func _isListedFolder(_ resource: String) -> Bool { folders()[resource.hasSuffix("/") ? String(resource.dropLast()) : resource] != nil }
+    /// The names directly inside a listed folder (files and folders), sorted.
+    static func _listedChildren(_ folder: String) -> [String] { folders()[folder] ?? [] }
+    /// Where a listed file is stored under the resources (its own path unless the build renamed it).
+    static func _storedPath(_ resource: String) -> String { _hostFiles?[resource] ?? resource }
+
+    private static func folders() -> [String: [String]] {
+        if let listedFolders { return listedFolders }
+        var made: [String: Set<String>] = [:]
+        for path in (_hostFiles ?? [:]).keys {
+            var parts = path.split(separator: "/").map(String.init)
+            while !parts.isEmpty {
+                let name = parts.removeLast()
+                made[parts.joined(separator: "/"), default: []].insert(name)
+            }
+        }
+        let sorted = made.mapValues { $0.sorted() }
+        listedFolders = sorted
+        return sorted
+    }
 
     /// A localized string from the bundle's string tables (`scripts/assets.py` writes each
     /// language's `<lang>.lproj/<Table>.strings.json` from the string catalogs and `.strings`

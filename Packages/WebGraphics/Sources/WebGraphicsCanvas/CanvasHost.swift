@@ -202,6 +202,7 @@ public final class CanvasSceneHost {
         // The full SF Symbol layout table (`assets/symbol-metrics.txt`, sw-symbols) is fetched
         // on the first symbol outside the built-in set and the scene lays out again.
         let assetBase = window.__swiftuiwebAssets.object?.base.string ?? "assets/"
+        _MemoryFiles._hostAssetBase = assetBase
         // A bundled file read with `Data(contentsOf:)` (a resource URL, `assets/<name>`): fetched
         // synchronously from the bundle's assets, as iOS reads a bundle's files at once (an
         // app's JSON script decoded in an initializer).
@@ -218,6 +219,44 @@ public final class CanvasSceneHost {
             _MemoryFiles._hostResource = { key in
                 guard let array = reader(assetBase + key.dropFirst(Bundle._resourceBase.count)).object else { return nil }
                 return Data(JSTypedArray<UInt8>(unsafelyWrapping: array).withUnsafeBytes { Array($0) })
+            }
+        }
+        // The bundle's file list (`scripts/web-media.py`): what exists, and the converted files'
+        // stored names (new-website#746).
+        if let listed = window.__swiftuiwebAssets.object?.files.object, let keys = JSObject.global.Object.function?.keys?(listed).object {
+            var files: [String: String] = [:]
+            for index in 0..<Int(keys.length.number ?? 0) {
+                guard let name = keys[index].string else { continue }
+                files[name] = listed[name].string ?? name
+            }
+            Bundle._hostFiles = files
+        }
+        // Fetches a medal's (any bundled group's) other files in the background, a few at a time,
+        // so the app's reads, which are at once, find them in memory.
+        if let made = JSObject.global.Function.function?.new("url", "done", """
+            const q = (globalThis.__swiftuiwebPrefetch ||= { queue: [], running: 0 });
+            q.queue.push([url, done]);
+            const next = () => {
+              while (q.running < 4 && q.queue.length) {
+                const [u, d] = q.queue.shift(); q.running++;
+                fetch(u, { priority: 'low' }).then(r => r.ok ? r.arrayBuffer() : null)
+                  .then(b => d(b ? new Uint8Array(b) : null), () => d(null))
+                  .finally(() => { q.running--; next(); });
+              }
+            };
+            next();
+            """), let prefetch = JSValue.object(made).function {
+            _MemoryFiles._hostLater = { work in
+                _ = JSObject.global.setTimeout?(JSOneshotClosure { _ in work(); return .undefined }, 0)
+            }
+            _MemoryFiles._hostPrefetch = { stored, arrived in
+                let closure = JSOneshotClosure { arguments in
+                    if let array = arguments.first?.object {
+                        arrived(Data(JSTypedArray<UInt8>(unsafelyWrapping: array).withUnsafeBytes { Array($0) }))
+                    }
+                    return .undefined
+                }
+                _ = prefetch(assetBase + stored, closure)
             }
         }
         scene.onNeedsSymbolMetrics = { [weak self] in

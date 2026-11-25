@@ -121,4 +121,8 @@ python3 "$ROOT/scripts/photos.py" Photos "$ROOT/Fixtures/Photos/Everyday" --out 
 # The full SF Symbol layout table (sw-symbols): fetched by the host on the first symbol outside
 # the built-in set.
 cp "$ROOT/Fixtures/Goldens/symbol/metrics-full.txt" "$BUNDLE/assets/symbol-metrics.txt"
+# The bundled files in formats every browser reads (HEIC to WebP, a VP9 WebM beside each clip,
+# Apple Lossless to WAV) and the list of them in the manifest, so a missing file is missing as
+# on iOS (new-website#746). Conversions are kept between builds by the source's hash.
+python3 "$ROOT/scripts/web-media.py" "$BUNDLE/assets" --manifest "$BUNDLE/assets/manifest.js" --cache "$PWD/.build/web-media"
 echo "Bundle: $PKG/$BUNDLE"

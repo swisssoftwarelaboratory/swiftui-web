@@ -191,16 +191,94 @@ public enum _MemoryFiles {
     /// (the browser host fetches it synchronously); nil when the host has no such file.
     nonisolated(unsafe) public static var _hostResource: ((String) -> Data?)?
 
+    /// Starts fetching a bundled file in the background (its stored path under the resources),
+    /// handing over its bytes when they arrive; nil, never called, when it can't be fetched.
+    /// Runs work once the app's current turn is over (the browser host's `setTimeout`).
+    nonisolated(unsafe) public static var _hostLater: ((@escaping () -> Void) -> Void)?
+    nonisolated(unsafe) public static var _hostPrefetch: ((_ stored: String, _ arrived: @escaping (Data) -> Void) -> Void)?
+
+    /// A bundled file's path under the resources (`Celebrations/a000.heic`), from its URL as
+    /// `Bundle.url(forResource:)` gives it (`assets/…`, relative to the page) or as a file path
+    /// made of that URL's path (`file:///assets/…`), which is how `UIImage(contentsOfFile:)` and
+    /// `FileManager.fileExists(atPath:)` reach it (new-website#746).
+    static func resource(_ url: URL) -> String? {
+        let base = Bundle._resourceBase
+        if url.scheme == nil {
+            let key = url.absoluteString
+            return key.hasPrefix(base) ? String(key.dropFirst(base.count)) : nil
+        }
+        guard url.isFileURL, url.path.hasPrefix("/" + base) else { return nil }
+        var path = String(url.path.dropFirst(base.count + 1))
+        if path.hasSuffix("/") { path.removeLast() }
+        return path
+    }
+
+    /// Where the page fetches the assets from (the manifest's base), set by the browser host.
+    nonisolated(unsafe) public static var _hostAssetBase: String?
+
+    /// The address a browser element loads a URL from (an `<audio>` or `<video>` source): a
+    /// bundled file's stored path under the assets, wherever the page and its bundle live
+    /// (new-website#746); any other URL as it is.
+    public static func _pageAddress(_ url: URL) -> String {
+        guard let resource = resource(url), let base = _hostAssetBase else { return url.absoluteString }
+        return base + Bundle._storedPath(resource)
+    }
+
     public static func read(_ url: URL) -> Data? {
         let key = url.absoluteString
         if let data = files[key] { return data }
-        if url.scheme == nil, key.hasPrefix(Bundle._resourceBase), let data = _hostResource?(key) {
-            files[key] = data
+        if let resource = resource(url) {
+            let cached = Bundle._resourceBase + resource
+            if let data = files[cached] { return data }
+            if Bundle._hostFiles != nil, !Bundle._isListedFile(resource) { return nil }
+            guard let data = _hostResource?(Bundle._resourceBase + Bundle._storedPath(resource)) else { return nil }
+            files[cached] = data
             return data
         }
         guard isDurable(url), let text = _hostStore?.load(url.path), let data = Data(base64Encoded: text) else { return nil }
         files[key] = data
         return data
+    }
+
+    /// The folders whose files were sent for already (`_warm`).
+    nonisolated(unsafe) private static var warmed: Set<String> = []
+
+    /// Fetches the files that come with a bundled file or folder the app just named, in the
+    /// background, so the app's reads of them, which are at once as on iOS, find them in memory
+    /// instead of waiting on the network: a folder's files (a coin's textures), or the files beside
+    /// a file (the other turn frames beside the first). Clips are left to the video that streams them.
+    static func _warm(_ resource: String) {
+        let folder: String, deep: Bool
+        if Bundle._isListedFolder(resource) {
+            folder = resource; deep = true
+        } else {
+            folder = resource.split(separator: "/").dropLast().joined(separator: "/"); deep = false
+        }
+        let mark = (deep ? "*" : "") + folder
+        // Never the top folder: it holds every loose resource of the app.
+        guard let prefetch = _hostPrefetch, !folder.isEmpty, !warmed.contains(mark) else { return }
+        warmed.insert(mark)
+        var names: [String] = []
+        func gather(_ folder: String) {
+            for name in Bundle._listedChildren(folder) {
+                let path = folder.isEmpty ? name : folder + "/" + name
+                if Bundle._isListedFile(path) { names.append(path) } else if deep { gather(path) }
+            }
+        }
+        gather(folder)
+        let clips: Set<String> = ["mov", "mp4", "m4v", "webm"]
+        // After the app's current turn: what it reads at once now (the file just named, a list's
+        // other pictures) is fetched by those reads, not twice.
+        let start = {
+            for name in names where files[Bundle._resourceBase + name] == nil {
+                guard !clips.contains(name.split(separator: ".").last.map { $0.lowercased() } ?? "") else { continue }
+                prefetch(Bundle._storedPath(name)) { data in
+                    let key = Bundle._resourceBase + name
+                    if files[key] == nil { files[key] = data }
+                }
+            }
+        }
+        if let later = _hostLater { later(start) } else { start() }
     }
     public static func write(_ data: Data, to url: URL) {
         files[url.absoluteString] = data
@@ -217,9 +295,18 @@ public enum _MemoryFiles {
         if isDurable(url) { _hostStore?.save(url.path, nil) }
     }
     public static func exists(_ url: URL) -> Bool {
-        files[url.absoluteString] != nil || (isDurable(url) && _hostStore?.list().contains(url.path) == true)
+        if files[url.absoluteString] != nil { return true }
+        if let resource = resource(url) {
+            if Bundle._hostFiles != nil { return Bundle._isListedFile(resource) }
+            return read(url) != nil
+        }
+        return isDurable(url) && _hostStore?.list().contains(url.path) == true
     }
-    public static func isDirectory(_ url: URL) -> Bool { directories.contains(directoryKey(url)) }
+    public static func isDirectory(_ url: URL) -> Bool {
+        if directories.contains(directoryKey(url)) { return true }
+        if let resource = resource(url) { return Bundle._isListedFolder(resource) }
+        return false
+    }
     /// When the file was last written here (a file kept by the host from an earlier load has none).
     public static func modificationDate(_ url: URL) -> Date? { dates[url.absoluteString] }
     /// When the file was first written here (or the date set with `setAttributes`).
@@ -238,6 +325,14 @@ public enum _MemoryFiles {
     }
     /// The files and directories directly under `url`.
     public static func contents(of url: URL) -> [URL] {
+        // A bundled folder: what its build listed in it, as the same kind of URL as the folder's.
+        if let resource = resource(url), Bundle._hostFiles != nil, !directories.contains(directoryKey(url)) {
+            let folder = directoryKey(url)
+            return Bundle._listedChildren(resource).compactMap { name in
+                let path = resource.isEmpty ? name : resource + "/" + name
+                return URL(string: folder + name + (Bundle._isListedFolder(path) ? "/" : ""))
+            }
+        }
         let prefix = directoryKey(url)
         var paths = Set(files.keys.filter { $0.hasPrefix(prefix) })
         if url.isFileURL, let kept = _hostStore?.list() {
