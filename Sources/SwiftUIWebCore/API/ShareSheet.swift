@@ -21,7 +21,8 @@ package enum ShareSheetMetrics {
     package static let bottomCornerRadius: CGFloat = 46
     package static let expandedBottomCornerRadius: CGFloat = 55
     package static let glassSigma: CGFloat = 20
-    package static let fill = RGBA(red: 0.98, green: 0.98, blue: 0.98, alpha: 0.9)
+    // 250 over a 242 page in the simulator, and the page behind barely shows through.
+    package static let fill = RGBA(red: 0.982, green: 0.982, blue: 0.982, alpha: 0.96)
     package static let fillDark = RGBA(red: 0.14, green: 0.14, blue: 0.15, alpha: 0.9)
     package static let expandedFill = RGBA(red: 0.996, green: 0.996, blue: 0.996, alpha: 1)
     package static let dimAlpha: Double = 0
@@ -256,19 +257,20 @@ public struct _ShareSheet: View, Equatable {
 
     private var actionsRow: some View {
         var labels = ["Copy"]
-        var symbols = ["doc.on.doc"]
+        var glyphs: [_ShareGlyph.Kind] = [.copy]
         var actions: [@MainActor () -> Void] = [copy]
         if isImage {
             labels += ["Save Image", "Assign to\nContact"]
-            symbols += ["square.and.arrow.down", "person.crop.circle"]
+            glyphs += [.save, .contact]
             actions += [saveImage, plainClose]
         }
         labels.append(expanded ? "View Less" : "View More")
-        symbols.append(expanded ? "chevron.up" : "chevron.down")
+        glyphs.append(expanded ? .less : .more)
         actions.append(toggleMore)
-        let icons = symbols.map { symbol in
-            AnyView(Circle().fill(colorScheme == .dark ? Color(white: 1, opacity: 0.14) : M.circleFill).frame(width: M.tile, height: M.tile)
-                .overlay { Image(systemName: symbol).font(.system(size: M.symbolSize, weight: .regular)).foregroundStyle(ink) })
+        let ground = colorScheme == .dark ? Color(white: 0.22) : M.circleFill
+        let icons = glyphs.map { kind in
+            AnyView(Circle().fill(ground).frame(width: M.tile, height: M.tile)
+                .overlay { _ShareGlyph(kind: kind, ink: ink, ground: ground) })
         }
         return grid(icons, labels: labels, actions: actions, gap: M.circleLabelGap)
     }
@@ -385,6 +387,86 @@ public struct _ShareSheet: View, Equatable {
     /// Save Image: the image goes in front of the drawn phone's photos.
     private var saveImage: @MainActor () -> Void {
         { [library] in withItems { items in if let (data, _) = Self.imageData(items) { (library ?? _PhotoLibrary.shared).save(data) } } }
+    }
+}
+
+/// The round actions' glyphs, drawn by us in the shapes the iOS 27 simulator shows (measured at
+/// 3x: copy 26 x 33 pt, save 25 x 30, contact 27 round, chevron 25 x 14, strokes about 2.3 pt);
+/// never Apple's own symbols.
+struct _ShareGlyph: View {
+    enum Kind { case copy, save, contact, more, less }
+    let kind: Kind
+    let ink: Color
+    let ground: Color
+
+    private static let line = StrokeStyle(lineWidth: 2.3, lineCap: .round, lineJoin: .round)
+
+    var body: some View {
+        ZStack {
+            switch kind {
+            case .copy:
+                // Two pages with folded corners, the front one over the back one.
+                Self.page(CGRect(x: 18.5, y: 7, width: 18, height: 25)).stroke(ink, style: Self.line)
+                Self.page(CGRect(x: 10.5, y: 14, width: 18, height: 25)).fill(ground)
+                Self.page(CGRect(x: 10.5, y: 14, width: 18, height: 25)).stroke(ink, style: Self.line)
+                Self.fold(CGRect(x: 18.5, y: 7, width: 18, height: 25)).stroke(ink, style: Self.line)
+                Self.fold(CGRect(x: 10.5, y: 14, width: 18, height: 25)).stroke(ink, style: Self.line)
+            case .save:
+                // A box open at the top, an arrow coming down into it.
+                Path { p in
+                    p.move(to: CGPoint(x: 17.5, y: 13.5))
+                    p.addArc(tangent1End: CGPoint(x: 11, y: 13.5), tangent2End: CGPoint(x: 11, y: 33), radius: 3.5)
+                    p.addArc(tangent1End: CGPoint(x: 11, y: 33), tangent2End: CGPoint(x: 35, y: 33), radius: 3.5)
+                    p.addArc(tangent1End: CGPoint(x: 35, y: 33), tangent2End: CGPoint(x: 35, y: 13.5), radius: 3.5)
+                    p.addArc(tangent1End: CGPoint(x: 35, y: 13.5), tangent2End: CGPoint(x: 28.5, y: 13.5), radius: 3.5)
+                    p.addLine(to: CGPoint(x: 28.5, y: 13.5))
+                    p.move(to: CGPoint(x: 23, y: 3.5))
+                    p.addLine(to: CGPoint(x: 23, y: 24.5))
+                    p.move(to: CGPoint(x: 17.5, y: 19))
+                    p.addLine(to: CGPoint(x: 23, y: 24.5))
+                    p.addLine(to: CGPoint(x: 28.5, y: 19))
+                }
+                .stroke(ink, style: Self.line)
+            case .contact:
+                // A ring, a filled head and shoulders cut by the ring.
+                Circle().stroke(ink, lineWidth: 2.4).frame(width: 24.6, height: 24.6)
+                Circle().fill(ink).frame(width: 9.6, height: 9.6).offset(y: -3.4)
+                Ellipse().fill(ink).frame(width: 19, height: 13).offset(y: 11)
+                    .frame(width: 24.6, height: 24.6).clipShape(Circle())
+            case .more, .less:
+                Path { p in
+                    let top: CGFloat = kind == .more ? 16 : 30, bottom: CGFloat = kind == .more ? 30 : 16
+                    p.move(to: CGPoint(x: 11, y: top))
+                    p.addLine(to: CGPoint(x: 23, y: bottom))
+                    p.addLine(to: CGPoint(x: 35, y: top))
+                }
+                .stroke(ink, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .frame(width: 46, height: 46)
+    }
+
+    /// A page's outline with its top-right corner cut for the fold.
+    private static func page(_ r: CGRect) -> Path {
+        Path { p in
+            let fold: CGFloat = 6.5
+            p.move(to: CGPoint(x: r.maxX - fold, y: r.minY))
+            p.addArc(tangent1End: CGPoint(x: r.minX, y: r.minY), tangent2End: CGPoint(x: r.minX, y: r.maxY), radius: 3)
+            p.addArc(tangent1End: CGPoint(x: r.minX, y: r.maxY), tangent2End: CGPoint(x: r.maxX, y: r.maxY), radius: 3)
+            p.addArc(tangent1End: CGPoint(x: r.maxX, y: r.maxY), tangent2End: CGPoint(x: r.maxX, y: r.minY), radius: 3)
+            p.addLine(to: CGPoint(x: r.maxX, y: r.minY + fold))
+            p.closeSubpath()
+        }
+    }
+
+    /// The fold's inner edges.
+    private static func fold(_ r: CGRect) -> Path {
+        Path { p in
+            let fold: CGFloat = 6.5
+            p.move(to: CGPoint(x: r.maxX - fold, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX - fold, y: r.minY + fold))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.minY + fold))
+        }
     }
 }
 
