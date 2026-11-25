@@ -1,14 +1,17 @@
-// Apple's `Metal` module for wasm. A page has no Metal device (WebGPU is not driven from here),
-// so `MTLCreateSystemDefaultDevice()` is nil and an app takes its no-GPU path; the protocols,
-// descriptors and enums are declared so that code written against a device compiles. No value
-// of the object protocols is ever made, so their members are extension stubs. Accepted for
-// source compatibility.
+// Apple's `Metal` module for wasm, drawn with the browser's WebGPU (new-website#746, WebGPU.swift):
+// `MTLCreateSystemDefaultDevice()` is a device when the page got a GPU, else nil and an app takes
+// its no-GPU path. The subset an app's own renderer needs is real (buffers, 2D, depth and
+// multisampled textures, mipmaps, render pipelines with depth and 4x MSAA, render passes with
+// resolve, `CAMetalLayer` drawables); compute and the rest are declared so that code compiles.
+// A browser can't compile Metal Shading Language: `makeLibrary(source:)` finds the WGSL twin the
+// app's browser build ships for that exact source (`Shaders/<fingerprint>.wgsl`), and throws, as
+// a failed compile does, when there is none.
 #if os(WASI)
 import WebFoundation
 
-/// The system's default GPU: none on the web.
-public func MTLCreateSystemDefaultDevice() -> (any MTLDevice)? { nil }
-public func MTLCopyAllDevices() -> [any MTLDevice] { [] }
+/// The system's default GPU: the page's WebGPU device, when it has one.
+public func MTLCreateSystemDefaultDevice() -> (any MTLDevice)? { _WebGPUDevice.shared }
+public func MTLCopyAllDevices() -> [any MTLDevice] { MTLCreateSystemDefaultDevice().map { [$0] } ?? [] }
 
 // MARK: - Values
 
@@ -165,6 +168,11 @@ open class MTLSamplerDescriptor: NSObject, @unchecked Sendable {
     open var minFilter: MTLSamplerMinMagFilter = .nearest, magFilter: MTLSamplerMinMagFilter = .nearest
     open var mipFilter: MTLSamplerMipFilter = .notMipmapped
     open var sAddressMode: MTLSamplerAddressMode = .clampToEdge, tAddressMode: MTLSamplerAddressMode = .clampToEdge
+    open var rAddressMode: MTLSamplerAddressMode = .clampToEdge
+    open var maxAnisotropy = 1
+    open var compareFunction: MTLCompareFunction?
+    open var normalizedCoordinates = true
+    open var label: String?
     public override init() {}
 }
 
@@ -192,120 +200,146 @@ open class MTLRenderPassDescriptor: NSObject, @unchecked Sendable {
     public override init() {}
 }
 
-// MARK: - Objects (never made on the web)
+// MARK: - Objects (made by WebGPU.swift; the defaults are what a missing feature does)
 
 public protocol MTLResource: NSObjectProtocol, Sendable {}
 public protocol MTLFunction: NSObjectProtocol, Sendable {}
 public protocol MTLRenderPipelineState: NSObjectProtocol, Sendable {}
 public protocol MTLDepthStencilState: NSObjectProtocol, Sendable {}
 public protocol MTLSamplerState: NSObjectProtocol, Sendable {}
-public protocol MTLBuffer: MTLResource {}
-public protocol MTLTexture: MTLResource {}
-public protocol MTLLibrary: NSObjectProtocol, Sendable {}
-public protocol MTLCommandQueue: NSObjectProtocol, Sendable {}
-public protocol MTLCommandBuffer: NSObjectProtocol, Sendable {}
-public protocol MTLCommandEncoder: NSObjectProtocol, Sendable {}
-public protocol MTLRenderCommandEncoder: MTLCommandEncoder {}
-public protocol MTLBlitCommandEncoder: MTLCommandEncoder {}
-public protocol MTLComputeCommandEncoder: MTLCommandEncoder {}
 public protocol MTLDrawable: NSObjectProtocol, Sendable {}
-public protocol MTLDevice: NSObjectProtocol, Sendable {}
+public protocol MTLComputeCommandEncoder: MTLCommandEncoder {}
 
-extension MTLDevice {
-    public var name: String { "" }
-    public func makeCommandQueue() -> (any MTLCommandQueue)? { nil }
-    public func makeBuffer(length: Int, options: MTLResourceOptions = []) -> (any MTLBuffer)? { nil }
-    public func makeBuffer(bytes pointer: UnsafeRawPointer, length: Int, options: MTLResourceOptions = []) -> (any MTLBuffer)? { nil }
-    public func makeTexture(descriptor: MTLTextureDescriptor) -> (any MTLTexture)? { nil }
-    public func makeSamplerState(descriptor: MTLSamplerDescriptor) -> (any MTLSamplerState)? { nil }
-    public func makeDepthStencilState(descriptor: MTLDepthStencilDescriptor) -> (any MTLDepthStencilState)? { nil }
-    public func makeDefaultLibrary() -> (any MTLLibrary)? { nil }
-    public func makeDefaultLibrary(bundle: Bundle) throws -> any MTLLibrary { throw _MTLUnavailable() }
-    public func makeLibrary(source: String, options: MTLCompileOptions?) throws -> any MTLLibrary { throw _MTLUnavailable() }
-    public func makeLibrary(source: String, options: MTLCompileOptions?) async throws -> any MTLLibrary { throw _MTLUnavailable() }
-    public func makeRenderPipelineState(descriptor: MTLRenderPipelineDescriptor) throws -> any MTLRenderPipelineState { throw _MTLUnavailable() }
+public protocol MTLBuffer: MTLResource {
+    var length: Int { get }
+    func contents() -> UnsafeMutableRawPointer
+    func didModifyRange(_ range: Range<Int>)
+}
+extension MTLBuffer {
+    public func didModifyRange(_ range: Range<Int>) {}
 }
 
-/// What a Metal call throws on the web: there is no device.
+public protocol MTLTexture: MTLResource {
+    var width: Int { get }
+    var height: Int { get }
+    var depth: Int { get }
+    var mipmapLevelCount: Int { get }
+    var sampleCount: Int { get }
+    var pixelFormat: MTLPixelFormat { get }
+    var textureType: MTLTextureType { get }
+    var usage: MTLTextureUsage { get }
+    func replace(region: MTLRegion, mipmapLevel level: Int, withBytes pixelBytes: UnsafeRawPointer, bytesPerRow: Int)
+    func replace(region: MTLRegion, mipmapLevel level: Int, slice: Int, withBytes pixelBytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
+    func getBytes(_ pixelBytes: UnsafeMutableRawPointer, bytesPerRow: Int, from region: MTLRegion, mipmapLevel level: Int)
+}
+extension MTLTexture {
+    public var depth: Int { 1 }
+    public func replace(region: MTLRegion, mipmapLevel level: Int, slice: Int, withBytes pixelBytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+        replace(region: region, mipmapLevel: level, withBytes: pixelBytes, bytesPerRow: bytesPerRow)
+    }
+    /// Reading a texture back needs the GPU to finish, which a page can't wait for: nothing is read.
+    public func getBytes(_ pixelBytes: UnsafeMutableRawPointer, bytesPerRow: Int, from region: MTLRegion, mipmapLevel level: Int) {}
+}
+
+public protocol MTLLibrary: NSObjectProtocol, Sendable {
+    var functionNames: [String] { get }
+    func makeFunction(name functionName: String) -> (any MTLFunction)?
+}
+
+public protocol MTLCommandQueue: NSObjectProtocol, Sendable {
+    func makeCommandBuffer() -> (any MTLCommandBuffer)?
+}
+
+public protocol MTLCommandBuffer: NSObjectProtocol, Sendable {
+    var status: MTLCommandBufferStatus { get }
+    var gpuStartTime: CFTimeInterval { get }
+    var gpuEndTime: CFTimeInterval { get }
+    var error: (any Error)? { get }
+    func makeRenderCommandEncoder(descriptor: MTLRenderPassDescriptor) -> (any MTLRenderCommandEncoder)?
+    func makeBlitCommandEncoder() -> (any MTLBlitCommandEncoder)?
+    func makeComputeCommandEncoder() -> (any MTLComputeCommandEncoder)?
+    func present(_ drawable: any MTLDrawable)
+    func commit()
+    func waitUntilCompleted()
+    func addCompletedHandler(_ block: @escaping @Sendable (any MTLCommandBuffer) -> Void)
+}
+extension MTLCommandBuffer {
+    public var gpuStartTime: CFTimeInterval { 0 }
+    public var gpuEndTime: CFTimeInterval { 0 }
+    public var error: (any Error)? { nil }
+    public func makeComputeCommandEncoder() -> (any MTLComputeCommandEncoder)? { nil }
+    public func enqueue() {}
+    public func waitUntilScheduled() {}
+    public func addScheduledHandler(_ block: @escaping @Sendable (any MTLCommandBuffer) -> Void) {}
+}
+
+public protocol MTLCommandEncoder: NSObjectProtocol, Sendable {
+    func endEncoding()
+}
+extension MTLCommandEncoder {
+    public func pushDebugGroup(_ string: String) {}
+    public func popDebugGroup() {}
+}
+
+public protocol MTLRenderCommandEncoder: MTLCommandEncoder {
+    func setRenderPipelineState(_ pipelineState: any MTLRenderPipelineState)
+    func setDepthStencilState(_ depthStencilState: (any MTLDepthStencilState)?)
+    func setCullMode(_ cullMode: MTLCullMode)
+    func setFrontFacing(_ frontFacingWinding: MTLWinding)
+    func setViewport(_ viewport: MTLViewport)
+    func setVertexBuffer(_ buffer: (any MTLBuffer)?, offset: Int, index: Int)
+    func setVertexBytes(_ bytes: UnsafeRawPointer, length: Int, index: Int)
+    func setFragmentBuffer(_ buffer: (any MTLBuffer)?, offset: Int, index: Int)
+    func setFragmentBytes(_ bytes: UnsafeRawPointer, length: Int, index: Int)
+    func setVertexTexture(_ texture: (any MTLTexture)?, index: Int)
+    func setFragmentTexture(_ texture: (any MTLTexture)?, index: Int)
+    func setFragmentSamplerState(_ sampler: (any MTLSamplerState)?, index: Int)
+    func drawPrimitives(type primitiveType: MTLPrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int)
+    func drawIndexedPrimitives(type primitiveType: MTLPrimitiveType, indexCount: Int, indexType: MTLIndexType, indexBuffer: any MTLBuffer,
+                               indexBufferOffset: Int, instanceCount: Int)
+}
+extension MTLRenderCommandEncoder {
+    public func drawPrimitives(type primitiveType: MTLPrimitiveType, vertexStart: Int, vertexCount: Int) {
+        drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: 1)
+    }
+    public func drawIndexedPrimitives(type primitiveType: MTLPrimitiveType, indexCount: Int, indexType: MTLIndexType, indexBuffer: any MTLBuffer, indexBufferOffset: Int) {
+        drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: 1)
+    }
+}
+
+public protocol MTLBlitCommandEncoder: MTLCommandEncoder {
+    func generateMipmaps(for texture: any MTLTexture)
+    func copy(from sourceBuffer: any MTLBuffer, sourceOffset: Int, to destinationBuffer: any MTLBuffer, destinationOffset: Int, size: Int)
+}
+
+public protocol MTLDevice: NSObjectProtocol, Sendable {
+    var name: String { get }
+    func makeCommandQueue() -> (any MTLCommandQueue)?
+    func makeBuffer(length: Int, options: MTLResourceOptions) -> (any MTLBuffer)?
+    func makeBuffer(bytes pointer: UnsafeRawPointer, length: Int, options: MTLResourceOptions) -> (any MTLBuffer)?
+    func makeTexture(descriptor: MTLTextureDescriptor) -> (any MTLTexture)?
+    func makeSamplerState(descriptor: MTLSamplerDescriptor) -> (any MTLSamplerState)?
+    func makeDepthStencilState(descriptor: MTLDepthStencilDescriptor) -> (any MTLDepthStencilState)?
+    func makeLibrary(source: String, options: MTLCompileOptions?) throws -> any MTLLibrary
+    func makeRenderPipelineState(descriptor: MTLRenderPipelineDescriptor) throws -> any MTLRenderPipelineState
+}
+extension MTLDevice {
+    public func makeBuffer(length: Int) -> (any MTLBuffer)? { makeBuffer(length: length, options: []) }
+    public func makeBuffer(bytes pointer: UnsafeRawPointer, length: Int) -> (any MTLBuffer)? { makeBuffer(bytes: pointer, length: length, options: []) }
+    /// An app's compiled `.metallib`: none exists for a browser.
+    public func makeDefaultLibrary() -> (any MTLLibrary)? { nil }
+    public func makeDefaultLibrary(bundle: Bundle) throws -> any MTLLibrary { throw _MTLUnavailable() }
+    public func makeLibrary(source: String, options: MTLCompileOptions?) async throws -> any MTLLibrary {
+        let make: (String, MTLCompileOptions?) throws -> any MTLLibrary = makeLibrary(source:options:)
+        return try make(source, options)
+    }
+}
+
+/// What a Metal call throws when the page has no way to do it.
 struct _MTLUnavailable: Error {}
 
 extension MTLResource {
     public var label: String? { nil }
     public var storageMode: MTLStorageMode { .shared }
-}
-
-extension MTLBuffer {
-    public var length: Int { 0 }
-    public func contents() -> UnsafeMutableRawPointer { fatalError("No Metal buffer exists on the web") }
-}
-
-extension MTLTexture {
-    public var width: Int { 0 }
-    public var height: Int { 0 }
-    public var depth: Int { 0 }
-    public var mipmapLevelCount: Int { 1 }
-    public var sampleCount: Int { 1 }
-    public var pixelFormat: MTLPixelFormat { .invalid }
-    public var textureType: MTLTextureType { .type2D }
-    public var usage: MTLTextureUsage { [] }
-    public func replace(region: MTLRegion, mipmapLevel level: Int, withBytes pixelBytes: UnsafeRawPointer, bytesPerRow: Int) {}
-    public func replace(region: MTLRegion, mipmapLevel level: Int, slice: Int, withBytes pixelBytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {}
-    public func getBytes(_ pixelBytes: UnsafeMutableRawPointer, bytesPerRow: Int, from region: MTLRegion, mipmapLevel level: Int) {}
-}
-
-extension MTLLibrary {
-    public var functionNames: [String] { [] }
-    public func makeFunction(name functionName: String) -> (any MTLFunction)? { nil }
-}
-
-extension MTLCommandQueue {
-    public func makeCommandBuffer() -> (any MTLCommandBuffer)? { nil }
-}
-
-extension MTLCommandBuffer {
-    public var status: MTLCommandBufferStatus { .notEnqueued }
-    public var gpuStartTime: CFTimeInterval { 0 }
-    public var gpuEndTime: CFTimeInterval { 0 }
-    public var error: (any Error)? { nil }
-    public func makeRenderCommandEncoder(descriptor: MTLRenderPassDescriptor) -> (any MTLRenderCommandEncoder)? { nil }
-    public func makeBlitCommandEncoder() -> (any MTLBlitCommandEncoder)? { nil }
-    public func makeComputeCommandEncoder() -> (any MTLComputeCommandEncoder)? { nil }
-    public func present(_ drawable: any MTLDrawable) {}
-    public func commit() {}
-    public func enqueue() {}
-    public func waitUntilCompleted() {}
-    public func waitUntilScheduled() {}
-    public func addCompletedHandler(_ block: @escaping @Sendable (any MTLCommandBuffer) -> Void) {}
-    public func addScheduledHandler(_ block: @escaping @Sendable (any MTLCommandBuffer) -> Void) {}
-}
-
-extension MTLCommandEncoder {
-    public func endEncoding() {}
-    public func pushDebugGroup(_ string: String) {}
-    public func popDebugGroup() {}
-}
-
-extension MTLRenderCommandEncoder {
-    public func setRenderPipelineState(_ pipelineState: any MTLRenderPipelineState) {}
-    public func setDepthStencilState(_ depthStencilState: (any MTLDepthStencilState)?) {}
-    public func setCullMode(_ cullMode: MTLCullMode) {}
-    public func setFrontFacing(_ frontFacingWinding: MTLWinding) {}
-    public func setViewport(_ viewport: MTLViewport) {}
-    public func setVertexBuffer(_ buffer: (any MTLBuffer)?, offset: Int, index: Int) {}
-    public func setVertexBytes(_ bytes: UnsafeRawPointer, length: Int, index: Int) {}
-    public func setFragmentBuffer(_ buffer: (any MTLBuffer)?, offset: Int, index: Int) {}
-    public func setFragmentBytes(_ bytes: UnsafeRawPointer, length: Int, index: Int) {}
-    public func setVertexTexture(_ texture: (any MTLTexture)?, index: Int) {}
-    public func setFragmentTexture(_ texture: (any MTLTexture)?, index: Int) {}
-    public func setFragmentSamplerState(_ sampler: (any MTLSamplerState)?, index: Int) {}
-    public func drawPrimitives(type primitiveType: MTLPrimitiveType, vertexStart: Int, vertexCount: Int) {}
-    public func drawPrimitives(type primitiveType: MTLPrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int) {}
-    public func drawIndexedPrimitives(type primitiveType: MTLPrimitiveType, indexCount: Int, indexType: MTLIndexType, indexBuffer: any MTLBuffer, indexBufferOffset: Int) {}
-    public func drawIndexedPrimitives(type primitiveType: MTLPrimitiveType, indexCount: Int, indexType: MTLIndexType, indexBuffer: any MTLBuffer, indexBufferOffset: Int, instanceCount: Int) {}
-}
-
-extension MTLBlitCommandEncoder {
-    public func generateMipmaps(for texture: any MTLTexture) {}
-    public func copy(from sourceBuffer: any MTLBuffer, sourceOffset: Int, to destinationBuffer: any MTLBuffer, destinationOffset: Int, size: Int) {}
 }
 #endif

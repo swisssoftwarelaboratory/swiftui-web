@@ -221,6 +221,16 @@ public final class CanvasSceneHost {
                 return Data(JSTypedArray<UInt8>(unsafelyWrapping: array).withUnsafeBytes { Array($0) })
             }
         }
+        // An app that draws with Metal (its build ships WGSL twins) gets the page's GPU device,
+        // asked for now so it is there by the time the app makes its first device (new-website#746).
+        if window.__swiftuiwebAssets.object?.gpu.boolean == true, JSObject.global.__swiftuiwebGPU.isUndefined,
+           let ask = JSObject.global.Function.function?.new("""
+            globalThis.__swiftuiwebGPU = null;
+            if (navigator.gpu) navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+              .then(a => a && a.requestDevice()).then(d => { if (d) globalThis.__swiftuiwebGPU = d; }, () => {});
+            """) {
+            _ = ask()
+        }
         // The bundle's file list (`scripts/web-media.py`): what exists, and the converted files'
         // stored names (new-website#746).
         if let listed = window.__swiftuiwebAssets.object?.files.object, let keys = JSObject.global.Object.function?.keys?(listed).object {
