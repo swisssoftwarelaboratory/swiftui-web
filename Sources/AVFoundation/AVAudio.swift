@@ -524,12 +524,14 @@ public final class AVAudioEngine {
     /// when a tap wants it (the host asks the browser for it).
     public func start() throws {
         guard !isRunning else { return }
+        #if os(WASI)
         let sources = attached.compactMap { $0 as? AVAudioSourceNode }
         if !sources.isEmpty {
             try startOutput(sources)
             // Nothing listens to the microphone: the engine only plays.
             if inputNode.taps.isEmpty { isRunning = true; return }
         }
+        #endif
         var open = _AVAudioHost.openMicrophone
         if _PhoneMicrophone.inPhone {
             // The drawn iPhone's microphone hears nothing (the demo account's sound is still
@@ -563,6 +565,7 @@ public final class AVAudioEngine {
         isRunning = false
     }
 
+    #if os(WASI)
     /// Pulls every source node's render block for each block the speakers ask for, mixed at the
     /// main mixer's volume, at the first source's rate and channel count.
     private func startOutput(_ sources: [AVAudioSourceNode]) throws {
@@ -596,6 +599,7 @@ public final class AVAudioEngine {
         }
         guard output != nil else { throw StartError(description: "AVAudioEngine: the speakers could not be opened") }
     }
+    #endif
 
     public func stop() {
         pause()
