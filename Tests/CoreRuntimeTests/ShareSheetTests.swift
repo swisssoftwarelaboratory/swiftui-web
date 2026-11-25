@@ -103,14 +103,20 @@ import SwiftUIWebHeadless
     }
 
     @Test func saveImagePutsItFirstInThePhotos() async {
-        let before = _PhotoLibrary.shared.photos.count
-        let runtime = app(ShareLink(item: Rendered(), preview: SharePreview("10 workouts")) { Text("Share").frame(width: 60, height: 44) })
-        tap(runtime, label: "Share")
+        // A library of its own: other suites count the page's one, and suites run side by side.
+        let library = _PhotoLibrary(listed: [_PhotoLibrary.Photo(id: "p1", url: "photos/p1.jpg", pixelWidth: 1000, pixelHeight: 750)])
+        var item = _ShareRequest(items: [], previewTitle: "10 workouts")
+        item.pending = [_PendingShareItem(Rendered())].compactMap { $0 }
+        var closed = false
+        var environment = EnvironmentValues()
+        environment.platformProfile = .iOS
+        let runtime = Runtime(environment: environment)
+        runtime.mount(_ShareSheet(request: item, library: library, close: { closed = true }))
+        runtime.layout(in: Self.size)
         tap(runtime, label: "Save Image")
         await settle(runtime)
-        #expect(_PhotoLibrary.shared.photos.count == before + 1)
-        #expect(_PhotoLibrary.shared.photos.first?.pixelWidth == 2)
-        #expect(runtime.presentations.isEmpty)
+        #expect(closed)
+        #expect(library.photos.map(\.id) == ["saved-1", "p1"] && library.photos.first?.pixelWidth == 2)
     }
 
     @Test func aPersonClosesItAsIfSent() {

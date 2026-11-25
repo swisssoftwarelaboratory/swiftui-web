@@ -159,6 +159,8 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     /// full one), and the card it grows from.
     private var expand = Motion(position: 1, restDistance: 0.0005, restSpeed: 0.01)
     private var expandFrom: CGRect?
+    /// The compact share panel's height for a width (`layout`).
+    private var shareMeasured: (width: CGFloat, height: CGFloat)?
     private var expandRunning = false
     private var expandClock: Double?
 
@@ -360,6 +362,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     }
     package var options = Options() {
         didSet {
+            if oldValue.share != options.share { shareMeasured = nil }
             if oldValue.share != nil, options.share != nil, oldValue.share != options.share { shareStageChanged() }
         }
     }
@@ -420,6 +423,7 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
     }
 
     package func update(view: AnyView) {
+        shareMeasured = nil
         content.update(view: view, environment: content.environment, force: false)
     }
 
@@ -543,7 +547,13 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
             if let share = options.share {
                 if share == .compact {
                     let width = window.width - 2 * ShareSheetMetrics.sideInset
-                    let height = target.sizeThatFits(ProposedViewSize(width: width, height: nil)).height.rounded(.up)
+                    // Measured once per width: the app behind it animating lays the window out
+                    // every frame, and measuring the panel's rows each time cost 3 ms a frame.
+                    let height: CGFloat
+                    if let measured = shareMeasured, measured.width == width { height = measured.height } else {
+                        height = target.sizeThatFits(ProposedViewSize(width: width, height: nil)).height.rounded(.up)
+                        shareMeasured = (width, height)
+                    }
                     panel = CGRect(x: ShareSheetMetrics.sideInset, y: window.height - ShareSheetMetrics.bottomInset - height, width: width, height: height)
                 } else {
                     let top = max(m.sheetTopInset, safe.top)
@@ -1136,8 +1146,21 @@ package final class PresentationNode: ViewNode, _FrameSubscriber, _StartsOnScree
                         blue: fill.blue + (solid.blue - fill.blue) * t, alpha: fill.alpha + (solid.alpha - fill.alpha) * t)
         }
         list.append(.fillPath(shape, fill))
+        // The glass edge (the simulator at 3x): a darker 0.67 pt hairline all round (pixel values
+        // 145 to 207 over a 242 page) and a white highlight just inside it along the top.
         list.append(.strokePath(UnevenRoundedRectangle(cornerRadii: radii, style: .continuous).path(in: rect.insetBy(dx: 0.33, dy: 0.33)),
-                                style: StrokeStyle(lineWidth: 0.67), environment._ink(dark ? 0.2 : 0.08)))
+                                style: StrokeStyle(lineWidth: 0.67), environment._ink(dark ? 0.3 : 0.22)))
+        if !dark {
+            let inner = rect.insetBy(dx: 1, dy: 1)
+            let highlight = CGRect(x: inner.minX, y: inner.minY, width: inner.width, height: top)
+            list.append(.save)
+            list.append(.clipRect(highlight))
+            list.append(.strokePath(UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: top - 1, bottomLeading: bottom - 1,
+                                                                                               bottomTrailing: bottom - 1, topTrailing: top - 1),
+                                                           style: .continuous).path(in: inner),
+                                    style: StrokeStyle(lineWidth: 1), RGBA(red: 1, green: 1, blue: 1, alpha: 0.9)))
+            list.append(.restore)
+        }
         guard let target else { return }
         list.append(.save)
         list.append(.clipPath(shape))

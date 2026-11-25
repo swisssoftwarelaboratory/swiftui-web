@@ -75,18 +75,28 @@ package enum ShareSheetContent {
 }
 
 /// The share sheet's content, presented as a sheet by `ShareLink` on iOS.
-public struct _ShareSheet: View {
-    package let request: _ShareRequest
-    package let close: @MainActor () -> Void
+public struct _ShareSheet: View, Equatable {
+    /// What it shares, where Save Image saves and how it closes, in one box: held inline they
+    /// made the sheet's copy and assign witnesses about 4.6 KB of every bundle (as `_ShareTexts`).
+    private let box: _ShareSheetBox
+    package var request: _ShareRequest { box.request }
+    package var close: @MainActor () -> Void { box.close }
+    package var library: _PhotoLibrary? { box.library }
 
     @State private var expanded = false
     /// The items an async exporter gave, once it has.
     @State private var held = _ShareItemHolder()
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The same items and texts: `close` only ever resets the presenting flag.
+    nonisolated public static func == (lhs: _ShareSheet, rhs: _ShareSheet) -> Bool { lhs.request == rhs.request }
+
     public init(request: _ShareRequest, close: @escaping @MainActor () -> Void) {
-        self.request = request
-        self.close = close
+        self.init(request: request, library: nil, close: close)
+    }
+
+    package init(request: _ShareRequest, library: _PhotoLibrary?, close: @escaping @MainActor () -> Void) {
+        box = _ShareSheetBox(request: request, library: library, close: close)
     }
 
     private typealias M = ShareSheetMetrics
@@ -374,7 +384,21 @@ public struct _ShareSheet: View {
 
     /// Save Image: the image goes in front of the drawn phone's photos.
     private var saveImage: @MainActor () -> Void {
-        { withItems { items in if let (data, _) = Self.imageData(items) { _PhotoLibrary.shared.save(data) } } }
+        { [library] in withItems { items in if let (data, _) = Self.imageData(items) { (library ?? _PhotoLibrary.shared).save(data) } } }
+    }
+}
+
+/// The share sheet's request, its photo library (nil: the page's one; a test passes its own) and
+/// how it closes.
+final class _ShareSheetBox: @unchecked Sendable {
+    let request: _ShareRequest
+    let library: _PhotoLibrary?
+    let close: @MainActor () -> Void
+
+    init(request: _ShareRequest, library: _PhotoLibrary?, close: @escaping @MainActor () -> Void) {
+        self.request = request
+        self.library = library
+        self.close = close
     }
 }
 

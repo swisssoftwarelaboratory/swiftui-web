@@ -72,10 +72,15 @@ public struct _ShareRequest: Equatable, Sendable {
     public var subject: String?
     public var message: String?
     public var previewTitle: String?
+    /// What only the drawn share sheet reads, boxed so the request stays small to copy.
+    package var extras: _ShareExtras?
     /// Items still to be exported (awaited by the drawn share sheet; hosts get only `items`).
-    public var pending: [_PendingShareItem] = []
+    public var pending: [_PendingShareItem] {
+        get { extras?.pending ?? [] }
+        set { extras = _ShareExtras(pending: newValue, previewImage: previewImage) }
+    }
     /// `SharePreview`'s image, shown in the drawn share sheet's header.
-    package var previewImage: Image?
+    package var previewImage: Image? { extras?.previewImage }
 
     public init(items: [_ShareItem], subject: String? = nil, message: String? = nil, previewTitle: String? = nil) {
         self.items = items
@@ -187,20 +192,30 @@ private final class _ShareTexts: Equatable, @unchecked Sendable {
     let subject: Text?
     let message: Text?
     let previewTitle: Text?
-    let pending: [_PendingShareItem]
-    let previewImage: Image?
+    let extras: _ShareExtras?
 
     init(subject: Text?, message: Text?, previewTitle: Text?, pending: [_PendingShareItem] = [], previewImage: Image? = nil) {
         self.subject = subject
         self.message = message
         self.previewTitle = previewTitle
-        self.pending = pending
-        self.previewImage = previewImage
+        extras = pending.isEmpty && previewImage == nil ? nil : _ShareExtras(pending: pending, previewImage: previewImage)
     }
 
     static func == (lhs: _ShareTexts, rhs: _ShareTexts) -> Bool {
         lhs.subject == rhs.subject && lhs.message == rhs.message && lhs.previewTitle == rhs.previewTitle
-            && lhs.pending.map(\.contentType) == rhs.pending.map(\.contentType)
+            && (lhs.extras?.pending ?? []).map(\.contentType) == (rhs.extras?.pending ?? []).map(\.contentType)
+    }
+}
+
+/// The drawn share sheet's part of a request: the items an async exporter gives, and the
+/// preview's image.
+package final class _ShareExtras: @unchecked Sendable {
+    package let pending: [_PendingShareItem]
+    package let previewImage: Image?
+
+    package init(pending: [_PendingShareItem], previewImage: Image?) {
+        self.pending = pending
+        self.previewImage = previewImage
     }
 }
 
@@ -258,8 +273,7 @@ public struct ShareLink<Label: View>: View {
 
     public var body: some View {
         var request = _ShareRequest(items: items, subject: subject?.resolvedString, message: message?.resolvedString, previewTitle: previewTitle?.resolvedString)
-        request.pending = texts.pending
-        request.previewImage = texts.previewImage
+        request.extras = texts.extras
         return _ShareLinkButton(request: request, label: label)
     }
 }
@@ -273,15 +287,16 @@ struct _ShareLinkButton<Label: View>: View {
     @Environment(\.platformProfile) private var platformProfile
 
     var body: some View {
-        if platformProfile.isIOS {
-            Button(action: { presented = true }) { label }
-                .sheet(isPresented: $presented) {
-                    _ShareSheet(request: request, close: { presented = false })
-                }
-        } else {
-            let request = request
-            Button(action: { ShareAction.share(request) }) { label }
-        }
+        // One button either way (two branches doubled its code in every bundle): elsewhere than
+        // iOS the sheet is never presented.
+        let request = request, iOS = platformProfile.isIOS
+        return Button(action: { if iOS { presented = true } else { ShareAction.share(request) } }) { label }
+            .sheet(isPresented: $presented) {
+                // Compared by what it shares: an app behind it that redraws every frame (a
+                // celebration) would otherwise rebuild and measure every row of the panel
+                // each frame (new-website#668, 3 ms a frame).
+                _ShareSheet(request: request, close: { presented = false }).equatable()
+            }
     }
 }
 
