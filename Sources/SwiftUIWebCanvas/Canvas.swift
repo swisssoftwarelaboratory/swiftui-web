@@ -23,6 +23,7 @@ public final class CanvasHost {
     public static func launch(windows: @autoclosure @escaping @MainActor () -> [_WindowDescriptor] = [], _ root: @escaping @MainActor () -> AnyView) {
         JavaScriptEventLoop.installGlobalExecutor()
         MediaHost.install()
+        VideoHost.install()
         SpeechHost.install()
         NotificationsHost.install()
         // The app's widget extension, when it has one: its Live Activities and widgets reach the

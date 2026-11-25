@@ -231,6 +231,12 @@ public final class CanvasSceneHost {
             }
             Bundle._hostFiles = files
         }
+        if let clips = window.__swiftuiwebAssets.object?.clips.object, let keys = JSObject.global.Object.function?.keys?(clips).object {
+            for index in 0..<Int(keys.length.number ?? 0) {
+                guard let name = keys[index].string, let facts = clips[name].object else { continue }
+                _MemoryFiles._hostClips[name] = (facts.duration.number ?? 0, facts.width.number ?? 0, facts.height.number ?? 0)
+            }
+        }
         // Fetches a medal's (any bundled group's) other files in the background, a few at a time,
         // so the app's reads, which are at once, find them in memory.
         if let made = JSObject.global.Function.function?.new("url", "done", """

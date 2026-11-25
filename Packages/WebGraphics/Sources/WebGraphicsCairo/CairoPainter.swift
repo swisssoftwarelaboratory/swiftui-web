@@ -170,6 +170,8 @@ public final class CairoPainter {
                 drawImage(context, draw)
             case .drawBitmap(let bitmap, let rect):
                 drawBitmap(context, bitmap, rect)
+            // The browser's own surfaces (a video, a GPU canvas) exist only in a page.
+            case .drawSurface: break
             // Segments and cull blocks only mark the commands: this painter draws every frame's
             // whole list (only a host that keeps segments is sent `reuseSegment`).
             case .beginSegment, .endSegment, .reuseSegment, .beginCullBlock, .endCullBlock: break
