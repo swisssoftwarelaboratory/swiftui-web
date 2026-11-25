@@ -122,6 +122,8 @@ extension CALayer {
         let paintedContents = false
         #endif
         if !paintedContents { view?.drawContent(into: &list, context: child, style: effective) }
+        // A layer whose picture the browser draws (a player's video, a Metal layer's drawable).
+        if let surface = _surface { list.append(.drawSurface(surface.id, rect: rect, fit: surface.fit)) }
         for layer in (sublayers ?? []).sorted(by: { $0.zPosition < $1.zPosition }) {
             layer.paint(into: &list, context: child, style: effective)
         }

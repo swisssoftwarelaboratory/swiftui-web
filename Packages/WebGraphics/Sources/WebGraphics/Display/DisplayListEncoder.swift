@@ -40,6 +40,8 @@ public enum DisplayOp: Double, Sendable {
     case beginCullBlock = 28, endCullBlock = 29
     /// path, bounds, radius, bend, corner radius: `backdropBlur` seen through a lens (new-website#649)
     case backdropLens = 30
+    /// surface id, rect, fit (0 stretched, 1 aspect, 2 aspect fill): what the browser draws for the surface
+    case drawSurface = 31
 }
 
 /// Path element tags inside an encoded path: tag, then coordinates.
@@ -169,6 +171,10 @@ public enum DisplayListEncoder {
                 out.ops += [DisplayOp.drawBitmap.rawValue, Double(out.bitmaps.count)]
                 out.bitmaps.append(bitmap)
                 rect(r)
+            case .drawSurface(let id, let r, let fit):
+                out.ops += [DisplayOp.drawSurface.rawValue, Double(id)]
+                rect(r)
+                out.ops.append(Double(fit.rawValue))
             }
         }
         return out
@@ -297,6 +303,9 @@ public enum DisplayListDecoder {
             case .drawBitmap:
                 let bitmap = encoded.bitmaps[Int(next())]
                 out.append("drawBitmap \(bitmap.width)x\(bitmap.height) \(f(rect()))")
+            case .drawSurface:
+                let id = Int(next()), r = rect()
+                out.append("drawSurface \(id) \(f(r)) fit \(Int(next()))")
             }
         }
         return out

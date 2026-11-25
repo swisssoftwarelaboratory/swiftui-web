@@ -1,7 +1,8 @@
 // The Core Animation layers AVFoundation declares: a player's video and a capture session's
-// preview, as layers a UIView names in `layerClass`. Neither draws on the web yet (the video
-// plays only through SwiftUI's `VideoPlayer`, and a page has no capture session), so the layer
-// keeps its properties and shows its background. Accepted for source compatibility.
+// preview, as layers a UIView names in `layerClass`. A player layer shows its player's video:
+// the browser plays it and each frame is painted into the frame at the layer's place, so views
+// above it stay above it (new-website#746). A page has no capture session, so the preview layer
+// shows black.
 import UIKitWebCore
 #if os(WASI)
 import WebFoundation
@@ -18,13 +19,34 @@ public struct AVLayerVideoGravity: Hashable, RawRepresentable, Sendable {
     public static let resizeAspectFill = AVLayerVideoGravity(rawValue: "AVLayerVideoGravityResizeAspectFill")
 }
 
-/// A layer showing a player's video (not drawn on the web: see the file's note).
+/// A layer showing a player's video, painted as a surface of the frame (see the file's note).
 open class AVPlayerLayer: CALayer {
-    open var player: AVPlayer?
-    open var videoGravity: AVLayerVideoGravity = .resizeAspect
+    open var player: AVPlayer? {
+        didSet {
+            guard player !== oldValue else { return }
+            oldValue?.layers.removeAll { $0.layer === self || $0.layer == nil }
+            if AVPlayer.repaint == nil { AVPlayer.repaint = { ($0 as? CALayer)?.setNeedsDisplay() } }
+            player?.layers.append(.init(self))
+            player?.syncVideo()
+            setNeedsDisplay()
+        }
+    }
+    open var videoGravity: AVLayerVideoGravity = .resizeAspect { didSet { setNeedsDisplay() } }
     open var pixelBufferAttributes: [String: Any]?
-    open var isReadyForDisplay: Bool { false }
-    open var videoRect: CGRect { bounds }
+    open var isReadyForDisplay: Bool { player?.currentItem.map { $0._isLoaded && $0.status == .readyToPlay } ?? false }
+    open var videoRect: CGRect {
+        guard let size = player?.currentItem?.presentationSize, size.width > 0, size.height > 0, videoGravity != .resize else { return bounds }
+        let k = videoGravity == .resizeAspect ? min(bounds.width / size.width, bounds.height / size.height)
+                                              : max(bounds.width / size.width, bounds.height / size.height)
+        let w = size.width * k, h = size.height * k
+        return CGRect(x: bounds.midX - w / 2, y: bounds.midY - h / 2, width: w, height: h)
+    }
+
+    open override var _surface: (id: Int, fit: SurfaceFit)? {
+        guard let surface = MainActor.assumeIsolated({ player?.currentItem?._video()?.surface }) else { return nil }
+        let fit: SurfaceFit = videoGravity == .resize ? .fill : videoGravity == .resizeAspectFill ? .aspectFill : .aspect
+        return (surface, fit)
+    }
 
     public required init() { super.init() }
     public override init(layer: Any) { super.init(layer: layer) }

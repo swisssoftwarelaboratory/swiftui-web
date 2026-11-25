@@ -224,6 +224,26 @@ public enum _MemoryFiles {
         return base + Bundle._storedPath(resource)
     }
 
+    /// The bundled clips' durations and picture sizes as the build recorded them, by path
+    /// under the resources (`scripts/web-media.py`, the manifest's `clips`).
+    nonisolated(unsafe) public static var _hostClips: [String: (duration: Double, width: Double, height: Double)] = [:]
+
+    /// A bundled clip's duration and size, known at once as on iOS; nil for any other URL.
+    public static func _clipFacts(_ url: URL) -> (duration: Double, width: Double, height: Double)? {
+        resource(url).flatMap { _hostClips[$0] }
+    }
+
+    /// The addresses a `<video>` can play a URL from, best first: a bundled clip, then the WebM
+    /// its build wrote beside it for browsers that can't show the clip's own codec with its alpha.
+    public static func _clipSources(_ url: URL) -> [String] {
+        var sources = [_pageAddress(url)]
+        if let resource = resource(url), let base = _hostAssetBase, let dot = resource.lastIndex(of: "."),
+           Bundle._isListedFile(String(resource[..<dot]) + ".webm") {
+            sources.append(base + resource[..<dot] + ".webm")
+        }
+        return sources
+    }
+
     public static func read(_ url: URL) -> Data? {
         let key = url.absoluteString
         if let data = files[key] { return data }

@@ -63,6 +63,16 @@ public struct DisplayBitmap: Equatable, Sendable {
     }
 }
 
+/// How a surface's picture fits its rect (a player layer's `videoGravity`).
+public enum SurfaceFit: Int, Equatable, Sendable {
+    /// Stretched to the rect.
+    case fill = 0
+    /// Its whole picture inside the rect, keeping its shape.
+    case aspect = 1
+    /// The rect covered, keeping its shape (the picture cropped).
+    case aspectFill = 2
+}
+
 /// One image draw: a catalog file scaled (or tiled, or nine-part stretched) into `rect`.
 public struct ImageDraw: Equatable, Sendable {
     /// Path of the variant, relative to the manifest base.
@@ -140,6 +150,10 @@ public enum DisplayCommand: Equatable, Sendable {
     case drawImage(ImageDraw)
     /// Draws a bitmap by value stretched into `rect` (absolute coordinates).
     case drawBitmap(DisplayBitmap, rect: CGRect)
+    /// Draws what the browser itself draws for surface `id` (a playing video's current frame, a
+    /// GPU canvas) into `rect`, fitted as `fit` says (new-website#746). A painter without such
+    /// surfaces (Cairo, Core Graphics, goldens) draws nothing for it.
+    case drawSurface(Int, rect: CGRect, fit: SurfaceFit)
     /// Opens the stored content of scroll view `id` (closed by `endSegment`): a painter that
     /// keeps segments stores the commands up to `endSegment` and paints them as it reads them.
     /// `cull` is the area that shows (in the segment's coordinates, the viewport with the cull
@@ -181,6 +195,7 @@ public struct DisplayList: Equatable, Sendable {
                 add(path.strokedPath(style).boundingRect)
             case .drawImage(let draw): add(draw.rect)
             case .drawBitmap(_, let rect): add(rect)
+            case .drawSurface(_, let rect, _): add(rect)
             case .backdropBlur(_, let bounds, _, _): add(bounds)
             case .backdropLens(_, let bounds, _, _, _): add(bounds)
             default: break
@@ -254,6 +269,7 @@ extension DisplayCommand: CustomStringConvertible {
             return text + ")"
         case .drawBitmap(let bitmap, let rect):
             return "drawBitmap(\(bitmap.width)x\(bitmap.height) \(r(rect)))"
+        case .drawSurface(let id, let rect, let fit): return "drawSurface(\(id) \(r(rect)) fit=\(fit))"
         case .beginSegment(let id, let cull): return "beginSegment(\(id) cull=\(r(cull)))"
         case .endSegment: return "endSegment"
         case .reuseSegment(let id, let offset, let shown, let cull): return "reuseSegment(\(id) dx=\(f(offset.width)) dy=\(f(offset.height)) shown=\(r(shown)) cull=\(r(cull)))"
@@ -462,6 +478,7 @@ extension DisplayList {
                 draw.rect = draw.rect.offsetBy(dx: offset.x, dy: offset.y)
                 result.append(.drawImage(draw))
             case .drawBitmap(let bitmap, let rect): result.append(.drawBitmap(bitmap, rect: rect.offsetBy(dx: offset.x, dy: offset.y)))
+            case .drawSurface(let id, let rect, let fit): result.append(.drawSurface(id, rect: rect.offsetBy(dx: offset.x, dy: offset.y), fit: fit))
             case .beginSegment(let id, let cull): result.append(.beginSegment(id, cull: cull.offsetBy(dx: offset.x, dy: offset.y)))
             case .reuseSegment(let id, let moved, let shown, let cull):
                 // The shown and cull areas stay in the segment's recorded coordinates.

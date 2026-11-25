@@ -979,6 +979,25 @@ enum PainterScript {
               if (box) unionDeviceBox(ctx, box, pathBox.x0, pathBox.y0, pathBox.x1, pathBox.y1, 0);
               break;
             }
+            case 31: {
+              // What the browser draws for a surface (new-website#746): a video's current frame,
+              // a GPU canvas, fitted into the rect; nothing until it has a picture.
+              const s = globalThis.__swiftuiwebSurfaces && globalThis.__swiftuiwebSurfaces.get(buf[i++]);
+              const sx = buf[i++], sy = buf[i++], sw = buf[i++], sh = buf[i++], fit = buf[i++];
+              const pw = s ? (s.videoWidth || s.width || 0) : 0, ph = s ? (s.videoHeight || s.height || 0) : 0;
+              if (s && pw > 0 && ph > 0 && (s.readyState === undefined || s.readyState >= 2)) {
+                let dx = sx, dy = sy, dw = sw, dh = sh;
+                if (fit !== 0) {
+                  const k = fit === 1 ? Math.min(sw / pw, sh / ph) : Math.max(sw / pw, sh / ph);
+                  dw = pw * k; dh = ph * k; dx = sx + (sw - dw) / 2; dy = sy + (sh - dh) / 2;
+                }
+                if (fit === 2) { ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip(); }
+                ctx.drawImage(s, dx, dy, dw, dh);
+                if (fit === 2) ctx.restore();
+              }
+              if (box) unionDeviceBox(ctx, box, sx, sy, sx + sw, sy + sh, 0);
+              break;
+            }
             case 24: {
               const bitmap = (bitmaps || [])[buf[i++]];
               const bx = buf[i++], by = buf[i++], bw = buf[i++], bh = buf[i++];

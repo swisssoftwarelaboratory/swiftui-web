@@ -266,6 +266,11 @@ open class CALayer {
     // MARK: Invalidation
 
     /// Marks the layer's content as needing to be drawn again (the next frame repaints the tree).
+    /// The browser surface that shows this layer's picture (`AVPlayerLayer`'s video,
+    /// `CAMetalLayer`'s drawable): painted over the layer's background, under its sublayers
+    /// (new-website#746). Nil for a layer that paints its own content.
+    open var _surface: (id: Int, fit: SurfaceFit)? { nil }
+
     open func setNeedsDisplay() {
         needsDisplayCall = true
         UIKitScene.shared.setNeedsFrame()
