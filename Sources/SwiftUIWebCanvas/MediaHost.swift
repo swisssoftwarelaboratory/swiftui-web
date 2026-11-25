@@ -10,7 +10,7 @@ import AVFoundation
 @MainActor
 enum MediaHost {
     static func install() {
-        _AVAudioHost.makePlayer = { url in AudioElementPlayback(url: url.absoluteString) }
+        _AVAudioHost.makePlayer = { url in AudioElementPlayback(url: _MemoryFiles._pageAddress(url)) }
         _AVAudioHost.requestRecordPermission = { completion in
             requestMicrophone { stream in
                 if let stream { stopTracks(stream) }
