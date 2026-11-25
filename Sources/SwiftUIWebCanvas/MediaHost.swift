@@ -18,6 +18,7 @@ enum MediaHost {
             }
         }
         _AVAudioHost.openMicrophone = { bufferSize, deliver, failed in MicrophoneCapture(bufferSize: bufferSize, deliver: deliver, failed: failed) }
+        _AVAudioHost.openOutput = { channels, rate, render in SpeakerOutput(channels: channels, sampleRate: rate, render: render) }
     }
 
     /// `navigator.mediaDevices.getUserMedia({audio: true})`: the stream, or nil when refused or absent.
@@ -153,6 +154,51 @@ final class MicrophoneCapture: _AVAudioCapture {
         processor = nil
         source = nil
         stream = nil
+        context = nil
+    }
+}
+
+/// The speakers behind `AVAudioEngine`'s source nodes (new-website#746): an `AudioContext` at the
+/// sound's rate whose script processor asks the engine for each block, about 21 ms of sound at a
+/// time on the main thread, where the app's render block reads what its views set (a turning
+/// coin's speed). Started from the press that made the sound, as browsers want.
+final class SpeakerOutput: _AVAudioCapture {
+    private var context: JSObject?
+    private var processor: JSObject?
+    private var processClosure: JSClosure?
+    let sampleRate: Double
+
+    init?(channels: Int, sampleRate: Double, render: @escaping @MainActor @Sendable (Int) -> [[Float]]) {
+        let pull = render
+        guard let contextConstructor = JSObject.global.AudioContext.function ?? JSObject.global.webkitAudioContext.function else { return nil }
+        let options = JSObject.global.Object.function!.new()
+        options.sampleRate = .number(sampleRate)
+        options.latencyHint = .string("interactive")
+        let context = contextConstructor.new(options)
+        guard let processor = context.createScriptProcessor?(1024, 0, channels).object else { return nil }
+        self.context = context
+        self.processor = processor
+        self.sampleRate = context.sampleRate.number ?? sampleRate
+        let closure = JSClosure { (arguments: [JSValue]) -> JSValue in
+            guard let event = arguments.first?.object, let out = event.outputBuffer.object else { return .undefined }
+            let length = Int(out.length.number ?? 0)
+            let blocks = MainActor.assumeIsolated { pull(length) }
+            for (channel, samples) in blocks.enumerated() where channel < Int(out.numberOfChannels.number ?? 0) {
+                guard let data = out.getChannelData?(channel).object else { continue }
+                samples.withUnsafeBufferPointer { _ = data.set?(JSTypedArray<Float32>(buffer: $0)) }
+            }
+            return .undefined
+        }
+        processClosure = closure
+        processor.onaudioprocess = .object(closure)
+        _ = processor.connect?(context.destination)
+        _ = context.resume?()
+    }
+
+    func stop() {
+        _ = processor?.disconnect?()
+        _ = context?.close?()
+        processor = nil
         context = nil
     }
 }
