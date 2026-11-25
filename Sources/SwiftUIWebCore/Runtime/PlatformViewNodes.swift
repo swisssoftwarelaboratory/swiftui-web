@@ -38,6 +38,9 @@ package protocol _PlatformViewTree: AnyObject {
     /// `frame` identifies the host's frame: trees sharing one clock advance it once per frame.
     func advanceFrame(elapsed: Double, frame: _HostFrame) -> Bool
 
+    /// Whether a press at `point` lands on one of the tree's views: a view that doesn't take
+    /// touches (`isUserInteractionEnabled` false, hidden) lets it through to what is behind.
+    func takesPress(at point: CGPoint) -> Bool
     func pointerDown(at point: CGPoint, type: PointerType, time: Double)
     func pointerMoved(to point: CGPoint, time: Double)
     func pointerUp(at point: CGPoint, time: Double)
@@ -95,6 +98,7 @@ package protocol _PlatformViewTree: AnyObject {
 }
 
 extension _PlatformViewTree {
+    package func takesPress(at point: CGPoint) -> Bool { true }
     package func connectHostServices(_ services: _HostServices) {}
     package func hostElements(in context: PaintContext, identify: (AnyObject) -> Int) -> [HostElement] { [] }
     package func hasDragSource(at point: CGPoint) -> Bool { false }
@@ -267,6 +271,11 @@ package final class _PlatformViewHostNode<V: View>: LeafNode<V>, _Interactive, _
     }
 
     // MARK: Interaction
+
+    /// Hit only where a view inside takes the press, as on iOS, where a representable's view
+    /// that ignores touches lets them through to the views behind and the gestures around it
+    /// (new-website#746: the medal coin's sound helper took its drag and its tap).
+    override package func contains(_ point: CGPoint) -> Bool { super.contains(point) && tree.takesPress(at: point) }
 
     package func pressBegan() {}
     package func pressBegan(at point: CGPoint) {
