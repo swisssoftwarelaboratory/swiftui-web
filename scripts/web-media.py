@@ -202,7 +202,9 @@ def main():
     if args.manifest:
         with open(args.manifest, "a") as f:
             f.write("(function(){var m=window.__swiftuiwebAssets;if(m){m.files=" + json.dumps(dict(sorted(listed.items())), separators=(",", ":"))
-                    + ";m.clips=" + json.dumps(clips, separators=(",", ":"), sort_keys=True) + ";}})();\n")
+                    + ";m.clips=" + json.dumps(clips, separators=(",", ":"), sort_keys=True)
+                    # A WGSL twin means the app draws with Metal: the page asks for a GPU device while it loads.
+                    + (";m.gpu=true" if any(k.startswith("Shaders/") and k.endswith(".wgsl") for k in listed) else "") + ";}})();\n")
     converted = {k: sum(1 for j in jobs if j[2] == k) for k in ("picture", "clip", "sound")}
     print(f"web-media: {len(listed)} file(s) listed; converted {converted['picture']} picture(s) to WebP, "
           f"{converted['clip']} clip(s) to WebM beside them, {converted['sound']} sound(s) to WAV; {len(failed)} failed",

@@ -9,8 +9,8 @@
 /// An object wrapper for primitive scalar numeric values.
 public final class NSNumber: Hashable, Comparable, @unchecked Sendable, CustomStringConvertible,
                      ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral, ExpressibleByBooleanLiteral {
-    private enum Storage: Sendable { case int(Int64), uint(UInt64), double(Double), bool(Bool) }
-    private let storage: Storage
+    enum Storage: Sendable { case int(Int64), uint(UInt64), double(Double), bool(Bool) }
+    let storage: Storage
 
     public init(value: Int) { storage = .int(Int64(value)) }
     public init(value: Int8) { storage = .int(Int64(value)) }
@@ -146,4 +146,104 @@ extension Float {
 extension Bool {
     public init(truncating number: NSNumber) { self = number.boolValue }
 }
+
+// MARK: - Numbers as objects (new-website#746)
+
+// On iOS a JSON number, a property list number or any number in `Any` is an `NSNumber`, which an
+// app reads either way: `value as? NSNumber`, or `value as? Double` straight from an NSNumber.
+// The numeric types bridge to `NSNumber` here as they do there, so both casts work; a value comes
+// out of an NSNumber only when it fits exactly, as Foundation's do (`2.5` is no `Int`, `300` no
+// `UInt8`, only 0 and 1 are a `Bool`). Not with the Objective-C runtime SDK, whose `@objc` members
+// would then take these numbers as Objective-C objects (ObjectiveCBridging.swift).
+#if !_runtime(_ObjC)
+public protocol _NSNumberBridged: _ObjectiveCBridgeable where _ObjectiveCType == NSNumber {
+    init?(_exactly number: NSNumber)
+    var _number: NSNumber { get }
+}
+extension _NSNumberBridged {
+    public func _bridgeToObjectiveC() -> NSNumber { _number }
+    public static func _forceBridgeFromObjectiveC(_ source: NSNumber, result: inout Self?) { result = Self(_exactly: source) }
+    public static func _conditionallyBridgeFromObjectiveC(_ source: NSNumber, result: inout Self?) -> Bool {
+        result = Self(_exactly: source)
+        return result != nil
+    }
+    public static func _unconditionallyBridgeFromObjectiveC(_ source: NSNumber?) -> Self { source.flatMap { Self(_exactly: $0) } ?? Self(_exactly: NSNumber(value: 0))! }
+}
+extension NSNumber {
+    /// Whether it holds a floating-point value (else an integer or a boolean).
+    var _isFloatingPoint: Bool { if case .double = storage { return true } else { return false } }
+}
+extension Double: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) {
+        if n._isFloatingPoint { self = n.doubleValue; return }
+        guard let exact = Double(exactly: n.int64Value) ?? Double(exactly: n.uint64Value) else { return nil }
+        self = exact
+    }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension Float: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) {
+        guard let d = Double(_exactly: n) else { return nil }
+        // Foundation lets a double that is a float's nearest value through (0.1 as Float).
+        guard d.isNaN || d.isInfinite || Double(Float(d)) == d || abs(d) <= Double(Float.greatestFiniteMagnitude) else { return nil }
+        self = Float(d)
+    }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension Bool: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) {
+        let d = n.doubleValue
+        guard d == 0 || d == 1 else { return nil }
+        self = d == 1
+    }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension NSNumber {
+    func _exactInteger<T: BinaryInteger>(_ type: T.Type) -> T? {
+        if _isFloatingPoint { return T(exactly: doubleValue) }
+        if case .uint(let v) = storage { return T(exactly: v) }
+        return T(exactly: int64Value)
+    }
+}
+extension Int: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(Int.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension Int8: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(Int8.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension Int16: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(Int16.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension Int32: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(Int32.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension Int64: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(Int64.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension UInt: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(UInt.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension UInt8: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(UInt8.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension UInt16: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(UInt16.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension UInt32: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(UInt32.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+extension UInt64: @retroactive _ObjectiveCBridgeable, _NSNumberBridged {
+    public init?(_exactly n: NSNumber) { guard let v = n._exactInteger(UInt64.self) else { return nil }; self = v }
+    public var _number: NSNumber { NSNumber(value: self) }
+}
+#endif
 #endif

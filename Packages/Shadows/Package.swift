@@ -90,6 +90,7 @@ let package = Package(
         .package(path: "../WebGraphics"),
         .package(name: "SwiftUIWeb", path: "../.."),
         .package(path: "../UIKitWeb"),
+        .package(url: "https://github.com/swiftwasm/JavaScriptKit.git", from: "0.49.0"),
     ],
     targets: [
         .target(
@@ -211,7 +212,11 @@ let package = Package(
         // drawable), `CoreAudio` (AudioToolbox's CoreAudioTypes), `HealthKit` with no store,
         // `PhotosUI` with the drawn phone's photos picker. Apps take the paths they have for missing hardware.
         .target(name: "simd", swiftSettings: framework),
-        .target(name: "Metal", dependencies: [.product(name: "WebFoundation", package: "WebGraphics")], swiftSettings: framework),
+        // `Metal` draws with the page's WebGPU (new-website#746, WebGPU.swift).
+        .target(name: "Metal", dependencies: [
+            .product(name: "WebFoundation", package: "WebGraphics"),
+            .product(name: "JavaScriptKit", package: "JavaScriptKit", condition: .when(platforms: [.wasi])),
+        ], swiftSettings: framework),
         .target(
             name: "QuartzCore",
             dependencies: ["Metal", .product(name: "UIKitWebCore", package: "UIKitWeb")],

@@ -17,6 +17,9 @@ public enum _AVAudioHost {
     /// Opens the microphone: samples arrive as mono float frames with their sample rate
     /// (chunks of `bufferSize` frames or whatever the host delivers), until stopped.
     nonisolated(unsafe) public static var openMicrophone: ((_ bufferSize: Int, _ deliver: @escaping @MainActor @Sendable ([Float], Double) -> Void, _ failed: @escaping @MainActor @Sendable (String) -> Void) -> (any _AVAudioCapture)?)?
+    /// Opens the speakers (new-website#746): `render(frames)` is asked for each block of output,
+    /// one array of `frames` samples a channel, at `sampleRate`, until stopped.
+    nonisolated(unsafe) public static var openOutput: ((_ channels: Int, _ sampleRate: Double, _ render: @escaping @MainActor @Sendable (Int) -> [[Float]]) -> (any _AVAudioCapture)?)?
     /// The permission already answered (a host remembers the browser's grant).
     nonisolated(unsafe) public static var recordPermission: AVAudioSession.RecordPermission = .undetermined
 }
@@ -485,6 +488,10 @@ public final class AVAudioEngine {
     public let mainMixerNode = AVAudioMixerNode()
     public private(set) var isRunning = false
     private var capture: (any _AVAudioCapture)?
+    /// The speakers, while a source node plays through the engine.
+    private var output: (any _AVAudioCapture)?
+    /// The nodes attached, in order (the source nodes play while the engine runs).
+    private var attached: [AVAudioNode] = []
     private var position: AVAudioFramePosition = 0
     public var isAutoShutdownEnabled = false
     public var isInManualRenderingMode: Bool { false }
@@ -495,8 +502,14 @@ public final class AVAudioEngine {
         mainMixerNode.engine = self
     }
 
-    public func attach(_ node: AVAudioNode) { node.engine = self }
-    public func detach(_ node: AVAudioNode) { node.engine = nil }
+    public func attach(_ node: AVAudioNode) {
+        node.engine = self
+        if !attached.contains(where: { $0 === node }) { attached.append(node) }
+    }
+    public func detach(_ node: AVAudioNode) {
+        node.engine = nil
+        attached.removeAll { $0 === node }
+    }
     public func connect(_ node1: AVAudioNode, to node2: AVAudioNode, format: AVAudioFormat?) {}
     public func connect(_ node1: AVAudioNode, to node2: AVAudioNode, fromBus bus1: AVAudioNodeBus, toBus bus2: AVAudioNodeBus, format: AVAudioFormat?) {}
     public func disconnectNodeInput(_ node: AVAudioNode) {}
@@ -507,9 +520,18 @@ public final class AVAudioEngine {
         public let description: String
     }
 
-    /// Starts the engine: opens the microphone when a tap wants it (the host asks the browser for it).
+    /// Starts the engine: plays its source nodes through the speakers, and opens the microphone
+    /// when a tap wants it (the host asks the browser for it).
     public func start() throws {
         guard !isRunning else { return }
+        #if os(WASI)
+        let sources = attached.compactMap { $0 as? AVAudioSourceNode }
+        if !sources.isEmpty {
+            try startOutput(sources)
+            // Nothing listens to the microphone: the engine only plays.
+            if inputNode.taps.isEmpty { isRunning = true; return }
+        }
+        #endif
         var open = _AVAudioHost.openMicrophone
         if _PhoneMicrophone.inPhone {
             // The drawn iPhone's microphone hears nothing (the demo account's sound is still
@@ -538,8 +560,46 @@ public final class AVAudioEngine {
     public func pause() {
         capture?.stop()
         capture = nil
+        output?.stop()
+        output = nil
         isRunning = false
     }
+
+    #if os(WASI)
+    /// Pulls every source node's render block for each block the speakers ask for, mixed at the
+    /// main mixer's volume, at the first source's rate and channel count.
+    private func startOutput(_ sources: [AVAudioSourceNode]) throws {
+        guard let open = _AVAudioHost.openOutput else { throw StartError(description: "AVAudioEngine: no audio output") }
+        let format = sources[0].outputFormat(forBus: 0)
+        let channels = max(1, Int(format.channelCount))
+        nonisolated(unsafe) let mixer = mainMixerNode
+        nonisolated(unsafe) let nodes = sources
+        let clock = _Box<AudioTimeStamp>(AudioTimeStamp())
+        output = open(channels, format.sampleRate) { frames in
+            var mixed = [[Float]](repeating: [Float](repeating: 0, count: frames), count: channels)
+            let list = AudioBufferList.allocate(maximumBuffers: channels)
+            let storage = (0..<channels).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: frames) }
+            defer {
+                storage.forEach { $0.deallocate() }
+                UnsafeMutableRawPointer(list.unsafeMutablePointer).deallocate()
+            }
+            for (index, pointer) in storage.enumerated() {
+                list[index] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(frames * MemoryLayout<Float>.size), mData: UnsafeMutableRawPointer(pointer))
+            }
+            var silence = ObjCBool(false)
+            for node in nodes {
+                for pointer in storage { pointer.initialize(repeating: 0, count: frames) }
+                _ = node.renderBlock(&silence, &clock.value, AVAudioFrameCount(frames), list.unsafeMutablePointer)
+                for channel in 0..<channels {
+                    for i in 0..<frames { mixed[channel][i] += storage[channel][i] * mixer.outputVolume }
+                }
+            }
+            clock.value.mSampleTime += Double(frames)
+            return mixed
+        }
+        guard output != nil else { throw StartError(description: "AVAudioEngine: the speakers could not be opened") }
+    }
+    #endif
 
     public func stop() {
         pause()

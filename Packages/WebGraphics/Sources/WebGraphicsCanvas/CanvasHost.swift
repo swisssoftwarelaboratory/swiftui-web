@@ -221,6 +221,16 @@ public final class CanvasSceneHost {
                 return Data(JSTypedArray<UInt8>(unsafelyWrapping: array).withUnsafeBytes { Array($0) })
             }
         }
+        // An app that draws with Metal (its build ships WGSL twins) gets the page's GPU device,
+        // asked for now so it is there by the time the app makes its first device (new-website#746).
+        if window.__swiftuiwebAssets.object?.gpu.boolean == true, JSObject.global.__swiftuiwebGPU.isUndefined,
+           let ask = JSObject.global.Function.function?.new("""
+            globalThis.__swiftuiwebGPU = null;
+            if (navigator.gpu) navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+              .then(a => a && a.requestDevice()).then(d => { if (d) globalThis.__swiftuiwebGPU = d; }, () => {});
+            """) {
+            _ = ask()
+        }
         // The bundle's file list (`scripts/web-media.py`): what exists, and the converted files'
         // stored names (new-website#746).
         if let listed = window.__swiftuiwebAssets.object?.files.object, let keys = JSObject.global.Object.function?.keys?(listed).object {
@@ -1164,6 +1174,13 @@ public final class CanvasSceneHost {
             // An animation in a phase that changes nothing on screen (the indicator hold) still
             // needs the clock to advance.
             syncNativeScroller(time: time, laidOut: false)
+            // Motion stopped: the accessibility layer catches up with the last frame painted.
+            if overlayStale {
+                overlayStart = now
+                updateOverlay()
+                lastOverlayTime = now
+                overlayStale = false
+            }
             if animating || scriptedDrag != nil || wheelInput.isPending { scheduleFrame() } else { lastFrameTime = nil }
             return
         }
@@ -1180,7 +1197,19 @@ public final class CanvasSceneHost {
         lastPaintTime = painted
         mark("overlay")
         overlayStart = painted
-        updateOverlay()
+        // While something animates, the accessibility layer follows at most every 100 ms: only
+        // positions change mid-motion, and rebuilding it each frame cost about 3 ms of a
+        // celebration's frame (new-website#746). It is brought up to date when motion stops.
+        // Frames running back to back (an animation, a timeline, a drag: the gap is 0 for the first
+        // frame after the loop rested) are motion.
+        if frameGapMillis > 0, let last = lastOverlayTime, painted - last < 0.1 {
+            overlayStale = true
+            semanticsMillis = 0
+        } else {
+            updateOverlay()
+            lastOverlayTime = painted
+            overlayStale = false
+        }
         updateHostElements()
         syncNativeScroller(time: now, laidOut: true)
         mark(nil)
@@ -1261,6 +1290,9 @@ public final class CanvasSceneHost {
     public private(set) var frameGapMillis: Double = 0
     private var overlayStart: Double = 0
     private var semanticsMillis: Double = 0
+    /// When the accessibility layer was last rebuilt, and whether frames since moved things in it.
+    private var lastOverlayTime: Double?
+    private var overlayStale = false
 
     /// A `performance.mark` per phase when the page URL carries `perf`: the browser's timeline
     /// then shows where a frame went (Safari's Web Inspector over USB on a phone). `nil` ends

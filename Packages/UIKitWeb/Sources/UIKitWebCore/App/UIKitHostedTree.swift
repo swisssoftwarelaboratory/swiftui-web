@@ -172,6 +172,12 @@ public final class UIKitHostedTree {
 
     // MARK: Pointer
 
+    /// Whether a press at `point` lands on a view of the content (not the tree's own window).
+    public func takesPress(at point: CGPoint) -> Bool {
+        guard let hit = window.hitTest(point, with: nil) else { return false }
+        return hit !== window
+    }
+
     public func pointerDown(at point: CGPoint, type: PointerType, time: Double) {
         touches.pointerDown(at: point, in: window, type: type, time: time)
     }

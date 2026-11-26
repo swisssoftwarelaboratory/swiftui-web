@@ -121,6 +121,9 @@ python3 "$ROOT/scripts/photos.py" Photos "$ROOT/Fixtures/Photos/Everyday" --out 
 # The full SF Symbol layout table (sw-symbols): fetched by the host on the first symbol outside
 # the built-in set.
 cp "$ROOT/Fixtures/Goldens/symbol/metrics-full.txt" "$BUNDLE/assets/symbol-metrics.txt"
+# The WGSL twins of the app's Metal shaders (new-website#746): its browser package's `Shaders`
+# folder, each named by its MSL source's fingerprint, which `makeLibrary(source:)` looks up.
+if [[ -d Shaders ]]; then mkdir -p "$BUNDLE/assets/Shaders" && cp Shaders/*.wgsl "$BUNDLE/assets/Shaders/" 2>/dev/null || true; fi
 # The bundled files in formats every browser reads (HEIC to WebP, a VP9 WebM beside each clip,
 # Apple Lossless to WAV) and the list of them in the manifest, so a missing file is missing as
 # on iOS (new-website#746). Conversions are kept between builds by the source's hash.

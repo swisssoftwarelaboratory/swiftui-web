@@ -43,6 +43,10 @@ open class _GestureRecognizer<Value> {
     open var wantsFrames: Bool { false }
     /// Whether the recogniser takes pinches (magnify and rotate gestures, and composites of them).
     open var recognizesPinch: Bool { false }
+    /// Whether the recogniser follows a moving finger (a drag gesture, or a composite with one):
+    /// a touch that starts on it stays its own rather than becoming a scroll view's pan, as a
+    /// SwiftUI drag gesture keeps its touch inside a scroll view on iOS (new-website#746).
+    open var tracksDrag: Bool { false }
 
     open func began(_ event: GestureEvent) {}
     open func moved(_ event: GestureEvent) {}
@@ -205,6 +209,7 @@ final class LongPressRecognizer: _GestureRecognizer<Bool> {
 /// or the window's.
 @MainActor
 final class DragRecognizer: _GestureRecognizer<DragGesture.Value> {
+    override var tracksDrag: Bool { true }
     let minimumDistance: CGFloat
     let global: Bool
     private var start: GestureEvent?
@@ -364,6 +369,7 @@ final class MapRecognizer<Base, Value>: _GestureRecognizer<Value> {
 
     override var wantsFrames: Bool { base.wantsFrames }
     override var recognizesPinch: Bool { base.recognizesPinch }
+    override var tracksDrag: Bool { base.tracksDrag }
     override func began(_ event: GestureEvent) { base.began(event) }
     override func moved(_ event: GestureEvent) { base.moved(event) }
     override func ended(_ event: GestureEvent, inside: Bool) { base.ended(event, inside: inside); finish() }
@@ -424,6 +430,7 @@ final class SequenceRecognizer<F, S>: _GestureRecognizer<_SequenceValue<F, S>> {
     }
 
     override var recognizesPinch: Bool { first.recognizesPinch || second.recognizesPinch }
+    override var tracksDrag: Bool { first.tracksDrag || second.tracksDrag }
     override func pinchBegan(_ event: PinchEvent) { if firstValue != nil { second.pinchBegan(event) } else { first.pinchBegan(event) } }
     override func pinchChanged(_ event: PinchEvent) { if firstValue != nil { second.pinchChanged(event) } else { first.pinchChanged(event) } }
     override func pinchEnded(_ event: PinchEvent, cancelled: Bool) {
@@ -459,6 +466,7 @@ final class SimultaneousRecognizer<F, S>: _GestureRecognizer<_SimultaneousValue<
     override func ended(_ event: GestureEvent, inside: Bool) { first.ended(event, inside: inside); second.ended(event, inside: inside); finish() }
     override func tick(clock: Double) { first.tick(clock: clock); second.tick(clock: clock) }
     override var recognizesPinch: Bool { first.recognizesPinch || second.recognizesPinch }
+    override var tracksDrag: Bool { first.tracksDrag || second.tracksDrag }
     override func pinchBegan(_ event: PinchEvent) { firstValue = nil; secondValue = nil; first.pinchBegan(event); second.pinchBegan(event) }
     override func pinchChanged(_ event: PinchEvent) { first.pinchChanged(event); second.pinchChanged(event) }
     override func pinchEnded(_ event: PinchEvent, cancelled: Bool) { first.pinchEnded(event, cancelled: cancelled); second.pinchEnded(event, cancelled: cancelled); finish() }
@@ -499,6 +507,7 @@ final class ExclusiveRecognizer<F, S>: _GestureRecognizer<_ExclusiveValue<F, S>>
     }
     override func tick(clock: Double) { if winner != 2 { first.tick(clock: clock) }; if winner != 1 { second.tick(clock: clock) } }
     override var recognizesPinch: Bool { first.recognizesPinch || second.recognizesPinch }
+    override var tracksDrag: Bool { first.tracksDrag || second.tracksDrag }
     override func pinchBegan(_ event: PinchEvent) { winner = nil; first.pinchBegan(event); second.pinchBegan(event) }
     override func pinchChanged(_ event: PinchEvent) { if winner != 2 { first.pinchChanged(event) }; if winner != 1 { second.pinchChanged(event) } }
     override func pinchEnded(_ event: PinchEvent, cancelled: Bool) {
@@ -525,6 +534,8 @@ package protocol _PinchTarget: AnyObject {
 package final class GestureNode<Content: View, G: Gesture>: UnaryLayoutModifierNode<Content, _GestureModifier<G>>, _Interactive, _FrameSubscriber, _PinchTarget {
     private var recognizer: _GestureRecognizer<G.Value>
     private var pressing = false
+    /// A drag gesture keeps a touch that starts on it, along either axis (`Runtime.continuePan`).
+    package var dragAxes: Axis.Set { recognizer.tracksDrag ? [.horizontal, .vertical] : [] }
     private let identifier: Int
 
     override package init(_ context: _NodeContext<ModifiedContent<Content, _GestureModifier<G>>>) {

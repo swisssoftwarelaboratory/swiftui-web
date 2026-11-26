@@ -1,8 +1,11 @@
 // Metal shaders as SwiftUI names them (`ShaderLibrary`, `Shader`, `colorEffect`, `layerEffect`,
-// `distortionEffect`). A page has no Metal and no compiled `.metallib`, so the functions are
-// names with their arguments and nothing runs them: a view under `colorEffect` or `layerEffect`
-// is not drawn (its colours are the shader's, which cannot be computed here), and one under
-// `distortionEffect` is drawn undistorted. Accepted for source compatibility.
+// `distortionEffect`). A page has no Metal and no compiled `.metallib`. A `colorEffect` runs on
+// the page's GPU when the app's browser build ships the function's WGSL twin
+// (`Shaders/<function>.wgsl`, new-website#746): the host renders it at the view's size and the
+// frame paints it at the view's place; the view's own colours don't reach it yet (`color` is
+// opaque black), which shaders that paint whole fills don't read. Without a twin or a GPU the view
+// is not drawn, as before. `layerEffect` views are not drawn, and `distortionEffect` views are
+// drawn undistorted. Accepted for source compatibility.
 import WebFoundation
 
 /// A Metal shader library: functions are looked up by name (`ShaderLibrary.default.wave`).
@@ -47,7 +50,7 @@ public struct Shader: Equatable, Sendable {
     /// One argument of a shader function.
     public struct Argument: Equatable, Sendable {
         package enum Kind: Equatable, Sendable {
-            case floats([Double]), color(Color), colors([Color]), image(Image), data(Data), boundingRect
+            case floats([Double]), floatArray([Double]), color(Color), colors([Color]), image(Image), data(Data), boundingRect
         }
         package let kind: Kind
 
@@ -58,7 +61,7 @@ public struct Shader: Equatable, Sendable {
         public static func float2(_ point: CGPoint) -> Argument { .float2(point.x, point.y) }
         public static func float2(_ size: CGSize) -> Argument { .float2(size.width, size.height) }
         public static func float2(_ vector: CGVector) -> Argument { .float2(vector.dx, vector.dy) }
-        public static func floatArray(_ array: [Float]) -> Argument { Argument(kind: .floats(array.map(Double.init))) }
+        public static func floatArray(_ array: [Float]) -> Argument { Argument(kind: .floatArray(array.map(Double.init))) }
         public static func color(_ color: Color) -> Argument { Argument(kind: .color(color)) }
         public static func colorArray(_ array: [Color]) -> Argument { Argument(kind: .colors(array)) }
         public static func image(_ image: Image) -> Argument { Argument(kind: .image(image)) }
@@ -68,6 +71,7 @@ public struct Shader: Equatable, Sendable {
         public static func == (a: Argument, b: Argument) -> Bool {
             switch (a.kind, b.kind) {
             case (.floats(let x), .floats(let y)): return x == y
+            case (.floatArray(let x), .floatArray(let y)): return x == y
             case (.color(let x), .color(let y)): return x == y
             case (.colors(let x), .colors(let y)): return x == y
             case (.data(let x), .data(let y)): return x == y
@@ -93,10 +97,83 @@ public struct Shader: Equatable, Sendable {
     public enum ShaderType: Sendable { case colorEffect, layerEffect, distortionEffect }
 }
 
+/// What the host is handed for one argument of a shader running on the GPU.
+public enum _ShaderValue: Sendable {
+    /// One to four floats (`float` to `float4`).
+    case floats([Double])
+    /// A float array (`floatArray`), which the Metal function takes as a pointer and a count.
+    case floatArray([Double])
+    /// A colour, its sRGB components and opacity.
+    case color(red: Double, green: Double, blue: Double, alpha: Double)
+}
+
+/// The host that runs a `colorEffect` on the page's GPU (new-website#746).
+public enum _ShaderHost {
+    /// Renders `function` with `arguments` over `size` points at `scale` pixels a point into the
+    /// frame's surface `surface`; false when it can't (no twin, no GPU), and nothing is drawn.
+    @MainActor public static var render: ((_ function: String, _ arguments: [_ShaderValue], _ size: CGSize, _ scale: CGFloat, _ surface: Int) -> Bool)?
+}
+
+/// Where a `colorEffect`'s colours are painted: over the view, at its size.
+struct _ColorEffectModifier: ViewModifier {
+    let shader: Shader
+    let isEnabled: Bool
+    func body(content: Content) -> some View {
+        content.opacity(isEnabled ? 0 : 1).overlay {
+            if isEnabled { _ShaderEffectSurface(shader: shader) }
+        }
+    }
+}
+
+/// The shader's picture at the view's place, as a surface of the frame.
+public struct _ShaderEffectSurface: View {
+    let shader: Shader
+    public typealias Body = Never
+    public static func _makeNode(_ context: _NodeContext<_ShaderEffectSurface>) -> TypedNode<_ShaderEffectSurface> {
+        _ShaderEffectNode(context)
+    }
+}
+
+@MainActor
+package final class _ShaderEffectNode: LeafNode<_ShaderEffectSurface> {
+    private let surface: Int
+
+    package override init(_ context: _NodeContext<_ShaderEffectSurface>) {
+        surface = 3_000_000 + context.runtime.nextHostElementIdentifier()
+        super.init(context)
+    }
+
+    override package func computeSizeThatFits(_ proposal: ProposedViewSize) -> CGSize {
+        proposal.replacingUnspecifiedDimensions(by: .zero)
+    }
+
+    override package func paintSelf(into list: inout DisplayList, context: PaintContext) {
+        let bounds = absoluteBounds(context)
+        guard bounds.width > 0, bounds.height > 0, let render = _ShaderHost.render else { return }
+        var values: [_ShaderValue] = []
+        for argument in view.shader.arguments {
+            switch argument.kind {
+            case .floats(let floats): values.append(.floats(floats))
+            case .floatArray(let floats): values.append(.floatArray(floats))
+            case .color(let color):
+                let rgba = color.resolve(in: environment)
+                values.append(.color(red: rgba.red, green: rgba.green, blue: rgba.blue, alpha: rgba.alpha))
+            case .boundingRect: values.append(.floats([0, 0, Double(bounds.width), Double(bounds.height)]))
+            case .colors, .image, .data: return   // not passed to a twin yet: nothing drawn, as before
+            }
+        }
+        guard render(view.shader.function.name, values, bounds.size, context.scale, surface) else { return }
+        list.append(.drawSurface(surface, rect: bounds, fit: .fill))
+    }
+
+    override package var nodeDescription: String { "ShaderEffect" }
+}
+
 extension View {
-    /// Fills the view's pixels with the shader's colours: not drawn on the web (no Metal).
+    /// Fills the view's pixels with the shader's colours: drawn on the page's GPU from the
+    /// function's WGSL twin; not drawn without one (see the file's note).
     nonisolated public func colorEffect(_ shader: Shader, isEnabled: Bool = true) -> some View {
-        opacity(isEnabled ? 0 : 1)
+        modifier(_ColorEffectModifier(shader: shader, isEnabled: isEnabled))
     }
 
     /// Runs the shader over the view's layer: not drawn on the web (no Metal).

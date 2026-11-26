@@ -24,6 +24,7 @@ public final class CanvasHost {
         JavaScriptEventLoop.installGlobalExecutor()
         MediaHost.install()
         VideoHost.install()
+        ShaderEffectHost.install()
         SpeechHost.install()
         NotificationsHost.install()
         // The app's widget extension, when it has one: its Live Activities and widgets reach the

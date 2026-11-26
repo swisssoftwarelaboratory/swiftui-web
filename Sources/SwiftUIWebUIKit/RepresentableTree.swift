@@ -110,6 +110,7 @@ final class RepresentableTree: _PlatformViewTree {
     }
     func advanceFrame(elapsed: Double, frame: _HostFrame) -> Bool { hosted.advanceFrame(elapsed: elapsed, key: frame) }
 
+    func takesPress(at point: CGPoint) -> Bool { hosted.takesPress(at: point) }
     func pointerDown(at point: CGPoint, type: PointerType, time: Double) { hosted.pointerDown(at: point, type: type, time: time) }
     func pointerMoved(to point: CGPoint, time: Double) { hosted.pointerMoved(to: point, time: time) }
     func pointerUp(at point: CGPoint, time: Double) { hosted.pointerUp(at: point, time: time) }
