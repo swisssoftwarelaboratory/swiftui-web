@@ -1,0 +1,69 @@
+{
+ "photos": [
+  {
+   "file": "everyday/01-coffee.jpg",
+   "width": 1000,
+   "height": 1000
+  },
+  {
+   "file": "everyday/02-lake.jpg",
+   "width": 1000,
+   "height": 750
+  },
+  {
+   "file": "everyday/03-street.jpg",
+   "width": 957,
+   "height": 1000
+  },
+  {
+   "file": "everyday/04-breakfast.jpg",
+   "width": 1000,
+   "height": 750
+  },
+  {
+   "file": "everyday/05-plant.jpg",
+   "width": 1000,
+   "height": 675
+  },
+  {
+   "file": "everyday/06-sunset.jpg",
+   "width": 1000,
+   "height": 666
+  },
+  {
+   "file": "everyday/07-bike.jpg",
+   "width": 1000,
+   "height": 666
+  },
+  {
+   "file": "everyday/08-flowers.jpg",
+   "width": 750,
+   "height": 1000
+  },
+  {
+   "file": "everyday/09-city.jpg",
+   "width": 1000,
+   "height": 675
+  },
+  {
+   "file": "everyday/10-cappuccino.jpg",
+   "width": 1000,
+   "height": 666
+  },
+  {
+   "file": "everyday/11-mountain.jpg",
+   "width": 750,
+   "height": 1000
+  },
+  {
+   "file": "everyday/12-park.jpg",
+   "width": 1000,
+   "height": 750
+  },
+  {
+   "file": "everyday/13-garden.jpg",
+   "width": 1000,
+   "height": 750
+  }
+ ]
+}
